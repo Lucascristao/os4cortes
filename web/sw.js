@@ -1,4 +1,4 @@
-const CACHE = "os4-cortes-v3";
+const CACHE = "os4-cortes-v4";
 const APP_SHELL = ["/", "/index.html", "/style.css", "/app.js", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -17,6 +17,9 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
 
   event.respondWith(
     fetch(event.request)
