@@ -18,7 +18,7 @@
       <div class="login-card">
         <p class="eyebrow">OS4 CORTES</p>
         <h1>Entre para criar seus cortes</h1>
-        <p class="login-copy">Use sua conta Google para acessar o painel e conectar o Google Drive de uma só vez.</p>
+        <p class="login-copy">Use sua conta Google para acessar o painel e conectar o Google Drive.</p>
         <a class="google-login" href="/.netlify/functions/google-auth-start">
           <span class="google-g">G</span>
           Entrar com Google
@@ -46,7 +46,7 @@
         <div>
           <p class="eyebrow">CONTA</p>
           <h2>Google Drive conectado</h2>
-          <p class="hint">A pasta OS4 Cortes será usada para guardar transcrições, vídeos e arquivos de cada corte.</p>
+          <p class="hint">A pasta OS4 Cortes guarda a sessão, transcrições e todos os cortes gerados.</p>
         </div>
         <span class="status-pill ok">Conectado</span>
       </section>
@@ -54,11 +54,25 @@
       <section id="driveSetupCard" class="card setup-card hidden">
         <div>
           <p class="eyebrow">CONFIGURAÇÃO INICIAL</p>
-          <h2>Finalizar integração com GitHub Actions</h2>
-          <p class="hint">Na primeira autorização, o Google gera os dados necessários para o processador salvar os vídeos no seu Drive.</p>
+          <h2>Finalizar integração com Google Drive</h2>
+          <p class="hint">Só aparece na primeira autorização do processador.</p>
         </div>
         <button id="btnMostrarDriveSetup" class="secondary" type="button">Ver dados de configuração</button>
         <div id="driveSetupData" class="setup-data hidden"></div>
+      </section>
+
+      <section id="githubSetupCard" class="card setup-card hidden">
+        <div class="setup-grow">
+          <p class="eyebrow">CONFIGURAÇÃO INICIAL</p>
+          <h2>Conectar GitHub Actions</h2>
+          <p class="hint">Crie um token Fine-grained com acesso somente ao repositório <strong>os4cortes</strong> e permissão <strong>Actions: Read and write</strong>. Depois cole abaixo. O token é criptografado e não volta para o navegador.</p>
+          <div class="setup-token-row">
+            <input id="githubToken" type="password" placeholder="github_pat_..." autocomplete="off" spellcheck="false">
+            <button id="btnSalvarGithub" type="button">Conectar</button>
+          </div>
+          <a class="inline-link" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Criar token no GitHub</a>
+          <p id="githubSetupMsg" class="hint"></p>
+        </div>
       </section>
 
       <section class="card">
@@ -67,21 +81,21 @@
           <input id="videoUrl" type="url" placeholder="https://youtube.com/watch?v=..." autocomplete="off">
           <button id="btnTranscrever" type="button">Transcrever</button>
         </div>
-        <p class="hint">O botão será ligado ao GitHub Actions depois da prova técnica do motor.</p>
+        <p class="hint">O vídeo é baixado uma vez, transcrito uma vez e fica preparado no Drive para gerar quantos cortes você escolher.</p>
       </section>
 
       <section class="grid">
         <article class="card status-card">
-          <span class="status-dot idle"></span>
-          <div><strong>Vídeo</strong><p>Aguardando</p></div>
+          <span id="videoDot" class="status-dot idle"></span>
+          <div><strong>Vídeo</strong><p id="videoStatus">Aguardando</p></div>
         </article>
         <article class="card status-card">
-          <span class="status-dot idle"></span>
-          <div><strong>Transcrição</strong><p>Aguardando</p></div>
+          <span id="transcricaoDot" class="status-dot idle"></span>
+          <div><strong>Transcrição</strong><p id="transcricaoStatus">Aguardando</p></div>
         </article>
         <article class="card status-card">
-          <span class="status-dot idle"></span>
-          <div><strong>Cortes</strong><p>Aguardando</p></div>
+          <span id="cortesDot" class="status-dot idle"></span>
+          <div><strong>Cortes</strong><p id="cortesStatus">Aguardando</p></div>
         </article>
       </section>
 
@@ -102,19 +116,44 @@
         </div>
       </section>
 
-      <section class="card">
+      <section id="transcriptSection" class="card hidden">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">TRANSCRIÇÃO</p>
+            <h2>Pronta para enviar ao ChatGPT</h2>
+          </div>
+          <a id="driveFolderLink" class="inline-link" href="#" target="_blank" rel="noopener noreferrer">Abrir pasta no Drive</a>
+        </div>
+        <textarea id="transcriptText" class="transcript-box" rows="14" readonly></textarea>
+        <div class="button-row">
+          <button id="btnCopiarTranscricao" class="secondary" type="button">Copiar transcrição</button>
+          <button id="btnBaixarTranscricao" class="secondary" type="button">Baixar .txt</button>
+        </div>
+      </section>
+
+      <section id="packageSection" class="card hidden">
         <div class="section-title">
           <div>
             <p class="eyebrow">PACOTE EDITORIAL</p>
             <h2>Cortes, legenda da postagem e hashtags</h2>
           </div>
         </div>
-        <textarea id="pacote" rows="10" placeholder='Cole aqui o JSON dos cortes quando esta etapa estiver disponível.'></textarea>
+        <p class="hint">Cole o JSON que eu gerar a partir da transcrição. Você pode revisar cada corte antes de mandar processar.</p>
+        <textarea id="pacote" rows="10" placeholder='[{"titulo":"...","inicio":"00:00","fim":"00:45","legenda_post":"...","hashtags":["#vendas"]}]'></textarea>
         <button class="secondary" id="btnImportar" type="button">Importar pacote</button>
+        <div id="cutsEditor" class="cuts-editor hidden"></div>
+        <button id="btnGerarCortes" class="generate-button hidden" type="button">Gerar todos os cortes</button>
       </section>
 
-      <section class="card muted-card">
-        <p><strong>Prova técnica atual:</strong> executar um corte real no GitHub Actions usando Faster-Whisper, tracking YuNet, Archivo Black e saída 1080×1920.</p>
+      <section id="resultsSection" class="card hidden">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">RESULTADOS</p>
+            <h2>Cortes salvos no Google Drive</h2>
+          </div>
+          <a id="resultsDriveLink" class="inline-link" href="#" target="_blank" rel="noopener noreferrer">Abrir pasta</a>
+        </div>
+        <div id="resultsList" class="results-list"></div>
       </section>
     </div>
   </main>
