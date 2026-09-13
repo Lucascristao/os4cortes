@@ -13,9 +13,6 @@ on:
       callback_url:
         description: "Callback de progresso"
         required: true
-      callback_token:
-        description: "Token temporário do callback"
-        required: true
 
 permissions:
   contents: read
@@ -33,7 +30,6 @@ jobs:
       YOUTUBE_COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
       OS4_REQUEST_ID: ${{ inputs.request_id }}
       OS4_PROGRESS_URL: ${{ inputs.callback_url }}
-      OS4_CALLBACK_TOKEN: ${{ inputs.callback_token }}
 
     steps:
       - name: Baixar código
@@ -114,10 +110,12 @@ jobs:
           fi
 
       - name: Baixar, transcrever e salvar sessão
+        env:
+          VIDEO_URL: ${{ inputs.video_url }}
         run: |
           python -m processor.prepare \
-            --url "${{ inputs.video_url }}" \
-            --request-id "${{ inputs.request_id }}" \
+            --url "$VIDEO_URL" \
+            --request-id "$OS4_REQUEST_ID" \
             --workdir ".work"
 
       - name: Guardar transcrição por 1 dia
@@ -137,11 +135,12 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          import json, os, urllib.request
+          import hashlib, hmac, json, os, urllib.request
           url = os.environ.get("OS4_PROGRESS_URL", "")
-          token = os.environ.get("OS4_CALLBACK_TOKEN", "")
           rid = os.environ.get("OS4_REQUEST_ID", "")
-          if url and token and rid:
+          secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+          if url and rid and secret:
+              token = hmac.new(secret.encode(), f"os4-progress:{rid}".encode(), hashlib.sha256).hexdigest()
               payload = json.dumps({
                   "request_id": rid,
                   "token": token,
