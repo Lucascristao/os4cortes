@@ -5,6 +5,12 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+[[redirects]]
+  from = "/api/google-drive/callback"
+  to = "/.netlify/functions/google-auth-callback"
+  status = 200
+  force = true
+
 [[headers]]
   for = "/manifest.webmanifest"
   [headers.values]
@@ -14,3 +20,8 @@
   for = "/sw.js"
   [headers.values]
     Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Cache-Control = "no-store"
