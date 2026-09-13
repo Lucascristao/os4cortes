@@ -30,6 +30,34 @@ function atualizarProgresso({ percent = 0, title = "Aguardando processamento", d
 
 window.OS4Progress = { atualizar: atualizarProgresso };
 
+async function verificarSetupDrive() {
+  if (!driveSetupCard) return;
+  driveSetupCard.classList.add("hidden");
+
+  try {
+    const resposta = await fetch("/.netlify/functions/drive-setup?check=1", {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (!resposta.ok) return;
+
+    const dados = await resposta.json();
+    if (dados.available) {
+      driveSetupCard.classList.remove("hidden");
+      return;
+    }
+
+    if (!dados.completed) {
+      await fetch("/.netlify/functions/drive-setup?complete=1", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+    }
+  } catch {
+    // A configuração inicial não deve bloquear o uso normal do app.
+  }
+}
+
 async function carregarSessao() {
   try {
     const resposta = await fetch("/.netlify/functions/auth-session", {
@@ -54,8 +82,9 @@ async function carregarSessao() {
     loginView.classList.add("hidden");
     appView.classList.remove("hidden");
 
+    await verificarSetupDrive();
+
     if (new URLSearchParams(location.search).get("login") === "ok") {
-      driveSetupCard?.classList.remove("hidden");
       history.replaceState({}, "", location.pathname);
     }
   } catch {
