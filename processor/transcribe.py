@@ -6,6 +6,8 @@ from pathlib import Path
 
 from faster_whisper import WhisperModel
 
+from .progress import emit
+
 
 def extrair_audio(video_path: str | Path, audio_path: str | Path) -> Path:
     video_path = Path(video_path)
@@ -49,7 +51,7 @@ def transcrever(
     json_path = pasta_saida / "transcricao.json"
     txt_path = pasta_saida / "transcricao_para_chatgpt.txt"
 
-    print("OS4_PROGRESS|stage=carregando_whisper|stage_percent=0|overall=15", flush=True)
+    emit("carregando_whisper", 15.0, "Carregando modelo de transcrição", stage_percent=0)
     model = WhisperModel(
         modelo,
         device=device,
@@ -65,9 +67,13 @@ def transcrever(
     )
 
     total = max(float(getattr(info, "duration", 0) or 0), 0.0)
-    print(
-        f"OS4_PROGRESS|stage=transcricao|stage_percent=0|overall=16|current=0.0|total={total:.1f}",
-        flush=True,
+    emit(
+        "transcricao",
+        16.0,
+        "Transcrevendo vídeo",
+        stage_percent=0,
+        current=0,
+        total=total,
     )
 
     resultado: list[dict] = []
@@ -97,11 +103,13 @@ def transcrever(
         if total > 0 and (atual - ultimo_reporte >= 30 or atual >= total - 1):
             etapa = max(0.0, min(100.0, (atual / total) * 100.0))
             geral = 16.0 + (etapa * 0.39)
-            print(
-                "OS4_PROGRESS|"
-                f"stage=transcricao|stage_percent={etapa:.1f}|overall={geral:.1f}|"
-                f"current={atual:.1f}|total={total:.1f}",
-                flush=True,
+            emit(
+                "transcricao",
+                geral,
+                "Transcrevendo vídeo",
+                stage_percent=etapa,
+                current=atual,
+                total=total,
             )
             ultimo_reporte = atual
 
@@ -120,9 +128,13 @@ def transcrever(
 
     print(f"Idioma detectado: {info.language} ({info.language_probability:.3f})")
     print(f"Segmentos: {len(resultado)}")
-    print(
-        f"OS4_PROGRESS|stage=transcricao|stage_percent=100|overall=55|current={total:.1f}|total={total:.1f}",
-        flush=True,
+    emit(
+        "transcricao",
+        55.0,
+        "Transcrição concluída",
+        stage_percent=100,
+        current=total,
+        total=total,
     )
 
     return json_path, txt_path, resultado
