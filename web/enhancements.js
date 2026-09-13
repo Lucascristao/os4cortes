@@ -64,8 +64,8 @@
       if (!fileId) return;
 
       principal.href = urlDownloadDrive(fileId);
-      principal.target = "_blank";
-      principal.rel = "noopener noreferrer";
+      principal.removeAttribute("target");
+      principal.removeAttribute("rel");
       principal.setAttribute("download", "");
       principal.dataset.downloadDireto = "1";
       principal.textContent = "Baixar vídeo com legenda";
