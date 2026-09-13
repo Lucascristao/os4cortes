@@ -1,0 +1,125 @@
+name: POC - 1 corte completo
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: "URL do vídeo no YouTube"
+        required: true
+        default: "https://www.youtube.com/watch?v=TnognJG05BU"
+      inicio:
+        description: "Início do corte (MM:SS)"
+        required: true
+        default: "00:00"
+      fim:
+        description: "Fim do corte (MM:SS)"
+        required: true
+        default: "00:44.5"
+      titulo:
+        description: "Título do corte"
+        required: true
+        default: "Muito esforço e pouca técnica"
+      legenda_post:
+        description: "Legenda da postagem (opcional)"
+        required: false
+        default: ""
+      hashtags:
+        description: "Hashtags (opcional)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: os4-poc
+  cancel-in-progress: false
+
+jobs:
+  processar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+      GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+      YOUTUBE_COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Cache do modelo Whisper
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-small-${{ runner.os }}-v1
+          restore-keys: |
+            whisper-small-${{ runner.os }}-
+
+      - name: Dependências do sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fontconfig
+          ffmpeg -version | head -n 1
+
+      - name: Instalar Deno
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+
+      - name: Dependências Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Preparar cookies do YouTube, se configurados
+        shell: bash
+        run: |
+          mkdir -p .work
+          if [ -n "${YOUTUBE_COOKIES_B64:-}" ]; then
+            printf '%s' "$YOUTUBE_COOKIES_B64" | base64 --decode > .work/cookies.txt
+            chmod 600 .work/cookies.txt
+            echo "YOUTUBE_COOKIES=$GITHUB_WORKSPACE/.work/cookies.txt" >> "$GITHUB_ENV"
+            echo "cookies.txt configurado."
+          else
+            echo "Sem cookies do YouTube. O yt-dlp tentará acesso público."
+          fi
+
+      - name: Gerar um corte completo
+        run: |
+          python -m processor.poc \
+            --url "${{ inputs.video_url }}" \
+            --inicio "${{ inputs.inicio }}" \
+            --fim "${{ inputs.fim }}" \
+            --titulo "${{ inputs.titulo }}" \
+            --legenda-post "${{ inputs.legenda_post }}" \
+            --hashtags "${{ inputs.hashtags }}" \
+            --workdir ".work" \
+            --output "output"
+
+      - name: Listar resultados
+        if: always()
+        run: |
+          echo "=== output ==="
+          find output -maxdepth 1 -type f -printf '%f %s bytes\n' 2>/dev/null || true
+          echo "=== espaço ==="
+          df -h .
+
+      - name: Guardar resultado do teste por 1 dia
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: os4-poc-corte
+          path: output/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
