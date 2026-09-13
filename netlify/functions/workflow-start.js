@@ -51,8 +51,7 @@ function callbackToken(sharedSecret, requestId) {
 }
 
 async function getJSON(store, key) {
-  const result = await store.get(key, { type: "json", consistency: "strong" });
-  return result?.data ?? result ?? null;
+  return await store.get(key, { type: "json" });
 }
 
 function json(statusCode, body) {
@@ -105,8 +104,8 @@ exports.handler = async (event) => {
 
   const { connectLambda, getStore } = await import("@netlify/blobs");
   connectLambda(event);
-  const configStore = getStore("os4-config");
-  const jobsStore = getStore("os4-jobs");
+  const configStore = getStore("os4-config", { consistency: "strong" });
+  const jobsStore = getStore("os4-jobs", { consistency: "strong" });
   const configKey = `github:${ownerHash(user.email)}`;
   const githubConfig = await getJSON(configStore, configKey);
 
