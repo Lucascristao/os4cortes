@@ -1,17 +1,34 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import time
-import urllib.error
 import urllib.request
 from typing import Any
 
 
+def _callback_token(request_id: str) -> str:
+    explicit = os.getenv("OS4_CALLBACK_TOKEN", "").strip()
+    if explicit:
+        return explicit
+
+    shared_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    if not shared_secret or not request_id:
+        return ""
+
+    return hmac.new(
+        shared_secret.encode("utf-8"),
+        f"os4-progress:{request_id}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
 def _post(payload: dict[str, Any]) -> None:
     url = os.getenv("OS4_PROGRESS_URL", "").strip()
-    token = os.getenv("OS4_CALLBACK_TOKEN", "").strip()
     request_id = os.getenv("OS4_REQUEST_ID", "").strip()
+    token = _callback_token(request_id)
 
     if not (url and token and request_id):
         return
