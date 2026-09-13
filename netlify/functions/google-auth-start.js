@@ -14,6 +14,16 @@ function makeState(secret) {
   return base64url(`${ts}.${sig}`);
 }
 
+function parseCookies(header = "") {
+  return Object.fromEntries(
+    header.split(";").map((part) => {
+      const i = part.indexOf("=");
+      if (i < 0) return [part.trim(), ""];
+      return [part.slice(0, i).trim(), decodeURIComponent(part.slice(i + 1))];
+    }).filter(([key]) => key)
+  );
+}
+
 exports.handler = async (event) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -25,6 +35,10 @@ exports.handler = async (event) => {
       body: "GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET ainda não foram configurados no Netlify.",
     };
   }
+
+  const cookies = parseCookies(event.headers.cookie || "");
+  const forceSetup = String(event.queryStringParameters?.setup || "") === "1";
+  const setupDone = cookies.os4_setup_done === "1" && !forceSetup;
 
   const host = event.headers["x-forwarded-host"] || event.headers.host || "os4cortes.netlify.app";
   const proto = event.headers["x-forwarded-proto"] || "https";
@@ -42,17 +56,23 @@ exports.handler = async (event) => {
       "https://www.googleapis.com/auth/drive.file",
     ].join(" "),
     access_type: "offline",
-    prompt: "consent",
+    prompt: setupDone ? "select_account" : "consent",
     include_granted_scopes: "true",
     state,
   });
 
+  const headers = {
+    Location: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+    "Cache-Control": "no-store",
+  };
+
+  if (forceSetup) {
+    headers["Set-Cookie"] = "os4_setup_done=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0";
+  }
+
   return {
     statusCode: 302,
-    headers: {
-      Location: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
-      "Cache-Control": "no-store",
-    },
+    headers,
     body: "",
   };
 };
