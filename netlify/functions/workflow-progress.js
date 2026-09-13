@@ -38,7 +38,8 @@ exports.handler = async (event) => {
     return json(400, { ok: false, error: "request_id/token ausente." });
   }
 
-  const { getStore } = await import("@netlify/blobs");
+  const { connectLambda, getStore } = await import("@netlify/blobs");
+  connectLambda(event);
   const store = getStore("os4-jobs");
   const current = await getJSON(store, requestId);
   if (!current) return json(404, { ok: false, error: "Job não encontrado." });
