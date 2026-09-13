@@ -12,6 +12,7 @@ ARCHIVO_BLACK_URL = (
     "https://raw.githubusercontent.com/google/fonts/"
     "main/ofl/archivoblack/ArchivoBlack-Regular.ttf"
 )
+DEFAULT_FONT_DIR = Path.home() / ".local" / "share" / "fonts" / "cortai"
 
 
 @dataclass
@@ -27,9 +28,9 @@ class CaptionStyle:
 
 
 def garantir_archivo_black(
-    pasta_fontes: str | Path = "/usr/local/share/fonts/truetype/cortai",
+    pasta_fontes: str | Path = DEFAULT_FONT_DIR,
 ) -> Path:
-    pasta_fontes = Path(pasta_fontes)
+    pasta_fontes = Path(pasta_fontes).expanduser()
     pasta_fontes.mkdir(parents=True, exist_ok=True)
     font_path = pasta_fontes / "ArchivoBlack-Regular.ttf"
 
@@ -47,7 +48,7 @@ def garantir_archivo_black(
         raise RuntimeError("O TTF baixado não foi reconhecido como Archivo Black.")
 
     subprocess.run(
-        ["fc-cache", "-f"],
+        ["fc-cache", "-f", str(pasta_fontes)],
         check=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -259,11 +260,11 @@ def criar_legendas_corte(
     arquivo_video: str | Path,
     inicio_corte: float,
     fim_corte: float,
-    pasta_fontes: str | Path = "/usr/local/share/fonts/truetype/cortai",
+    pasta_fontes: str | Path = DEFAULT_FONT_DIR,
     style: CaptionStyle | None = None,
 ) -> tuple[Path, Path]:
     style = style or CaptionStyle()
-    pasta_fontes = Path(pasta_fontes)
+    pasta_fontes = Path(pasta_fontes).expanduser()
     garantir_archivo_black(pasta_fontes)
 
     arquivo_video = Path(arquivo_video)
