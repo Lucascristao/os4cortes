@@ -115,11 +115,11 @@ jobs:
           df -h .
 
       - name: Guardar resultado do teste por 1 dia
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: os4-poc-corte
           path: output/
           retention-days: 1
           compression-level: 0
-          if-no-files-found: error
+          if-no-files-found: warn
