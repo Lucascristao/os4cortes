@@ -1,33 +1,27 @@
-const crypto = require("crypto");
+import crypto from "node:crypto";
+import { blobStore, safeHandler } from "./_shared/platform.mts";
 
 function sha(value) {
   return crypto.createHash("sha256").update(String(value || "")).digest("hex");
 }
 
 async function getJSON(store, key) {
-  const result = await store.get(key, { type: "json", consistency: "strong" });
-  return result?.data ?? result ?? null;
+  return store.get(key, { type: "json" });
 }
 
 function json(statusCode, body) {
-  return {
-    statusCode,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
-    },
-    body: JSON.stringify(body),
-  };
+  return Response.json(body, { status: statusCode, headers: { "Cache-Control": "no-store" } });
 }
 
-exports.handler = async (event) => {
-  if (event.httpMethod !== "POST") {
+export default safeHandler(async (request, context) => {
+  if (request.method !== "POST") {
     return json(405, { ok: false, error: "Método não permitido." });
   }
 
   let body;
   try {
-    body = JSON.parse(event.body || "{}");
+    body = await request.json();
+      if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid body");
   } catch {
     return json(400, { ok: false, error: "JSON inválido." });
   }
@@ -38,9 +32,7 @@ exports.handler = async (event) => {
     return json(400, { ok: false, error: "request_id/token ausente." });
   }
 
-  const { connectLambda, getStore } = await import("@netlify/blobs");
-  connectLambda(event);
-  const store = getStore("os4-jobs");
+  const store = blobStore("os4-jobs", context);
   const current = await getJSON(store, requestId);
   if (!current) return json(404, { ok: false, error: "Job não encontrado." });
 
@@ -49,6 +41,9 @@ exports.handler = async (event) => {
   if (!expected.length || expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
     return json(403, { ok: false, error: "Token de callback inválido." });
   }
+
+  // Delayed progress must not overwrite a completed result or a terminal error.
+  if (["completed", "error"].includes(current.status)) return json(200, { ok: true });
 
   const allowedStatus = new Set(["queued", "running", "completed", "error"]);
   const next = {
@@ -74,4 +69,4 @@ exports.handler = async (event) => {
 
   await store.setJSON(requestId, next);
   return json(200, { ok: true });
-};
+});

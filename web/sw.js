@@ -1,4 +1,4 @@
-const CACHE = "os4-cortes-v4";
+const CACHE = "os4-cortes-v5";
 const APP_SHELL = ["/", "/index.html", "/style.css", "/app.js", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -12,7 +12,7 @@ self.addEventListener("activate", (event) => {
       Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))
     )
   );
-  self.clients.claim();
+  event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener("fetch", (event) => {
@@ -20,12 +20,16 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+  // Cache only public application assets, never sessions, tokens or job results.
+  if (!APP_SHELL.includes(url.pathname) || url.search) return;
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+        if (response.ok) {
+          const copy = response.clone();
+          event.waitUntil(caches.open(CACHE).then((cache) => cache.put(event.request, copy)));
+        }
         return response;
       })
       .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/")))

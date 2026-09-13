@@ -5,5 +5,8 @@
   "description": "Frontend e funções Netlify do OS4 Cortes",
   "dependencies": {
     "@netlify/blobs": "11.0.3"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.mjs"
   }
 }
