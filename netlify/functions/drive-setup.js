@@ -45,12 +45,25 @@ exports.handler = async (event) => {
 
   const available = Boolean(cookies.os4_setup);
   const checkOnly = String(event.queryStringParameters?.check || "") === "1";
+  const completeOnly = String(event.queryStringParameters?.complete || "") === "1";
 
   if (checkOnly) {
     return {
       statusCode: 200,
       headers: { "content-type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
-      body: JSON.stringify({ ok: true, available }),
+      body: JSON.stringify({ ok: true, available, completed: cookies.os4_setup_done === "1" }),
+    };
+  }
+
+  if (completeOnly) {
+    return {
+      statusCode: 200,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+        "Set-Cookie": "os4_setup_done=1; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=31536000",
+      },
+      body: JSON.stringify({ ok: true, completed: true }),
     };
   }
 
