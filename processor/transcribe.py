@@ -49,6 +49,7 @@ def transcrever(
     json_path = pasta_saida / "transcricao.json"
     txt_path = pasta_saida / "transcricao_para_chatgpt.txt"
 
+    print("OS4_PROGRESS|stage=carregando_whisper|stage_percent=0|overall=15", flush=True)
     model = WhisperModel(
         modelo,
         device=device,
@@ -63,7 +64,14 @@ def transcrever(
         beam_size=5,
     )
 
+    total = max(float(getattr(info, "duration", 0) or 0), 0.0)
+    print(
+        f"OS4_PROGRESS|stage=transcricao|stage_percent=0|overall=16|current=0.0|total={total:.1f}",
+        flush=True,
+    )
+
     resultado: list[dict] = []
+    ultimo_reporte = -30.0
 
     for seg in segments:
         item = {
@@ -85,6 +93,18 @@ def transcrever(
 
         resultado.append(item)
 
+        atual = float(seg.end)
+        if total > 0 and (atual - ultimo_reporte >= 30 or atual >= total - 1):
+            etapa = max(0.0, min(100.0, (atual / total) * 100.0))
+            geral = 16.0 + (etapa * 0.39)
+            print(
+                "OS4_PROGRESS|"
+                f"stage=transcricao|stage_percent={etapa:.1f}|overall={geral:.1f}|"
+                f"current={atual:.1f}|total={total:.1f}",
+                flush=True,
+            )
+            ultimo_reporte = atual
+
     json_path.write_text(
         json.dumps(resultado, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -100,5 +120,9 @@ def transcrever(
 
     print(f"Idioma detectado: {info.language} ({info.language_probability:.3f})")
     print(f"Segmentos: {len(resultado)}")
+    print(
+        f"OS4_PROGRESS|stage=transcricao|stage_percent=100|overall=55|current={total:.1f}|total={total:.1f}",
+        flush=True,
+    )
 
     return json_path, txt_path, resultado
