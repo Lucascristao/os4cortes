@@ -152,6 +152,13 @@ async function verificarGithubSetup() {
   }
 }
 
+$("#btnEditarGithub")?.addEventListener("click", () => {
+  githubSetupCard.classList.remove("hidden");
+  githubSetupMsg.textContent = "Cole o novo token com acesso ao repositório os4cortes e Actions: Read and write.";
+  githubSetupCard.scrollIntoView({ behavior: "smooth", block: "center" });
+  githubToken.focus();
+});
+
 function restaurarSessao() {
   try {
     const raw = localStorage.getItem(STORAGE_SESSION);
