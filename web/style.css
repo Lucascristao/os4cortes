@@ -12,7 +12,7 @@
 }
 
 * { box-sizing: border-box; }
-
+html { background: #0b0b0b; }
 body {
   margin: 0;
   min-height: 100vh;
@@ -23,11 +23,52 @@ body {
 
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
+a { color: inherit; }
+.hidden { display: none !important; }
 
 .app-shell {
   width: min(980px, 100%);
   margin: 0 auto;
   padding: max(20px, env(safe-area-inset-top)) 18px max(28px, env(safe-area-inset-bottom));
+}
+
+.login-view {
+  min-height: calc(100vh - 56px);
+  display: grid;
+  place-items: center;
+}
+.login-card {
+  width: min(460px, 100%);
+  border: 1px solid var(--border);
+  background: rgba(21,21,21,.96);
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 24px 80px rgba(0,0,0,.36);
+}
+.login-card h1 { margin-bottom: 14px; }
+.login-copy { color: #bbb; line-height: 1.55; margin-bottom: 22px; }
+.google-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 12px;
+  background: #fff;
+  color: #181818;
+  text-decoration: none;
+  font-weight: 850;
+}
+.google-g {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #f2f2f2;
+  color: #4285f4;
+  font-weight: 900;
 }
 
 .topbar {
@@ -37,12 +78,22 @@ button { cursor: pointer; }
   align-items: flex-start;
   margin-bottom: 24px;
 }
+.user-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.user-picture { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; }
+.user-info { display: grid; min-width: 0; }
+.user-info strong, .user-info span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.user-info span { color: var(--muted); font-size: .75rem; margin-top: 2px; }
+.logout-link { color: #ddd; font-size: .78rem; text-decoration: none; border: 1px solid #333; padding: 8px 10px; border-radius: 9px; }
 
 h1, h2, p { margin-top: 0; }
 h1 { font-size: clamp(1.7rem, 6vw, 2.6rem); line-height: 1.05; margin-bottom: 0; }
 h2 { font-size: 1.1rem; margin-bottom: 0; }
 .eyebrow { color: var(--accent); font-size: .74rem; font-weight: 800; letter-spacing: .16em; margin-bottom: 8px; }
-.badge { border: 1px solid #4c421e; background: #241f0f; color: var(--accent); border-radius: 999px; padding: 7px 10px; font-size: .72rem; font-weight: 800; }
 
 .card {
   background: color-mix(in srgb, var(--surface) 96%, transparent);
@@ -52,13 +103,12 @@ h2 { font-size: 1.1rem; margin-bottom: 0; }
   box-shadow: 0 10px 35px rgba(0,0,0,.18);
   margin-bottom: 14px;
 }
-
-.setup-card {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 18px;
-  align-items: center;
-}
+.setup-card { display: flex; justify-content: space-between; gap: 18px; align-items: center; flex-wrap: wrap; }
+.status-pill { padding: 8px 11px; border-radius: 999px; font-size: .78rem; font-weight: 850; }
+.status-pill.ok { background: #182515; color: #9ee18c; border: 1px solid #31502b; }
+.setup-data { width: 100%; border-top: 1px solid #2a2a2a; padding-top: 16px; }
+.setup-data label { margin-top: 12px; }
+.setup-data button { width: auto; margin-top: 8px; }
 
 label { display: block; font-weight: 750; margin-bottom: 10px; }
 .input-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
@@ -75,8 +125,7 @@ input, textarea {
 input:focus, textarea:focus { border-color: #8a7325; box-shadow: 0 0 0 3px rgba(255,201,40,.08); }
 textarea { resize: vertical; min-height: 170px; margin-top: 14px; }
 
-button,
-.button-link {
+button {
   border: 0;
   border-radius: 12px;
   padding: 13px 16px;
@@ -84,16 +133,8 @@ button,
   color: var(--accent-ink);
   font-weight: 850;
 }
-
-.button-link {
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  white-space: nowrap;
-}
-
 button.secondary { margin-top: 10px; background: #2a2a2a; color: #fff; }
+button:disabled { opacity: .55; cursor: progress; }
 
 .hint { color: var(--muted); font-size: .86rem; margin: 12px 0 0; line-height: 1.45; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
@@ -107,10 +148,14 @@ button.secondary { margin-top: 10px; background: #2a2a2a; color: #fff; }
 
 @media (max-width: 680px) {
   .app-shell { padding-left: 13px; padding-right: 13px; }
-  .input-row,
-  .setup-card { grid-template-columns: 1fr; }
+  .topbar { align-items: stretch; flex-direction: column; }
+  .user-box { width: 100%; border-top: 1px solid #252525; padding-top: 12px; }
+  .user-info { flex: 1; }
+  .user-info strong, .user-info span { max-width: 56vw; }
+  .input-row { grid-template-columns: 1fr; }
   .grid { grid-template-columns: 1fr; }
   .status-card { min-height: 72px; }
-  button,
-  .button-link { width: 100%; }
+  button { width: 100%; }
+  .setup-data button { width: 100%; }
+  .logout-link { margin-left: auto; }
 }
