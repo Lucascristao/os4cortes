@@ -46,6 +46,10 @@ function decryptToken(payload, secret) {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
 
+function callbackToken(sharedSecret, requestId) {
+  return crypto.createHmac("sha256", sharedSecret).update(`os4-progress:${requestId}`).digest("hex");
+}
+
 async function getJSON(store, key) {
   const result = await store.get(key, { type: "json", consistency: "strong" });
   return result?.data ?? result ?? null;
@@ -78,7 +82,10 @@ exports.handler = async (event) => {
   }
 
   const secret = process.env.OS4_SESSION_SECRET;
-  if (!secret) return json(500, { ok: false, error: "Sessão não configurada." });
+  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!secret || !googleClientSecret) {
+    return json(500, { ok: false, error: "Credenciais internas não configuradas." });
+  }
 
   const cookies = parseCookies(event.headers.cookie || "");
   const user = verifySession(cookies.os4_session, secret);
@@ -92,7 +99,7 @@ exports.handler = async (event) => {
   }
 
   const kind = String(body.kind || "").trim();
-  if (!['transcribe', 'render'].includes(kind)) {
+  if (!["transcribe", "render"].includes(kind)) {
     return json(400, { ok: false, error: "Tipo de processamento inválido." });
   }
 
@@ -114,7 +121,7 @@ exports.handler = async (event) => {
   }
 
   const requestId = crypto.randomUUID();
-  const callbackToken = crypto.randomBytes(32).toString("base64url");
+  const derivedCallbackToken = callbackToken(googleClientSecret, requestId);
   const host = event.headers["x-forwarded-host"] || event.headers.host || "os4cortes.netlify.app";
   const proto = event.headers["x-forwarded-proto"] || "https";
   const callbackUrl = `${proto}://${host}/.netlify/functions/workflow-progress`;
@@ -133,7 +140,6 @@ exports.handler = async (event) => {
       video_url: videoUrl,
       request_id: requestId,
       callback_url: callbackUrl,
-      callback_token: callbackToken,
     };
   } else {
     const folderId = String(body.folderId || "").trim();
@@ -161,14 +167,13 @@ exports.handler = async (event) => {
       transcript_json_file_id: transcriptJsonFileId,
       cuts_json: cutsJson,
       callback_url: callbackUrl,
-      callback_token: callbackToken,
     };
   }
 
   const now = new Date().toISOString();
-  await jobsStore.setJSON(requestId, {
+  const jobBase = {
     ownerHash: ownerHash(user.email),
-    callbackHash: crypto.createHash("sha256").update(callbackToken).digest("hex"),
+    callbackHash: crypto.createHash("sha256").update(derivedCallbackToken).digest("hex"),
     kind,
     status: "queued",
     stage: "fila",
@@ -176,7 +181,8 @@ exports.handler = async (event) => {
     percent: 0,
     createdAt: now,
     updatedAt: now,
-  });
+  };
+  await jobsStore.setJSON(requestId, jobBase);
 
   const dispatch = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
     method: "POST",
@@ -193,15 +199,11 @@ exports.handler = async (event) => {
   if (!dispatch.ok) {
     const detail = (await dispatch.text()).slice(0, 1000);
     await jobsStore.setJSON(requestId, {
-      ownerHash: ownerHash(user.email),
-      callbackHash: crypto.createHash("sha256").update(callbackToken).digest("hex"),
-      kind,
+      ...jobBase,
       status: "error",
       stage: "github",
       detail: "O GitHub recusou o início do processamento.",
-      percent: 0,
       error: detail,
-      createdAt: now,
       updatedAt: new Date().toISOString(),
     });
     return json(502, { ok: false, error: `Não foi possível iniciar o GitHub Actions (${dispatch.status}).`, detail });
