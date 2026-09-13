@@ -13,6 +13,16 @@ function toBase64url(value) {
     .replace(/=+$/g, "");
 }
 
+function parseCookies(header = "") {
+  return Object.fromEntries(
+    header.split(";").map((part) => {
+      const i = part.indexOf("=");
+      if (i < 0) return [part.trim(), ""];
+      return [part.slice(0, i).trim(), decodeURIComponent(part.slice(i + 1))];
+    }).filter(([key]) => key)
+  );
+}
+
 function validateState(state, secret) {
   try {
     const raw = fromBase64url(state);
@@ -86,6 +96,9 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: "Retorno OAuth inválido ou expirado." };
   }
 
+  const requestCookies = parseCookies(event.headers.cookie || "");
+  const setupDone = requestCookies.os4_setup_done === "1";
+
   const host = event.headers["x-forwarded-host"] || event.headers.host || "os4cortes.netlify.app";
   const proto = event.headers["x-forwarded-proto"] || "https";
   const redirectUri = `${proto}://${host}/api/google-drive/callback`;
@@ -138,7 +151,7 @@ exports.handler = async (event) => {
     `os4_session=${session}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`,
   ];
 
-  if (tokenData.refresh_token) {
+  if (tokenData.refresh_token && !setupDone) {
     const setup = encodeURIComponent(JSON.stringify({
       refreshToken: tokenData.refresh_token,
       folderId,
