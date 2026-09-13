@@ -81,6 +81,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Preparar PO Token do YouTube
+        shell: bash
+        run: |
+          rm -rf "$HOME/bgutil-ytdlp-pot-provider"
+          git clone --depth 1 --branch 2.0.0 \
+            https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git \
+            "$HOME/bgutil-ytdlp-pot-provider"
+          cd "$HOME/bgutil-ytdlp-pot-provider/server"
+          npm ci
+          npx tsc
+          echo "YTDLP_USE_POT=1" >> "$GITHUB_ENV"
+          echo "PO Token provider configurado."
+
       - name: Preparar cookies do YouTube, se configurados
         shell: bash
         run: |
@@ -89,9 +102,9 @@ jobs:
             printf '%s' "$YOUTUBE_COOKIES_B64" | base64 --decode > .work/cookies.txt
             chmod 600 .work/cookies.txt
             echo "YOUTUBE_COOKIES=$GITHUB_WORKSPACE/.work/cookies.txt" >> "$GITHUB_ENV"
-            echo "cookies.txt configurado."
+            echo "cookies.txt disponível apenas como fallback."
           else
-            echo "Sem cookies do YouTube. O yt-dlp tentará acesso público."
+            echo "Sem cookies do YouTube. O PO Token será usado sozinho."
           fi
 
       - name: Gerar um corte completo
