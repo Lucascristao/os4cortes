@@ -4,15 +4,45 @@
   const pacote = $("#pacote");
   const btnImportar = $("#btnImportar");
   const btnGerarCortes = $("#btnGerarCortes");
+  const btnTranscrever = $("#btnTranscrever");
   const packageSection = $("#packageSection");
   const cutsEditor = $("#cutsEditor");
   const resultsSection = $("#resultsSection");
   const resultsList = $("#resultsList");
+  const resultsDriveLink = $("#resultsDriveLink");
   const progressBar = $("#progressBar");
   const progressPercent = $("#progressPercent");
   const progressTitle = $("#progressTitle");
   const progressDetail = $("#progressDetail");
   const progressTime = $("#progressTime");
+  const logoutLink = $(".logout-link");
+
+  const STORAGE_SESSION = "os4_transcription_session";
+  const STORAGE_JOB = "os4_current_job";
+  const STORAGE_PACKAGE = "os4_editor_package";
+  const STORAGE_CUTS = "os4_editor_cuts";
+  const STORAGE_RESULTS = "os4_last_results_view";
+
+  function salvar(key, value) {
+    try {
+      localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+    } catch {}
+  }
+
+  function lerJSON(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function limparTrabalhoLocal({ incluirSessao = false, incluirJob = false } = {}) {
+    [STORAGE_PACKAGE, STORAGE_CUTS, STORAGE_RESULTS].forEach((key) => localStorage.removeItem(key));
+    if (incluirSessao) localStorage.removeItem(STORAGE_SESSION);
+    if (incluirJob) localStorage.removeItem(STORAGE_JOB);
+  }
 
   function normalizarTextoPacote(texto) {
     let limpo = String(texto || "").trim();
@@ -77,6 +107,159 @@
       if (titulo) titulo.textContent = `${cards.length}/${cards.length} cortes concluídos e salvos no Google Drive`;
     }
   }
+
+  function lerCortesDaTela() {
+    if (!cutsEditor) return [];
+    return [...cutsEditor.querySelectorAll(".cut-card")].map((card) => ({
+      titulo: card.querySelector('[data-field="titulo"]')?.value?.trim() || "",
+      inicio: card.querySelector('[data-field="inicio"]')?.value?.trim() || "",
+      fim: card.querySelector('[data-field="fim"]')?.value?.trim() || "",
+      legenda_post: card.querySelector('[data-field="legenda_post"]')?.value?.trim() || "",
+      hashtags: card.querySelector('[data-field="hashtags"]')?.value?.trim() || "",
+    }));
+  }
+
+  function salvarEditorAtual() {
+    if (pacote) salvar(STORAGE_PACKAGE, pacote.value || "");
+    const cortes = lerCortesDaTela();
+    if (cortes.length) salvar(STORAGE_CUTS, cortes);
+  }
+
+  function serializarResultados() {
+    if (!resultsList) return null;
+    const cards = [...resultsList.querySelectorAll(".result-card")];
+    if (!cards.length) return null;
+
+    return {
+      driveFolderUrl: resultsDriveLink?.href || "",
+      cards: cards.map((card) => ({
+        titulo: card.querySelector(":scope > strong")?.textContent || "",
+        links: [...card.querySelectorAll(".result-link")].map((link) => ({
+          texto: link.textContent || "",
+          href: link.href || "",
+          primary: link.classList.contains("primary"),
+          downloadDireto: link.dataset.downloadDireto === "1",
+        })),
+      })),
+    };
+  }
+
+  function salvarResultadosAtuais() {
+    const dados = serializarResultados();
+    if (dados) salvar(STORAGE_RESULTS, dados);
+  }
+
+  function criarLinkResultado(item) {
+    const a = document.createElement("a");
+    a.href = item.href;
+    a.className = item.primary ? "result-link primary" : "result-link";
+    a.textContent = item.texto;
+
+    if (item.primary || item.downloadDireto) {
+      a.removeAttribute("target");
+      a.removeAttribute("rel");
+      a.setAttribute("download", "");
+      a.dataset.downloadDireto = "1";
+      a.title = "Baixar o MP4 diretamente";
+    } else {
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+    }
+
+    return a;
+  }
+
+  function restaurarResultadosSalvos() {
+    if (!resultsSection || !resultsList || localStorage.getItem(STORAGE_JOB)) return false;
+    const salvo = lerJSON(STORAGE_RESULTS);
+    if (!salvo?.cards?.length) return false;
+
+    resultsList.innerHTML = "";
+    if (resultsDriveLink && salvo.driveFolderUrl) resultsDriveLink.href = salvo.driveFolderUrl;
+
+    salvo.cards.forEach((item) => {
+      const card = document.createElement("article");
+      card.className = "result-card";
+
+      const title = document.createElement("strong");
+      title.textContent = item.titulo || "Corte";
+
+      const links = document.createElement("div");
+      links.className = "result-links";
+      (item.links || []).forEach((link) => links.appendChild(criarLinkResultado(link)));
+
+      card.append(title, links);
+      resultsList.appendChild(card);
+    });
+
+    resultsSection.classList.remove("hidden");
+    melhorarLinksResultados();
+
+    const total = salvo.cards.length;
+    const status = $("#cortesStatus");
+    const dot = $("#cortesDot");
+    if (status) status.textContent = `${total} concluídos`;
+    if (dot) dot.className = "status-dot ok";
+    if (progressBar) progressBar.style.width = "100%";
+    if (progressPercent) progressPercent.textContent = "100%";
+    if (progressTitle) progressTitle.textContent = "Cortes concluídos";
+    if (progressDetail) progressDetail.textContent = `${total}/${total} cortes concluídos e salvos no Google Drive`;
+    if (progressTime) progressTime.textContent = `${total} de ${total}`;
+
+    return true;
+  }
+
+  function restaurarEditorSalvo() {
+    if (!pacote || !btnImportar || !packageSection || packageSection.classList.contains("hidden")) return false;
+
+    const textoPacote = localStorage.getItem(STORAGE_PACKAGE);
+    const cortes = lerJSON(STORAGE_CUTS);
+
+    if (textoPacote != null) pacote.value = textoPacote;
+
+    if (Array.isArray(cortes) && cortes.length && !cutsEditor?.querySelector(".cut-card")) {
+      const original = pacote.value;
+      pacote.value = JSON.stringify(cortes);
+      btnImportar.click();
+      setTimeout(() => {
+        pacote.value = original;
+      }, 0);
+    }
+
+    return Boolean(textoPacote != null || (Array.isArray(cortes) && cortes.length));
+  }
+
+  function tentarRestaurarTrabalho() {
+    if (!packageSection || packageSection.classList.contains("hidden")) return false;
+    restaurarEditorSalvo();
+    restaurarResultadosSalvos();
+    return true;
+  }
+
+  pacote?.addEventListener("input", () => salvar(STORAGE_PACKAGE, pacote.value || ""));
+
+  cutsEditor?.addEventListener("input", salvarEditorAtual);
+  cutsEditor?.addEventListener("change", salvarEditorAtual);
+
+  btnImportar?.addEventListener("click", () => {
+    setTimeout(() => salvarEditorAtual(), 0);
+  });
+
+  btnGerarCortes?.addEventListener("click", () => {
+    salvarEditorAtual();
+  }, true);
+
+  btnTranscrever?.addEventListener("click", () => {
+    setTimeout(() => {
+      if (btnTranscrever.disabled) {
+        limparTrabalhoLocal();
+      }
+    }, 0);
+  });
+
+  logoutLink?.addEventListener("click", () => {
+    limparTrabalhoLocal({ incluirSessao: true, incluirJob: true });
+  }, true);
 
   function instalarProgressoInline() {
     if (!packageSection || !btnGerarCortes || $("#cutsLiveProgress")) return;
@@ -174,7 +357,25 @@
   melhorarLinksResultados();
 
   if (resultsList) {
-    const resultsObserver = new MutationObserver(melhorarLinksResultados);
+    const resultsObserver = new MutationObserver(() => {
+      melhorarLinksResultados();
+      salvarResultadosAtuais();
+    });
     resultsObserver.observe(resultsList, { childList: true, subtree: true });
   }
+
+  if (packageSection) {
+    const restoreObserver = new MutationObserver(() => {
+      if (!packageSection.classList.contains("hidden")) {
+        tentarRestaurarTrabalho();
+      }
+    });
+    restoreObserver.observe(packageSection, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  let tentativas = 0;
+  const restoreTimer = setInterval(() => {
+    tentativas += 1;
+    if (tentarRestaurarTrabalho() || tentativas >= 40) clearInterval(restoreTimer);
+  }, 250);
 })();
