@@ -1,0 +1,105 @@
+name: OS4 - Gerar cortes
+run-name: Gerar cortes ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: "ID interno do processamento"
+        required: true
+      folder_id:
+        description: "Pasta da sessão no Google Drive"
+        required: true
+      video_file_id:
+        description: "Arquivo-base no Google Drive"
+        required: true
+      transcript_json_file_id:
+        description: "Transcrição estruturada no Google Drive"
+        required: true
+      cuts_json:
+        description: "Pacote JSON dos cortes"
+        required: true
+      callback_url:
+        description: "Callback de progresso"
+        required: true
+      callback_token:
+        description: "Token temporário do callback"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  gerar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+      GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+      OS4_REQUEST_ID: ${{ inputs.request_id }}
+      OS4_PROGRESS_URL: ${{ inputs.callback_url }}
+      OS4_CALLBACK_TOKEN: ${{ inputs.callback_token }}
+      OS4_FOLDER_ID: ${{ inputs.folder_id }}
+      OS4_VIDEO_FILE_ID: ${{ inputs.video_file_id }}
+      OS4_TRANSCRIPT_JSON_FILE_ID: ${{ inputs.transcript_json_file_id }}
+      OS4_CUTS_JSON: ${{ inputs.cuts_json }}
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-render.txt
+
+      - name: Dependências do sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fontconfig
+
+      - name: Dependências Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-render.txt
+
+      - name: Gerar todos os cortes
+        run: |
+          python -m processor.render_batch \
+            --request-id "$OS4_REQUEST_ID" \
+            --folder-id "$OS4_FOLDER_ID" \
+            --video-file-id "$OS4_VIDEO_FILE_ID" \
+            --transcript-json-file-id "$OS4_TRANSCRIPT_JSON_FILE_ID" \
+            --cuts-json "$OS4_CUTS_JSON" \
+            --workdir ".work" \
+            --output "output"
+
+      - name: Reportar falha ao front
+        if: failure()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          url = os.environ.get("OS4_PROGRESS_URL", "")
+          token = os.environ.get("OS4_CALLBACK_TOKEN", "")
+          rid = os.environ.get("OS4_REQUEST_ID", "")
+          if url and token and rid:
+              payload = json.dumps({
+                  "request_id": rid,
+                  "token": token,
+                  "status": "error",
+                  "stage": "erro",
+                  "percent": 100,
+                  "detail": "A geração dos cortes falhou no GitHub Actions.",
+                  "error": "Falha no workflow de geração de cortes"
+              }).encode("utf-8")
+              try:
+                  urllib.request.urlopen(urllib.request.Request(url, data=payload, method="POST", headers={"Content-Type":"application/json"}), timeout=8).read()
+              except Exception as exc:
+                  print(f"Não foi possível reportar a falha: {exc}")
+          PY
