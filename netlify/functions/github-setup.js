@@ -50,8 +50,7 @@ function encryptToken(token, secret) {
 }
 
 async function getJSON(store, key) {
-  const result = await store.get(key, { type: "json", consistency: "strong" });
-  return result?.data ?? result ?? null;
+  return await store.get(key, { type: "json", consistency: "strong" });
 }
 
 function json(statusCode, body) {
@@ -66,67 +65,77 @@ function json(statusCode, body) {
 }
 
 exports.handler = async (event) => {
-  const secret = process.env.OS4_SESSION_SECRET;
-  if (!secret) return json(500, { ok: false, error: "Sessão não configurada." });
-
-  const cookies = parseCookies(event.headers.cookie || "");
-  const user = verifySession(cookies.os4_session, secret);
-  if (!user?.email) return json(401, { ok: false, error: "Não autenticado." });
-
-  const { getStore } = await import("@netlify/blobs");
-  const store = getStore("os4-config");
-  const key = keyForEmail(user.email);
-
-  if (event.httpMethod === "GET") {
-    const config = await getJSON(store, key);
-    return json(200, { ok: true, connected: Boolean(config?.token) });
-  }
-
-  if (event.httpMethod === "DELETE") {
-    await store.delete(key);
-    return json(200, { ok: true, connected: false });
-  }
-
-  if (event.httpMethod !== "POST") {
-    return json(405, { ok: false, error: "Método não permitido." });
-  }
-
-  let body;
   try {
-    body = JSON.parse(event.body || "{}");
-  } catch {
-    return json(400, { ok: false, error: "JSON inválido." });
-  }
+    const secret = process.env.OS4_SESSION_SECRET;
+    if (!secret) return json(500, { ok: false, error: "Sessão não configurada." });
 
-  const token = String(body.token || "").trim();
-  if (!token || token.length < 20) {
-    return json(400, { ok: false, error: "Token do GitHub inválido." });
-  }
+    const cookies = parseCookies(event.headers.cookie || "");
+    const user = verifySession(cookies.os4_session, secret);
+    if (!user?.email) return json(401, { ok: false, error: "Não autenticado." });
 
-  const repo = "Lucascristao/os4cortes";
-  const check = await fetch(`https://api.github.com/repos/${repo}/actions/workflows`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "OS4-Cortes-Netlify",
-    },
-  });
+    const { connectLambda, getStore } = await import("@netlify/blobs");
+    connectLambda(event);
+    const store = getStore("os4-config");
+    const key = keyForEmail(user.email);
 
-  if (!check.ok) {
-    const text = await check.text();
-    return json(400, {
+    if (event.httpMethod === "GET") {
+      const config = await getJSON(store, key);
+      return json(200, { ok: true, connected: Boolean(config?.token) });
+    }
+
+    if (event.httpMethod === "DELETE") {
+      await store.delete(key);
+      return json(200, { ok: true, connected: false });
+    }
+
+    if (event.httpMethod !== "POST") {
+      return json(405, { ok: false, error: "Método não permitido." });
+    }
+
+    let body;
+    try {
+      body = JSON.parse(event.body || "{}");
+    } catch {
+      return json(400, { ok: false, error: "JSON inválido." });
+    }
+
+    const token = String(body.token || "").trim();
+    if (!token || token.length < 20) {
+      return json(400, { ok: false, error: "Token do GitHub inválido." });
+    }
+
+    const repo = "Lucascristao/os4cortes";
+    const check = await fetch(`https://api.github.com/repos/${repo}/actions/workflows`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "OS4-Cortes-Netlify",
+      },
+    });
+
+    if (!check.ok) {
+      const text = await check.text();
+      return json(400, {
+        ok: false,
+        error: `O GitHub recusou o token (${check.status}). Confira se ele tem acesso ao repositório os4cortes e permissão Actions: Read and write.`,
+        detail: text.slice(0, 300),
+      });
+    }
+
+    await store.setJSON(key, {
+      token: encryptToken(token, secret),
+      repo,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return json(200, { ok: true, connected: true });
+  } catch (error) {
+    console.error("github-setup:", error);
+    return json(500, {
       ok: false,
-      error: `O GitHub recusou o token (${check.status}). Confira se ele tem acesso ao repositório os4cortes e permissão Actions: Read and write.`,
-      detail: text.slice(0, 300),
+      error: "Falha interna ao salvar a conexão com o GitHub.",
+      detail: String(error?.message || error).slice(0, 500),
     });
   }
-
-  await store.setJSON(key, {
-    token: encryptToken(token, secret),
-    repo,
-    updatedAt: new Date().toISOString(),
-  });
-
-  return json(200, { ok: true, connected: true });
 };
