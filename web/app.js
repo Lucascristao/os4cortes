@@ -9,6 +9,26 @@ const driveSetupCard = $("#driveSetupCard");
 const driveSetupData = $("#driveSetupData");
 const videoUrl = $("#videoUrl");
 const pacote = $("#pacote");
+const progressBar = $("#progressBar");
+const progressPercent = $("#progressPercent");
+const progressTitle = $("#progressTitle");
+const progressDetail = $("#progressDetail");
+const progressTime = $("#progressTime");
+const progressTrack = $(".progress-track");
+
+function atualizarProgresso({ percent = 0, title = "Aguardando processamento", detail = "", time = "" } = {}) {
+  const valor = Math.max(0, Math.min(100, Number(percent) || 0));
+  const inteiro = Math.round(valor);
+
+  if (progressBar) progressBar.style.width = `${valor}%`;
+  if (progressPercent) progressPercent.textContent = `${inteiro}%`;
+  if (progressTitle) progressTitle.textContent = title;
+  if (progressDetail) progressDetail.textContent = detail;
+  if (progressTime) progressTime.textContent = time;
+  if (progressTrack) progressTrack.setAttribute("aria-valuenow", String(inteiro));
+}
+
+window.OS4Progress = { atualizar: atualizarProgresso };
 
 async function carregarSessao() {
   try {
@@ -121,5 +141,12 @@ if ("serviceWorker" in navigator) {
     });
   });
 }
+
+atualizarProgresso({
+  percent: 0,
+  title: "Aguardando processamento",
+  detail: "Cole uma URL e inicie a transcrição.",
+  time: "",
+});
 
 carregarSessao();
