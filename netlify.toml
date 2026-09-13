@@ -12,6 +12,16 @@
   force = true
 
 [[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet, noimageindex"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    X-Frame-Options = "DENY"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy = "default-src 'self'; connect-src 'self'; img-src 'self' https://lh3.googleusercontent.com data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://accounts.google.com"
+
+[[headers]]
   for = "/manifest.webmanifest"
   [headers.values]
     Content-Type = "application/manifest+json"
@@ -25,3 +35,4 @@
   for = "/.netlify/functions/*"
   [headers.values]
     Cache-Control = "no-store"
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
