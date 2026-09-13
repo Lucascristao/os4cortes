@@ -1,0 +1,73 @@
+name: Limpeza automática do Actions
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  limpar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+
+    steps:
+      - name: Remover artifacts com mais de 1 dia
+        shell: bash
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d '1 day ago' +%s)
+          removidos=0
+
+          while IFS=$'\t' read -r id criado nome; do
+            [ -z "${id:-}" ] && continue
+            criado_ts=$(date -u -d "$criado" +%s)
+            if [ "$criado_ts" -lt "$cutoff" ]; then
+              echo "Removendo artifact: $nome ($id) - $criado"
+              gh api --method DELETE "repos/$REPO/actions/artifacts/$id"
+              removidos=$((removidos + 1))
+            fi
+          done < <(
+            gh api --paginate "repos/$REPO/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | [.id, .created_at, .name] | @tsv'
+          )
+
+          echo "Artifacts removidos: $removidos"
+
+      - name: Remover execuções concluídas com mais de 7 dias
+        shell: bash
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d '7 days ago' +%s)
+          removidos=0
+
+          while IFS=$'\t' read -r id criado nome status; do
+            [ -z "${id:-}" ] && continue
+            [ "$id" = "$GITHUB_RUN_ID" ] && continue
+            [ "$status" != "completed" ] && continue
+
+            criado_ts=$(date -u -d "$criado" +%s)
+            if [ "$criado_ts" -lt "$cutoff" ]; then
+              echo "Removendo run: $nome ($id) - $criado"
+              gh api --method DELETE "repos/$REPO/actions/runs/$id"
+              removidos=$((removidos + 1))
+            fi
+          done < <(
+            gh api --paginate "repos/$REPO/actions/runs?per_page=100" \
+              --jq '.workflow_runs[] | [.id, .created_at, .name, .status] | @tsv'
+          )
+
+          echo "Runs removidos: $removidos"
+
+      - name: Resumo
+        run: |
+          echo "Limpeza concluída."
+          echo "Artifacts: retenção prática de até 1 dia."
+          echo "Histórico de runs: retenção prática de até 7 dias."
+          echo "Cache do Whisper: preservado."
