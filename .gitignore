@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Segredos / credenciais
+.env
+.env.*
+*.json.secret
+credentials.json
+token.json
+cookies.txt
+
+# Vídeos e artefatos pesados
+*.mp4
+*.mkv
+*.mov
+*.webm
+*.wav
+*.mp3
+*.srt
+*.ass
+*.zip
+work/
+output/
+
+# SO / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
