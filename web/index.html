@@ -19,13 +19,22 @@
       <span class="badge">PWA</span>
     </header>
 
+    <section class="card setup-card">
+      <div>
+        <p class="eyebrow">CONFIGURAÇÃO</p>
+        <h2>Google Drive</h2>
+        <p class="hint">Conecte uma vez para criar a pasta OS4 Cortes e obter os dados que o GitHub Actions usará para salvar os vídeos.</p>
+      </div>
+      <a class="button-link" href="/.netlify/functions/google-auth-start">Conectar Google Drive</a>
+    </section>
+
     <section class="card">
       <label for="videoUrl">URL do vídeo</label>
       <div class="input-row">
         <input id="videoUrl" type="url" placeholder="https://youtube.com/watch?v=..." autocomplete="off">
         <button id="btnTranscrever" type="button">Transcrever</button>
       </div>
-      <p class="hint">Nesta primeira fase, o botão ainda não dispara o GitHub Actions. Estamos montando o motor e a conexão.</p>
+      <p class="hint">Nesta primeira fase, o botão ainda não dispara o GitHub Actions. A prova técnica do motor está sendo validada primeiro.</p>
     </section>
 
     <section class="grid">
@@ -64,7 +73,7 @@
     </section>
 
     <section class="card muted-card">
-      <p><strong>Próxima prova técnica:</strong> executar um corte real no GitHub Actions com o mesmo tracking + Archivo Black já validado no Colab.</p>
+      <p><strong>Prova técnica atual:</strong> executar um corte real no GitHub Actions usando Faster-Whisper, tracking YuNet, Archivo Black e saída 1080×1920.</p>
     </section>
   </main>
 
