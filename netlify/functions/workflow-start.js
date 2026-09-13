@@ -103,7 +103,8 @@ exports.handler = async (event) => {
     return json(400, { ok: false, error: "Tipo de processamento inválido." });
   }
 
-  const { getStore } = await import("@netlify/blobs");
+  const { connectLambda, getStore } = await import("@netlify/blobs");
+  connectLambda(event);
   const configStore = getStore("os4-config");
   const jobsStore = getStore("os4-jobs");
   const configKey = `github:${ownerHash(user.email)}`;
