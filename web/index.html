@@ -11,72 +11,93 @@
 </head>
 <body>
   <main class="app-shell">
-    <header class="topbar">
-      <div>
+    <section id="loginView" class="login-view hidden">
+      <div class="login-card">
         <p class="eyebrow">OS4 CORTES</p>
-        <h1>Cortes prontos para publicar</h1>
+        <h1>Entre para criar seus cortes</h1>
+        <p class="login-copy">Use sua conta Google para acessar o painel e conectar o Google Drive de uma só vez.</p>
+        <a class="google-login" href="/.netlify/functions/google-auth-start">
+          <span class="google-g">G</span>
+          Entrar com Google
+        </a>
       </div>
-      <span class="badge">PWA</span>
-    </header>
-
-    <section class="card setup-card">
-      <div>
-        <p class="eyebrow">CONFIGURAÇÃO</p>
-        <h2>Google Drive</h2>
-        <p class="hint">Conecte uma vez para criar a pasta OS4 Cortes e obter os dados que o GitHub Actions usará para salvar os vídeos.</p>
-      </div>
-      <a class="button-link" href="/api/google-drive/connect">Conectar Google Drive</a>
     </section>
 
-    <section class="card">
-      <label for="videoUrl">URL do vídeo</label>
-      <div class="input-row">
-        <input id="videoUrl" type="url" placeholder="https://youtube.com/watch?v=..." autocomplete="off">
-        <button id="btnTranscrever" type="button">Transcrever</button>
-      </div>
-      <p class="hint">Nesta primeira fase, o botão ainda não dispara o GitHub Actions. A prova técnica do motor está sendo validada primeiro.</p>
-    </section>
-
-    <section class="grid">
-      <article class="card status-card">
-        <span class="status-dot idle"></span>
+    <div id="appView" class="hidden">
+      <header class="topbar">
         <div>
-          <strong>Vídeo</strong>
-          <p>Aguardando</p>
+          <p class="eyebrow">OS4 CORTES</p>
+          <h1>Cortes prontos para publicar</h1>
         </div>
-      </article>
-      <article class="card status-card">
-        <span class="status-dot idle"></span>
-        <div>
-          <strong>Transcrição</strong>
-          <p>Aguardando</p>
+        <div class="user-box">
+          <img id="userPicture" class="user-picture hidden" alt="Foto da conta Google">
+          <div class="user-info">
+            <strong id="userName">Conta Google</strong>
+            <span id="userEmail"></span>
+          </div>
+          <a class="logout-link" href="/.netlify/functions/auth-logout">Sair</a>
         </div>
-      </article>
-      <article class="card status-card">
-        <span class="status-dot idle"></span>
-        <div>
-          <strong>Cortes</strong>
-          <p>Aguardando</p>
-        </div>
-      </article>
-    </section>
+      </header>
 
-    <section class="card">
-      <div class="section-title">
+      <section class="card setup-card">
         <div>
-          <p class="eyebrow">PACOTE EDITORIAL</p>
-          <h2>Cortes, legenda da postagem e hashtags</h2>
+          <p class="eyebrow">CONTA</p>
+          <h2>Google Drive conectado</h2>
+          <p class="hint">A pasta OS4 Cortes será usada para guardar transcrições, vídeos e arquivos de cada corte.</p>
         </div>
-      </div>
-      <textarea id="pacote" rows="10" placeholder='Cole aqui o JSON dos cortes quando esta etapa estiver disponível.'></textarea>
-      <button class="secondary" id="btnImportar" type="button">Importar pacote</button>
-    </section>
+        <span class="status-pill ok">Conectado</span>
+      </section>
 
-    <section class="card muted-card">
-      <p><strong>Prova técnica atual:</strong> executar um corte real no GitHub Actions usando Faster-Whisper, tracking YuNet, Archivo Black e saída 1080×1920.</p>
-    </section>
+      <section id="driveSetupCard" class="card setup-card hidden">
+        <div>
+          <p class="eyebrow">CONFIGURAÇÃO INICIAL</p>
+          <h2>Finalizar integração com GitHub Actions</h2>
+          <p class="hint">Na primeira autorização, o Google gera os dados necessários para o processador salvar os vídeos no seu Drive.</p>
+        </div>
+        <button id="btnMostrarDriveSetup" class="secondary" type="button">Ver dados de configuração</button>
+        <div id="driveSetupData" class="setup-data hidden"></div>
+      </section>
+
+      <section class="card">
+        <label for="videoUrl">URL do vídeo</label>
+        <div class="input-row">
+          <input id="videoUrl" type="url" placeholder="https://youtube.com/watch?v=..." autocomplete="off">
+          <button id="btnTranscrever" type="button">Transcrever</button>
+        </div>
+        <p class="hint">O botão será ligado ao GitHub Actions depois da prova técnica do motor.</p>
+      </section>
+
+      <section class="grid">
+        <article class="card status-card">
+          <span class="status-dot idle"></span>
+          <div><strong>Vídeo</strong><p>Aguardando</p></div>
+        </article>
+        <article class="card status-card">
+          <span class="status-dot idle"></span>
+          <div><strong>Transcrição</strong><p>Aguardando</p></div>
+        </article>
+        <article class="card status-card">
+          <span class="status-dot idle"></span>
+          <div><strong>Cortes</strong><p>Aguardando</p></div>
+        </article>
+      </section>
+
+      <section class="card">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">PACOTE EDITORIAL</p>
+            <h2>Cortes, legenda da postagem e hashtags</h2>
+          </div>
+        </div>
+        <textarea id="pacote" rows="10" placeholder='Cole aqui o JSON dos cortes quando esta etapa estiver disponível.'></textarea>
+        <button class="secondary" id="btnImportar" type="button">Importar pacote</button>
+      </section>
+
+      <section class="card muted-card">
+        <p><strong>Prova técnica atual:</strong> executar um corte real no GitHub Actions usando Faster-Whisper, tracking YuNet, Archivo Black e saída 1080×1920.</p>
+      </section>
+    </div>
   </main>
-
   <script src="/app.js" defer></script>
 </body>
 </html>
