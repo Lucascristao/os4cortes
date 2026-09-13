@@ -50,7 +50,7 @@ function encryptToken(token, secret) {
 }
 
 async function getJSON(store, key) {
-  return await store.get(key, { type: "json", consistency: "strong" });
+  return await store.get(key, { type: "json" });
 }
 
 function json(statusCode, body) {
@@ -75,7 +75,7 @@ exports.handler = async (event) => {
 
     const { connectLambda, getStore } = await import("@netlify/blobs");
     connectLambda(event);
-    const store = getStore("os4-config");
+    const store = getStore("os4-config", { consistency: "strong" });
     const key = keyForEmail(user.email);
 
     if (event.httpMethod === "GET") {
@@ -118,8 +118,8 @@ exports.handler = async (event) => {
       const text = await check.text();
       return json(400, {
         ok: false,
-        error: `O GitHub recusou o token (${check.status}). Confira se ele tem acesso ao repositório os4cortes e permissão Actions: Read and write.`,
-        detail: text.slice(0, 300),
+        error: `O GitHub recusou o token (${check.status}). Confira acesso ao repositório e Actions: Read and write.`,
+        detail: text.slice(0, 500),
       });
     }
 
