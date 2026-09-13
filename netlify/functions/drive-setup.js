@@ -38,15 +38,26 @@ exports.handler = async (event) => {
   if (!user) {
     return {
       statusCode: 401,
-      headers: { "content-type": "application/json; charset=utf-8" },
+      headers: { "content-type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
       body: JSON.stringify({ ok: false, error: "Não autenticado" }),
     };
   }
 
-  if (!cookies.os4_setup) {
+  const available = Boolean(cookies.os4_setup);
+  const checkOnly = String(event.queryStringParameters?.check || "") === "1";
+
+  if (checkOnly) {
+    return {
+      statusCode: 200,
+      headers: { "content-type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+      body: JSON.stringify({ ok: true, available }),
+    };
+  }
+
+  if (!available) {
     return {
       statusCode: 404,
-      headers: { "content-type": "application/json; charset=utf-8" },
+      headers: { "content-type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
       body: JSON.stringify({ ok: false, available: false }),
     };
   }
@@ -60,10 +71,15 @@ exports.handler = async (event) => {
 
   return {
     statusCode: 200,
+    multiValueHeaders: {
+      "Set-Cookie": [
+        "os4_setup=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+        "os4_setup_done=1; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=31536000",
+      ],
+    },
     headers: {
       "content-type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
-      "Set-Cookie": "os4_setup=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
     },
     body: JSON.stringify({
       ok: true,
