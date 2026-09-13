@@ -18,10 +18,8 @@ function validateState(state, secret) {
     const raw = fromBase64url(state);
     const [ts, sig] = raw.split(".");
     if (!ts || !sig) return false;
-
     const age = Date.now() - Number(ts);
     if (!Number.isFinite(age) || age < 0 || age > 15 * 60 * 1000) return false;
-
     const expected = crypto.createHmac("sha256", secret).update(ts).digest("hex");
     return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
   } catch {
@@ -44,7 +42,6 @@ async function driveFetch(accessToken, url, options = {}) {
       ...(options.headers || {}),
     },
   });
-
   if (!response.ok) throw new Error(`Drive API ${response.status}: ${await response.text()}`);
   return response.json();
 }
@@ -53,12 +50,10 @@ async function ensureFolder(accessToken) {
   const query = encodeURIComponent(
     "name = 'OS4 Cortes' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
   );
-
   const found = await driveFetch(
     accessToken,
     `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=10`
   );
-
   if (found.files?.length) return found.files[0].id;
 
   const created = await driveFetch(
@@ -72,7 +67,6 @@ async function ensureFolder(accessToken) {
       }),
     }
   );
-
   return created.id;
 }
 
@@ -108,7 +102,6 @@ exports.handler = async (event) => {
     }),
   });
   const tokenData = await tokenResponse.json();
-
   if (!tokenResponse.ok || !tokenData.access_token) {
     return { statusCode: 500, body: "Não foi possível concluir o login Google." };
   }
@@ -117,7 +110,6 @@ exports.handler = async (event) => {
     headers: { Authorization: `Bearer ${tokenData.access_token}` },
   });
   const user = await userResponse.json();
-
   if (!userResponse.ok || !user.email) {
     return { statusCode: 500, body: "Não foi possível identificar a conta Google." };
   }
@@ -142,19 +134,21 @@ exports.handler = async (event) => {
     sessionSecret
   );
 
-  const refreshToken = tokenData.refresh_token || "";
-  const setupCookie = refreshToken
-    ? `; os4_setup=${encodeURIComponent(JSON.stringify({ refreshToken, folderId }))}; Path=/; Secure; SameSite=Lax; Max-Age=900`
-    : "";
+  const cookies = [
+    `os4_session=${session}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`,
+  ];
+
+  if (tokenData.refresh_token) {
+    const setup = encodeURIComponent(JSON.stringify({
+      refreshToken: tokenData.refresh_token,
+      folderId,
+    }));
+    cookies.push(`os4_setup=${setup}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=900`);
+  }
 
   return {
     statusCode: 302,
-    multiValueHeaders: {
-      "Set-Cookie": [
-        `os4_session=${session}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`,
-        ...(setupCookie ? [setupCookie.slice(2)] : []),
-      ],
-    },
+    multiValueHeaders: { "Set-Cookie": cookies },
     headers: {
       Location: "/?login=ok",
       "Cache-Control": "no-store",
