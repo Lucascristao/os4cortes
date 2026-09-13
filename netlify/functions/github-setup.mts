@@ -1,4 +1,5 @@
-const crypto = require("crypto");
+import crypto from "node:crypto";
+import { blobStore, safeHandler } from "./_shared/platform.mts";
 
 function fromBase64url(value) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -54,47 +55,38 @@ async function getJSON(store, key) {
 }
 
 function json(statusCode, body) {
-  return {
-    statusCode,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
-    },
-    body: JSON.stringify(body),
-  };
+  return Response.json(body, { status: statusCode, headers: { "Cache-Control": "no-store" } });
 }
 
-exports.handler = async (event) => {
-  try {
-    const secret = process.env.OS4_SESSION_SECRET;
+export default safeHandler(async (request, context) => {
+    const secret = Netlify.env.get("OS4_SESSION_SECRET");
     if (!secret) return json(500, { ok: false, error: "Sessão não configurada." });
 
-    const cookies = parseCookies(event.headers.cookie || "");
+    const cookies = parseCookies(request.headers.get("cookie") || "");
     const user = verifySession(cookies.os4_session, secret);
     if (!user?.email) return json(401, { ok: false, error: "Não autenticado." });
 
-    const { connectLambda, getStore } = await import("@netlify/blobs");
-    connectLambda(event);
-    const store = getStore("os4-config", { consistency: "strong" });
+    const store = blobStore("os4-config", context);
     const key = keyForEmail(user.email);
 
-    if (event.httpMethod === "GET") {
+    if (request.method === "GET") {
       const config = await getJSON(store, key);
       return json(200, { ok: true, connected: Boolean(config?.token) });
     }
 
-    if (event.httpMethod === "DELETE") {
+    if (request.method === "DELETE") {
       await store.delete(key);
       return json(200, { ok: true, connected: false });
     }
 
-    if (event.httpMethod !== "POST") {
+    if (request.method !== "POST") {
       return json(405, { ok: false, error: "Método não permitido." });
     }
 
     let body;
     try {
-      body = JSON.parse(event.body || "{}");
+      body = await request.json();
+      if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid body");
     } catch {
       return json(400, { ok: false, error: "JSON inválido." });
     }
@@ -130,12 +122,4 @@ exports.handler = async (event) => {
     });
 
     return json(200, { ok: true, connected: true });
-  } catch (error) {
-    console.error("github-setup:", error);
-    return json(500, {
-      ok: false,
-      error: "Falha interna ao salvar a conexão com o GitHub.",
-      detail: String(error?.message || error).slice(0, 500),
-    });
-  }
-};
+});

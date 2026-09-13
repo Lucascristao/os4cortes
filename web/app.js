@@ -127,7 +127,7 @@ async function verificarSetupDrive() {
 
   try {
     const dados = await api("/.netlify/functions/drive-setup?check=1");
-    if (dados.available) {
+    if (dados.available && !dados.completed) {
       driveSetupCard.classList.remove("hidden");
       return;
     }
@@ -163,6 +163,15 @@ function restaurarSessao() {
     localStorage.removeItem(STORAGE_SESSION);
   }
 }
+
+$("#btnConcluirDriveSetup")?.addEventListener("click", async () => {
+  try {
+    await api("/.netlify/functions/drive-setup?complete=1");
+    driveSetupCard.classList.add("hidden");
+  } catch (erro) {
+    alert(erro.message);
+  }
+});
 
 async function carregarSessao() {
   try {
@@ -337,8 +346,13 @@ function atualizarTelaJob(job, kind) {
 
 function acompanharJob(id, kind) {
   if (pollTimer) clearInterval(pollTimer);
+  let consulting = false;
+  btnTranscrever.disabled = true;
+  btnGerarCortes.disabled = true;
 
   const consultar = async () => {
+    if (consulting) return;
+    consulting = true;
     try {
       const dados = await api(`/.netlify/functions/workflow-status?id=${encodeURIComponent(id)}`);
       const job = dados.job;
@@ -348,6 +362,8 @@ function acompanharJob(id, kind) {
         clearInterval(pollTimer);
         pollTimer = null;
         localStorage.removeItem(STORAGE_JOB);
+        btnTranscrever.disabled = false;
+        btnGerarCortes.disabled = false;
 
         if (kind === "transcribe") {
           mostrarTranscricao(job.result);
@@ -371,6 +387,19 @@ function acompanharJob(id, kind) {
       }
     } catch (erro) {
       console.warn("Falha ao consultar andamento:", erro);
+      progressDetail.textContent = [401, 403].includes(erro.status)
+        ? "Sua sessão expirou. Entre novamente para acompanhar o processamento."
+        : `Não foi possível atualizar o andamento: ${erro.message}. Tentando novamente…`;
+      if ([401, 403, 404].includes(erro.status)) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        btnTranscrever.disabled = false;
+        btnGerarCortes.disabled = false;
+        btnTranscrever.textContent = "Transcrever";
+        if (erro.status === 404) localStorage.removeItem(STORAGE_JOB);
+      }
+    } finally {
+      consulting = false;
     }
   };
 

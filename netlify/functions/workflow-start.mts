@@ -1,4 +1,5 @@
-const crypto = require("crypto");
+import crypto from "node:crypto";
+import { blobStore, safeHandler } from "./_shared/platform.mts";
 
 function fromBase64url(value) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -55,44 +56,42 @@ async function getJSON(store, key) {
 }
 
 function json(statusCode, body) {
-  return {
-    statusCode,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
-    },
-    body: JSON.stringify(body),
-  };
+  return Response.json(body, { status: statusCode, headers: { "Cache-Control": "no-store" } });
 }
 
 function validYoutubeUrl(value) {
   try {
     const url = new URL(value);
     const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    return ["youtube.com", "m.youtube.com", "youtu.be"].includes(host);
+    const id = host === "youtu.be" ? url.pathname.slice(1)
+      : url.pathname === "/watch" ? url.searchParams.get("v")
+      : url.pathname.match(/^\/(?:shorts|live|embed)\/([^/]+)\/?$/)?.[1];
+    return url.protocol === "https:" && !url.username && !url.password &&
+      ["youtube.com", "m.youtube.com", "youtu.be"].includes(host) && /^[\w-]{11}$/.test(id || "");
   } catch {
     return false;
   }
 }
 
-exports.handler = async (event) => {
-  if (event.httpMethod !== "POST") {
+export default safeHandler(async (request, context) => {
+  if (request.method !== "POST") {
     return json(405, { ok: false, error: "Método não permitido." });
   }
 
-  const secret = process.env.OS4_SESSION_SECRET;
-  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const secret = Netlify.env.get("OS4_SESSION_SECRET");
+  const googleClientSecret = Netlify.env.get("GOOGLE_CLIENT_SECRET");
   if (!secret || !googleClientSecret) {
     return json(500, { ok: false, error: "Credenciais internas não configuradas." });
   }
 
-  const cookies = parseCookies(event.headers.cookie || "");
+  const cookies = parseCookies(request.headers.get("cookie") || "");
   const user = verifySession(cookies.os4_session, secret);
   if (!user?.email) return json(401, { ok: false, error: "Não autenticado." });
 
   let body;
   try {
-    body = JSON.parse(event.body || "{}");
+    body = await request.json();
+      if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid body");
   } catch {
     return json(400, { ok: false, error: "JSON inválido." });
   }
@@ -102,10 +101,8 @@ exports.handler = async (event) => {
     return json(400, { ok: false, error: "Tipo de processamento inválido." });
   }
 
-  const { connectLambda, getStore } = await import("@netlify/blobs");
-  connectLambda(event);
-  const configStore = getStore("os4-config", { consistency: "strong" });
-  const jobsStore = getStore("os4-jobs", { consistency: "strong" });
+  const configStore = blobStore("os4-config", context);
+  const jobsStore = blobStore("os4-jobs", context);
   const configKey = `github:${ownerHash(user.email)}`;
   const githubConfig = await getJSON(configStore, configKey);
 
@@ -122,9 +119,7 @@ exports.handler = async (event) => {
 
   const requestId = crypto.randomUUID();
   const derivedCallbackToken = callbackToken(googleClientSecret, requestId);
-  const host = event.headers["x-forwarded-host"] || event.headers.host || "os4cortes.netlify.app";
-  const proto = event.headers["x-forwarded-proto"] || "https";
-  const callbackUrl = `${proto}://${host}/.netlify/functions/workflow-progress`;
+  const callbackUrl = new URL("/.netlify/functions/workflow-progress", request.url).href;
   const repo = githubConfig.repo || "Lucascristao/os4cortes";
 
   let workflow;
@@ -152,6 +147,21 @@ exports.handler = async (event) => {
     }
     if (!cuts.length || cuts.length > 30) {
       return json(400, { ok: false, error: "O pacote precisa ter entre 1 e 30 cortes." });
+    }
+
+    for (const [index, cut] of cuts.entries()) {
+      const seconds = (value) => {
+        const text = String(value ?? "").trim();
+        if (!/^\d+(?::\d{1,2}){0,2}(?:\.\d+)?$/.test(text)) return NaN;
+        const parts = text.split(":").map(Number);
+        if (parts.slice(1).some((part) => part >= 60)) return NaN;
+        return parts.reduce((total, part) => total * 60 + part, 0);
+      };
+      const start = seconds(cut?.inicio);
+      const end = seconds(cut?.fim);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+        return json(400, { ok: false, error: `Corte ${index + 1}: informe início e fim válidos, com fim maior que início.` });
+      }
     }
 
     const cutsJson = JSON.stringify(cuts);
@@ -210,4 +220,4 @@ exports.handler = async (event) => {
   }
 
   return json(202, { ok: true, requestId, status: "queued" });
-};
+});

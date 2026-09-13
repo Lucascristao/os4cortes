@@ -18,6 +18,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Validar API e integração
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          node --check web/app.js
+          node --check web/sw.js
+
       - name: Validar Python
         run: |
           python -m compileall processor

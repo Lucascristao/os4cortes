@@ -1,4 +1,5 @@
-const crypto = require("crypto");
+import crypto from "node:crypto";
+import { blobStore, safeHandler } from "./_shared/platform.mts";
 
 function fromBase64url(value) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -34,35 +35,26 @@ function ownerHash(email) {
 }
 
 async function getJSON(store, key) {
-  const result = await store.get(key, { type: "json", consistency: "strong" });
-  return result?.data ?? result ?? null;
+  return store.get(key, { type: "json" });
 }
 
 function json(statusCode, body) {
-  return {
-    statusCode,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
-    },
-    body: JSON.stringify(body),
-  };
+  return Response.json(body, { status: statusCode, headers: { "Cache-Control": "no-store" } });
 }
 
-exports.handler = async (event) => {
-  const secret = process.env.OS4_SESSION_SECRET;
+export default safeHandler(async (request, context) => {
+  if (request.method !== "GET") return json(405, { ok: false, error: "Método não permitido." });
+  const secret = Netlify.env.get("OS4_SESSION_SECRET");
   if (!secret) return json(500, { ok: false, error: "Sessão não configurada." });
 
-  const cookies = parseCookies(event.headers.cookie || "");
+  const cookies = parseCookies(request.headers.get("cookie") || "");
   const user = verifySession(cookies.os4_session, secret);
   if (!user?.email) return json(401, { ok: false, error: "Não autenticado." });
 
-  const requestId = String(event.queryStringParameters?.id || "").trim();
+  const requestId = String(new URL(request.url).searchParams.get("id") || "").trim();
   if (!requestId) return json(400, { ok: false, error: "ID do processamento ausente." });
 
-  const { connectLambda, getStore } = await import("@netlify/blobs");
-  connectLambda(event);
-  const store = getStore("os4-jobs");
+  const store = blobStore("os4-jobs", context);
   const job = await getJSON(store, requestId);
   if (!job || job.ownerHash !== ownerHash(user.email)) {
     return json(404, { ok: false, error: "Processamento não encontrado." });
@@ -87,4 +79,4 @@ exports.handler = async (event) => {
   };
 
   return json(200, { ok: true, job: safe });
-};
+});
