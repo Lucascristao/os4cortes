@@ -22,9 +22,6 @@ on:
       callback_url:
         description: "Callback de progresso"
         required: true
-      callback_token:
-        description: "Token temporário do callback"
-        required: true
 
 permissions:
   contents: read
@@ -41,7 +38,6 @@ jobs:
       GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
       OS4_REQUEST_ID: ${{ inputs.request_id }}
       OS4_PROGRESS_URL: ${{ inputs.callback_url }}
-      OS4_CALLBACK_TOKEN: ${{ inputs.callback_token }}
       OS4_FOLDER_ID: ${{ inputs.folder_id }}
       OS4_VIDEO_FILE_ID: ${{ inputs.video_file_id }}
       OS4_TRANSCRIPT_JSON_FILE_ID: ${{ inputs.transcript_json_file_id }}
@@ -84,11 +80,12 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          import json, os, urllib.request
+          import hashlib, hmac, json, os, urllib.request
           url = os.environ.get("OS4_PROGRESS_URL", "")
-          token = os.environ.get("OS4_CALLBACK_TOKEN", "")
           rid = os.environ.get("OS4_REQUEST_ID", "")
-          if url and token and rid:
+          secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+          if url and rid and secret:
+              token = hmac.new(secret.encode(), f"os4-progress:{rid}".encode(), hashlib.sha256).hexdigest()
               payload = json.dumps({
                   "request_id": rid,
                   "token": token,
