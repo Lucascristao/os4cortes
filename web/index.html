@@ -85,6 +85,23 @@
         </article>
       </section>
 
+      <section id="progressCard" class="card progress-card" aria-live="polite">
+        <div class="progress-head">
+          <div>
+            <p class="eyebrow">ANDAMENTO</p>
+            <h2 id="progressTitle">Aguardando processamento</h2>
+          </div>
+          <strong id="progressPercent" class="progress-percent">0%</strong>
+        </div>
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progresso do processamento">
+          <div id="progressBar" class="progress-bar" style="width:0%"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progressDetail">Cole uma URL e inicie a transcrição.</span>
+          <span id="progressTime"></span>
+        </div>
+      </section>
+
       <section class="card">
         <div class="section-title">
           <div>
