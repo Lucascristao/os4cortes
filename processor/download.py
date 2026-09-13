@@ -62,8 +62,13 @@ def baixar_youtube(
         opts_pot["extractor_args"] = {
             "youtube": {
                 "player_client": ["mweb"],
-            }
+            },
+            "youtubepot-bgutilhttp": {
+                "base_url": ["http://127.0.0.1:4416"],
+            },
         }
+        # Temporário no POC: deixa o log explícito para confirmar que o provider foi carregado.
+        opts_pot["verbose"] = True
 
         try:
             _baixar(url, opts_pot)
