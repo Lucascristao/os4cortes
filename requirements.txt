@@ -1,4 +1,5 @@
 yt-dlp[default]
+bgutil-ytdlp-pot-provider==2.0.0
 faster-whisper
 opencv-python-headless
 numpy
