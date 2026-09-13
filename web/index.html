@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111111">
+  <meta name="description" content="OS4 Cortes — transforme vídeos longos em cortes verticais prontos para redes sociais.">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/style.css">
+  <title>OS4 Cortes</title>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">OS4 CORTES</p>
+        <h1>Cortes prontos para publicar</h1>
+      </div>
+      <span class="badge">PWA</span>
+    </header>
+
+    <section class="card">
+      <label for="videoUrl">URL do vídeo</label>
+      <div class="input-row">
+        <input id="videoUrl" type="url" placeholder="https://youtube.com/watch?v=..." autocomplete="off">
+        <button id="btnTranscrever" type="button">Transcrever</button>
+      </div>
+      <p class="hint">Nesta primeira fase, o botão ainda não dispara o GitHub Actions. Estamos montando o motor e a conexão.</p>
+    </section>
+
+    <section class="grid">
+      <article class="card status-card">
+        <span class="status-dot idle"></span>
+        <div>
+          <strong>Vídeo</strong>
+          <p>Aguardando</p>
+        </div>
+      </article>
+      <article class="card status-card">
+        <span class="status-dot idle"></span>
+        <div>
+          <strong>Transcrição</strong>
+          <p>Aguardando</p>
+        </div>
+      </article>
+      <article class="card status-card">
+        <span class="status-dot idle"></span>
+        <div>
+          <strong>Cortes</strong>
+          <p>Aguardando</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">PACOTE EDITORIAL</p>
+          <h2>Cortes, legenda da postagem e hashtags</h2>
+        </div>
+      </div>
+      <textarea id="pacote" rows="10" placeholder='Cole aqui o JSON dos cortes quando esta etapa estiver disponível.'></textarea>
+      <button class="secondary" id="btnImportar" type="button">Importar pacote</button>
+    </section>
+
+    <section class="card muted-card">
+      <p><strong>Próxima prova técnica:</strong> executar um corte real no GitHub Actions com o mesmo tracking + Archivo Black já validado no Colab.</p>
+    </section>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
