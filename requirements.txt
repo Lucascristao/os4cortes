@@ -1,0 +1,7 @@
+yt-dlp[default]
+faster-whisper
+opencv-python-headless
+numpy
+google-api-python-client
+google-auth
+google-auth-httplib2
