@@ -1,5 +1,8 @@
 const crypto = require("crypto");
 
+const SESSION_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
+const SESSION_TTL_MS = SESSION_MAX_AGE_SECONDS * 1000;
+
 function fromBase64url(value) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   return Buffer.from(normalized, "base64").toString("utf8");
@@ -31,7 +34,9 @@ function validateState(state, secret) {
     const age = Date.now() - Number(ts);
     if (!Number.isFinite(age) || age < 0 || age > 15 * 60 * 1000) return false;
     const expected = crypto.createHmac("sha256", secret).update(ts).digest("hex");
-    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+    const left = Buffer.from(sig, "utf8");
+    const right = Buffer.from(expected, "utf8");
+    return left.length === right.length && crypto.timingSafeEqual(left, right);
   } catch {
     return false;
   }
@@ -142,13 +147,13 @@ exports.handler = async (event) => {
       email: user.email,
       name: user.name || user.email,
       picture: user.picture || "",
-      exp: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      exp: Date.now() + SESSION_TTL_MS,
     },
     sessionSecret
   );
 
   const cookies = [
-    `os4_session=${session}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`,
+    `os4_session=${session}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}`,
   ];
 
   if (tokenData.refresh_token && !setupDone) {
