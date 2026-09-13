@@ -30,6 +30,11 @@ def ffprobe_duration(video_path: str | Path) -> float:
     return float(r.stdout.strip())
 
 
+def progresso(stage: str, overall: float, detail: str = "") -> None:
+    extra = f"|detail={detail}" if detail else ""
+    print(f"OS4_PROGRESS|stage={stage}|overall={overall:.1f}{extra}", flush=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Prova de conceito: um corte completo do OS4 Cortes."
@@ -59,6 +64,7 @@ def main() -> int:
 
     cookies = os.getenv("YOUTUBE_COOKIES", "").strip() or None
 
+    progresso("preparando", 2, "Preparando ambiente")
     print("[1/6] Baixando vídeo...")
     video = baixar_youtube(
         args.url,
@@ -66,6 +72,7 @@ def main() -> int:
         cookies_path=cookies,
         altura_maxima=1080,
     )
+    progresso("download", 12, "Vídeo baixado")
 
     duracao = ffprobe_duration(video)
     if inicio < 0 or fim > duracao + 1:
@@ -75,6 +82,7 @@ def main() -> int:
 
     print("[2/6] Extraindo áudio...")
     audio = extrair_audio(video, work / "audio.wav")
+    progresso("audio", 15, f"Áudio preparado ({duracao:.1f}s)")
 
     print("[3/6] Transcrevendo com Faster-Whisper em CPU...")
     transcricao_json, transcricao_txt, _ = transcrever(
@@ -89,6 +97,7 @@ def main() -> int:
     titulo_arquivo = nome_seguro(args.titulo)
     video_corte = out / f"corte_01_{titulo_arquivo}.mp4"
 
+    progresso("tracking", 58, "Iniciando enquadramento 9:16")
     print("[4/6] Renderizando tracking 9:16...")
     render_tracking_9x16(
         video,
@@ -97,8 +106,10 @@ def main() -> int:
         video_corte,
         work_dir=work,
     )
+    progresso("tracking", 78, "Tracking 9:16 concluído")
 
     print("[5/6] Gerando legenda Archivo Black + SRT...")
+    progresso("legendas", 80, "Gerando legendas")
     srt_path, video_legenda = criar_legendas_corte(
         transcricao_json,
         video_corte,
@@ -115,8 +126,10 @@ def main() -> int:
     )
 
     shutil.copy2(transcricao_txt, out / "transcricao_para_chatgpt.txt")
+    progresso("legendas", 90, "Vídeo legendado e arquivos auxiliares prontos")
 
     print("[6/6] Salvando resultados...")
+    progresso("drive", 92, "Salvando no Google Drive")
     uploader = uploader_por_env()
 
     arquivos = [
@@ -128,8 +141,11 @@ def main() -> int:
     ]
 
     if uploader is not None:
-        for arquivo in arquivos:
+        total_arquivos = len(arquivos)
+        for i, arquivo in enumerate(arquivos, start=1):
             file_id = uploader.upload(arquivo)
+            percentual = 92 + (i / total_arquivos) * 8
+            progresso("drive", percentual, f"Salvo {i}/{total_arquivos}: {arquivo.name}")
             print(f"Drive: {arquivo.name} -> {file_id}")
     else:
         print(
@@ -141,6 +157,7 @@ def main() -> int:
     for arquivo in arquivos:
         print(f"- {arquivo}")
 
+    progresso("concluido", 100, "Processamento concluído")
     return 0
 
 
