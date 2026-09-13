@@ -1,0 +1,13 @@
+{
+  "name": "OS4 Cortes",
+  "short_name": "OS4 Cortes",
+  "description": "Cortes verticais com tracking, legendas e pacote de publicação.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0b0b",
+  "theme_color": "#111111",
+  "lang": "pt-BR",
+  "orientation": "portrait-primary",
+  "categories": ["video", "productivity", "utilities"]
+}
