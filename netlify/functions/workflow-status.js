@@ -60,7 +60,8 @@ exports.handler = async (event) => {
   const requestId = String(event.queryStringParameters?.id || "").trim();
   if (!requestId) return json(400, { ok: false, error: "ID do processamento ausente." });
 
-  const { getStore } = await import("@netlify/blobs");
+  const { connectLambda, getStore } = await import("@netlify/blobs");
+  connectLambda(event);
   const store = getStore("os4-jobs");
   const job = await getJSON(store, requestId);
   if (!job || job.ownerHash !== ownerHash(user.email)) {
