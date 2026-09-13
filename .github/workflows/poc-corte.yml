@@ -81,9 +81,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Preparar PO Token do YouTube
+      - name: Preparar e iniciar PO Token do YouTube
         shell: bash
         run: |
+          set -euo pipefail
           rm -rf "$HOME/bgutil-ytdlp-pot-provider"
           git clone --depth 1 --branch 2.0.0 \
             https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git \
@@ -91,8 +92,27 @@ jobs:
           cd "$HOME/bgutil-ytdlp-pot-provider/server"
           npm ci
           npx tsc
+
+          nohup node build/main.js > "$RUNNER_TEMP/bgutil-pot.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/bgutil-pot.pid"
+
+          pronto=0
+          for tentativa in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4416/ping >/dev/null 2>&1; then
+              pronto=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$pronto" != "1" ]; then
+            echo "Servidor PO Token não iniciou corretamente."
+            cat "$RUNNER_TEMP/bgutil-pot.log" || true
+            exit 1
+          fi
+
           echo "YTDLP_USE_POT=1" >> "$GITHUB_ENV"
-          echo "PO Token provider configurado."
+          echo "Servidor PO Token ativo em 127.0.0.1:4416."
 
       - name: Preparar cookies do YouTube, se configurados
         shell: bash
@@ -118,6 +138,13 @@ jobs:
             --hashtags "${{ inputs.hashtags }}" \
             --workdir ".work" \
             --output "output"
+
+      - name: Diagnóstico PO Token
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== bgutil PO Token ==="
+          cat "$RUNNER_TEMP/bgutil-pot.log" 2>/dev/null || true
 
       - name: Listar resultados
         if: always()
