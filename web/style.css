@@ -53,6 +53,13 @@ h2 { font-size: 1.1rem; margin-bottom: 0; }
   margin-bottom: 14px;
 }
 
+.setup-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: center;
+}
+
 label { display: block; font-weight: 750; margin-bottom: 10px; }
 .input-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
 
@@ -68,7 +75,8 @@ input, textarea {
 input:focus, textarea:focus { border-color: #8a7325; box-shadow: 0 0 0 3px rgba(255,201,40,.08); }
 textarea { resize: vertical; min-height: 170px; margin-top: 14px; }
 
-button {
+button,
+.button-link {
   border: 0;
   border-radius: 12px;
   padding: 13px 16px;
@@ -76,6 +84,15 @@ button {
   color: var(--accent-ink);
   font-weight: 850;
 }
+
+.button-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
 button.secondary { margin-top: 10px; background: #2a2a2a; color: #fff; }
 
 .hint { color: var(--muted); font-size: .86rem; margin: 12px 0 0; line-height: 1.45; }
@@ -90,8 +107,10 @@ button.secondary { margin-top: 10px; background: #2a2a2a; color: #fff; }
 
 @media (max-width: 680px) {
   .app-shell { padding-left: 13px; padding-right: 13px; }
-  .input-row { grid-template-columns: 1fr; }
+  .input-row,
+  .setup-card { grid-template-columns: 1fr; }
   .grid { grid-template-columns: 1fr; }
   .status-card { min-height: 72px; }
-  button { width: 100%; }
+  button,
+  .button-link { width: 100%; }
 }
