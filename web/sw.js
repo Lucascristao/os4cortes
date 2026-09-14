@@ -1,4 +1,4 @@
-const CACHE = "os4-cortes-v7";
+const CACHE = "os4-cortes-v8";
 const APP_SHELL = ["/", "/index.html", "/style.css", "/app.js", "/enhancements.js", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
