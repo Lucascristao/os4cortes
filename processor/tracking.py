@@ -7,6 +7,21 @@ from pathlib import Path
 
 import cv2
 
+from .framing import Face, StableFraming
+
+
+def mudou_plano(previous, current) -> tuple[bool, bool]:
+    """Detecta mudança de plano e se é um corte seco (hard cut)."""
+    if previous is None:
+        return True, True
+    difference = float(cv2.absdiff(previous, current).mean())
+    before = cv2.calcHist([previous], [0], None, [32], [0, 256])
+    after = cv2.calcHist([current], [0], None, [32], [0, 256])
+    correlation = cv2.compareHist(before, after, cv2.HISTCMP_CORREL)
+    corte_seco = difference > 65.0 or (difference > 40.0 and correlation < 0.40)
+    mudou = corte_seco or (difference > 32.0 and correlation < 0.65)
+    return mudou, corte_seco
+
 
 YUNET_URL = (
     "https://media.githubusercontent.com/media/"
@@ -104,9 +119,8 @@ def render_tracking_9x16(
     )
 
     crop_w = min(int(round(h * 9 / 16)), w)
-    centro_x = w / 2
-    alvo_x = centro_x
-    alpha = 0.18
+    framing = StableFraming(crop_w / w)
+    previous_scene = None
 
     cmd = [
         "ffmpeg", "-y",
@@ -139,29 +153,36 @@ def render_tracking_9x16(
             if not ok:
                 break
 
-            if frame_idx % detectar_a_cada == 0:
+            scene = cv2.resize(
+                cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (64, 36)
+            )
+            mudou, corte_seco = mudou_plano(previous_scene, scene)
+            previous_scene = scene
+
+            if mudou:
+                framing.reset_shot(snap=corte_seco)
+
+            if mudou or frame_idx % detectar_a_cada == 0:
                 detector.setInputSize((w, h))
                 _, faces = detector.detect(frame)
 
-                if faces is not None and len(faces) > 0:
-                    melhor = None
-                    melhor_score = -1.0
+                detections = (
+                    []
+                    if faces is None
+                    else [
+                        Face(
+                            float(f[0]) / w,
+                            float(f[1]) / h,
+                            float(f[2]) / w,
+                            float(f[3]) / h,
+                            float(f[-1]),
+                        )
+                        for f in faces
+                    ]
+                )
+                framing.observe(detections, frame_idx / fps)
 
-                    for face in faces:
-                        x, y, fw, fh = face[:4]
-                        conf = float(face[-1])
-                        area = float(fw * fh)
-                        score = area * max(conf, 0.01)
-
-                        if score > melhor_score:
-                            melhor_score = score
-                            melhor = face
-
-                    if melhor is not None:
-                        x, y, fw, fh = melhor[:4]
-                        alvo_x = float(x + fw / 2)
-
-            centro_x = centro_x * (1 - alpha) + alvo_x * alpha
+            centro_x = framing.position(frame_idx / fps) * w
 
             x0 = int(round(centro_x - crop_w / 2))
             x0 = max(0, min(w - crop_w, x0))

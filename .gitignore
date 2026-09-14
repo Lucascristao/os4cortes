@@ -24,6 +24,8 @@ cookies.txt
 *.zip
 work/
 output/
+outputs_teste/
+.render_work/
 
 # SO / editor
 .DS_Store
