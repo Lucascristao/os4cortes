@@ -60,6 +60,29 @@ export default safeHandler(async (request, context) => {
     return json(404, { ok: false, error: "Processamento não encontrado." });
   }
 
+  const now = Date.now();
+  const createdTime = new Date(job.createdAt || 0).getTime();
+  const updatedTime = new Date(job.updatedAt || job.createdAt || 0).getTime();
+  const ageSinceCreated = now - createdTime;
+  const ageSinceUpdated = now - updatedTime;
+
+  // Auto-expira trabalhos que ficaram travados na fila sem início no GitHub Actions
+  if (job.status === "queued" && ageSinceCreated > 3 * 60 * 1000) {
+    job.status = "error";
+    job.stage = "timeout";
+    job.detail = "O tempo limite de espera na fila do GitHub Actions foi excedido. Tente novamente.";
+    job.error = "Timeout na fila do GitHub Actions";
+    job.updatedAt = new Date().toISOString();
+    try { await store.setJSON(requestId, job); } catch {}
+  } else if (job.status === "running" && ageSinceUpdated > 45 * 60 * 1000) {
+    job.status = "error";
+    job.stage = "timeout";
+    job.detail = "Tempo limite de execução excedido.";
+    job.error = "Timeout de processamento";
+    job.updatedAt = new Date().toISOString();
+    try { await store.setJSON(requestId, job); } catch {}
+  }
+
   const safe = {
     id: requestId,
     kind: job.kind,
@@ -80,3 +103,4 @@ export default safeHandler(async (request, context) => {
 
   return json(200, { ok: true, job: safe });
 });
+

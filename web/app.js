@@ -3,6 +3,7 @@ const $ = (selector) => document.querySelector(selector);
 const loginView = $("#loginView");
 const appView = $("#appView");
 const btnTranscrever = $("#btnTranscrever");
+const btnCancelarJob = $("#btnCancelarJob");
 const btnImportar = $("#btnImportar");
 const btnGerarCortes = $("#btnGerarCortes");
 const btnMostrarDriveSetup = $("#btnMostrarDriveSetup");
@@ -314,13 +315,51 @@ btnTranscrever?.addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({ kind: "transcribe", videoUrl: url }),
     });
-    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "transcribe" }));
+    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "transcribe", timestamp: Date.now() }));
+    alternarBotaoCancelar(true);
     acompanharJob(dados.requestId, "transcribe");
   } catch (erro) {
     btnTranscrever.disabled = false;
     btnTranscrever.textContent = "Transcrever";
     setStatus("video", "Erro", "error");
     atualizarProgresso({ percent: 0, title: "Não foi possível iniciar", detail: erro.message });
+  }
+});
+
+function alternarBotaoCancelar(visivel) {
+  if (!btnCancelarJob) return;
+  if (visivel) {
+    btnCancelarJob.classList.remove("hidden");
+  } else {
+    btnCancelarJob.classList.add("hidden");
+  }
+}
+
+function cancelarJobAtual() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  localStorage.removeItem(STORAGE_JOB);
+  alternarBotaoCancelar(false);
+  btnTranscrever.disabled = false;
+  btnTranscrever.textContent = "Transcrever";
+  btnGerarCortes.disabled = false;
+  btnGerarCortes.textContent = "Gerar todos os cortes";
+  setStatus("video", "Aguardando", "idle");
+  setStatus("transcricao", "Aguardando", "idle");
+  setStatus("cortes", "Aguardando", "idle");
+  atualizarProgresso({
+    percent: 0,
+    title: "Aguardando processamento",
+    detail: "Processamento cancelado. Cole a URL e inicie a transcrição.",
+    time: "",
+  });
+}
+
+btnCancelarJob?.addEventListener("click", () => {
+  if (confirm("Deseja cancelar o acompanhamento e destravar os botões para tentar novamente?")) {
+    cancelarJobAtual();
   }
 });
 
@@ -356,6 +395,7 @@ function acompanharJob(id, kind) {
   let consulting = false;
   btnTranscrever.disabled = true;
   btnGerarCortes.disabled = true;
+  alternarBotaoCancelar(true);
 
   const consultar = async () => {
     if (consulting) return;
@@ -369,6 +409,7 @@ function acompanharJob(id, kind) {
         clearInterval(pollTimer);
         pollTimer = null;
         localStorage.removeItem(STORAGE_JOB);
+        alternarBotaoCancelar(false);
         btnTranscrever.disabled = false;
         btnGerarCortes.disabled = false;
 
@@ -385,12 +426,31 @@ function acompanharJob(id, kind) {
         clearInterval(pollTimer);
         pollTimer = null;
         localStorage.removeItem(STORAGE_JOB);
+        alternarBotaoCancelar(false);
         setStatus(kind === "render" ? "cortes" : "video", "Erro", "error");
         atualizarProgresso({ percent: job.percent || 100, title: "Processamento interrompido", detail: job.error || job.detail || "Falha no processamento." });
         btnTranscrever.disabled = false;
         btnTranscrever.textContent = "Transcrever";
         btnGerarCortes.disabled = false;
         btnGerarCortes.textContent = "Gerar todos os cortes";
+      } else if (job.status === "queued") {
+        const jobCreatedAt = job.createdAt ? new Date(job.createdAt).getTime() : 0;
+        if (jobCreatedAt && (Date.now() - jobCreatedAt > 3 * 60 * 1000)) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          localStorage.removeItem(STORAGE_JOB);
+          alternarBotaoCancelar(false);
+          btnTranscrever.disabled = false;
+          btnTranscrever.textContent = "Transcrever";
+          btnGerarCortes.disabled = false;
+          btnGerarCortes.textContent = "Gerar todos os cortes";
+          setStatus(kind === "render" ? "cortes" : "video", "Aguardando", "idle");
+          atualizarProgresso({
+            percent: 0,
+            title: "Processamento expirado",
+            detail: "O processamento anterior demorou muito para iniciar na fila do GitHub Actions. O botão foi liberado.",
+          });
+        }
       }
     } catch (erro) {
       console.warn("Falha ao consultar andamento:", erro);
@@ -400,6 +460,7 @@ function acompanharJob(id, kind) {
       if ([401, 403, 404].includes(erro.status)) {
         clearInterval(pollTimer);
         pollTimer = null;
+        alternarBotaoCancelar(false);
         btnTranscrever.disabled = false;
         btnGerarCortes.disabled = false;
         btnTranscrever.textContent = "Transcrever";
@@ -419,13 +480,22 @@ function retomarJob() {
     const raw = localStorage.getItem(STORAGE_JOB);
     if (!raw) return;
     const job = JSON.parse(raw);
-    if (!job?.id || !job?.kind) return;
+    if (!job?.id || !job?.kind) {
+      localStorage.removeItem(STORAGE_JOB);
+      return;
+    }
+    // Se o job salvo no navegador for anterior a 5 minutos, descarta para evitar travamento
+    if (job.timestamp && (Date.now() - Number(job.timestamp) > 5 * 60 * 1000)) {
+      localStorage.removeItem(STORAGE_JOB);
+      return;
+    }
     if (job.kind === "transcribe") {
       btnTranscrever.disabled = true;
       btnTranscrever.textContent = "Processando...";
     } else {
       btnGerarCortes.disabled = true;
     }
+    alternarBotaoCancelar(true);
     acompanharJob(job.id, job.kind);
   } catch {
     localStorage.removeItem(STORAGE_JOB);
@@ -658,7 +728,8 @@ btnGerarCortes?.addEventListener("click", async () => {
         cuts,
       }),
     });
-    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "render" }));
+    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "render", timestamp: Date.now() }));
+    alternarBotaoCancelar(true);
     acompanharJob(dados.requestId, "render");
   } catch (erro) {
     btnGerarCortes.disabled = false;

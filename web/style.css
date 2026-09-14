@@ -198,6 +198,29 @@ button:disabled { opacity: .55; cursor: progress; }
 }
 .progress-meta span:last-child { white-space: nowrap; }
 
+.progress-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.btn-cancel-job {
+  width: auto;
+  background: rgba(255, 107, 107, 0.08);
+  color: #ff7878;
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  font-size: .82rem;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .2s, border-color .2s, color .2s;
+}
+.btn-cancel-job:hover {
+  background: rgba(255, 107, 107, 0.2);
+  border-color: #ff6b6b;
+  color: #fff;
+}
+
 .cuts-editor { display: grid; gap: 12px; margin-top: 16px; }
 .cut-card { border: 1px solid #303030; background: #101010; border-radius: 14px; padding: 14px; }
 .cut-card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }

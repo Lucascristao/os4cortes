@@ -99,4 +99,27 @@ test('preview writes are isolated from production stores',async()=>{
  assert.equal(await blobStore('os4-config',context).get('preview-only'),null);
 });
 
+test('stale queued jobs auto-expire on status polling',async()=>{
+ const oldId='stale-queued-123';
+ const oldJob={
+  ownerHash:crypto.createHash('sha256').update('owner@example.test').digest('hex'),
+  callbackHash:'abc',
+  kind:'transcribe',
+  status:'queued',
+  stage:'fila',
+  detail:'Enviado para o GitHub Actions',
+  percent:0,
+  createdAt:new Date(Date.now()-4*60*1000).toISOString(),
+  updatedAt:new Date(Date.now()-4*60*1000).toISOString(),
+ };
+ await blobStore('os4-jobs',context).setJSON(oldId,oldJob);
+ const res=await status(req('workflow-status?id='+oldId),context);
+ assert.equal(res.status,200);
+ const data=await res.json();
+ assert.equal(data.job.status,'error');
+ assert.equal(data.job.stage,'timeout');
+ assert.ok(data.job.error.includes('Timeout'));
+});
+
+
 
