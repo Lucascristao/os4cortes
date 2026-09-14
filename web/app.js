@@ -206,12 +206,11 @@ $("#btnConcluirDriveSetup")?.addEventListener("click", async () => {
 });
 
 function logout() {
-  document.cookie = "os4_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
   localStorage.removeItem(STORAGE_SESSION);
   localStorage.removeItem(STORAGE_JOB);
   localStorage.removeItem(STORAGE_RESULTS);
   localStorage.removeItem(STORAGE_PACKAGE);
-  location.href = "/";
+  location.href = "/.netlify/functions/auth-logout";
 }
 
 $(".logout-link")?.addEventListener("click", (event) => {
@@ -236,15 +235,22 @@ async function api(path, options = {}) {
 
 async function carregarSessao() {
   try {
-    const dados = await api("/.netlify/functions/auth-me");
-    if (!dados?.user) throw new Error("Sem usuário");
+    const dados = await api("/.netlify/functions/auth-session");
+    if (!dados?.authenticated || !dados?.user) throw new Error("Sem usuário");
 
     loginView.classList.add("hidden");
     appView.classList.remove("hidden");
 
+    $("#userName").textContent = dados.user.name || "Conta Google";
     $("#userEmail").textContent = dados.user.email || "";
-    $("#userName").textContent = dados.user.name || "Criador";
-    $("#userAvatar").src = dados.user.picture || "";
+
+    if (dados.user.picture) {
+      const foto = $("#userPicture");
+      if (foto) {
+        foto.src = dados.user.picture;
+        foto.classList.remove("hidden");
+      }
+    }
 
     await verificarSetupDrive();
     await verificarGithubSetup();
