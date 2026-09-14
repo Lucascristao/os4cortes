@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import urllib.request
 from dataclasses import dataclass
@@ -18,13 +19,15 @@ DEFAULT_FONT_DIR = Path.home() / ".local" / "share" / "fonts" / "cortai"
 @dataclass
 class CaptionStyle:
     font_name: str = "Archivo Black"
-    font_size: int = 68
+    font_size: int = 88
     margin_v: int = 330
     outline: int = 4
     shadow: int = 0
-    max_words: int = 9
-    max_chars: int = 54
-    pause_cut: float = 0.55
+    max_words: int = 6
+    max_chars: int = 34
+    pause_cut: float = 0.5
+    max_duration: float = 2.6
+    line_chars: int = 21
 
 
 def garantir_archivo_black(
@@ -36,6 +39,14 @@ def garantir_archivo_black(
 
     if not font_path.exists() or font_path.stat().st_size < 50_000:
         urllib.request.urlretrieve(ARCHIVO_BLACK_URL, font_path)
+
+    # fontconfig validates the family on Linux runners. Local Windows previews
+    # use the same TTF through fontsdir, without changing installed system fonts.
+    if not shutil.which("fc-scan"):
+        from PIL import ImageFont
+        if "Archivo Black" not in ImageFont.truetype(str(font_path), 20).getname()[0]:
+            raise RuntimeError("O TTF baixado não foi reconhecido como Archivo Black.")
+        return font_path
 
     scan = subprocess.run(
         ["fc-scan", "--format", "%{family}\n", str(font_path)],
@@ -58,18 +69,12 @@ def garantir_archivo_black(
 
 
 def srt_tempo(segundos: float) -> str:
-    segundos = max(0.0, float(segundos))
-    horas = int(segundos // 3600)
-    minutos = int((segundos % 3600) // 60)
-    resto = segundos % 60
-    segundos_int = int(resto)
-    ms = int(round((resto - segundos_int) * 1000))
+    total_ms = max(0, round(float(segundos) * 1000))
+    total_seconds, ms = divmod(total_ms, 1000)
+    hours, rest = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(rest, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{ms:03d}"
 
-    if ms >= 1000:
-        segundos_int += 1
-        ms = 0
-
-    return f"{horas:02d}:{minutos:02d}:{segundos_int:02d},{ms:03d}"
 
 
 def ass_tempo(segundos: float) -> str:
@@ -171,58 +176,63 @@ def palavras_do_corte(
     return saida
 
 
+# Small language-independent layout limits, with Portuguese/English connector
+# hints. These are preferences, never reasons to drop or rewrite spoken words.
+CONNECTORS = {"a", "o", "as", "os", "um", "uma", "de", "do", "da", "dos", "das",
+              "em", "no", "na", "nos", "nas", "por", "para", "com", "e", "que",
+              "the", "a", "an", "of", "to", "and", "with", "for", "in"}
+
+
+def custo_fronteira(words: list[dict], index: int) -> float:
+    previous = words[index - 1]["texto"].lower().strip()
+    following = words[index]["texto"].lower().strip() if index < len(words) else ""
+    if previous in {"dentro", "fora", "através", "junto", "apesar"} and following in {"de", "do", "da", "dos", "das"}:
+        return 12
+    if re.search(r"[.!?;:]$", previous):
+        return -8
+    if previous.endswith(","):
+        return -4
+    return 7 if previous in CONNECTORS else 0
+
+
 def agrupar_palavras(palavras: list[dict], style: CaptionStyle) -> list[list[dict]]:
-    grupos: list[list[dict]] = []
-    atual: list[dict] = []
-
-    for palavra in palavras:
-        pausa = palavra["inicio"] - atual[-1]["fim"] if atual else 0.0
-        texto_teste = juntar_palavras(atual + [palavra])
-
-        precisa_quebrar = bool(atual) and (
-            len(atual) >= style.max_words
-            or len(texto_teste) > style.max_chars
-            or pausa >= style.pause_cut
-        )
-
-        if precisa_quebrar:
-            grupos.append(atual)
-            atual = []
-
-        atual.append(palavra)
-
-        if re.search(r"[.!?]$", palavra["texto"]) and len(atual) >= 4:
-            grupos.append(atual)
-            atual = []
-
-    if atual:
-        grupos.append(atual)
-
+    grupos = []
+    offset = 0
+    while offset < len(palavras):
+        remaining = palavras[offset:]
+        count = 1
+        while count < min(style.max_words, len(remaining)):
+            previous, current = remaining[count - 1], remaining[count]
+            if (current["inicio"] - previous["fim"] >= style.pause_cut
+                    or re.search(r"[.!?]$", previous["texto"])
+                    or len(juntar_palavras(remaining[:count + 1])) > style.max_chars
+                    or current["fim"] - remaining[0]["inicio"] > style.max_duration):
+                break
+            count += 1
+        # Prefer complete short phrases over a hard six-word cut ending in 'de'.
+        if count >= 4:
+            count = min(range(3, count + 1), key=lambda k:
+                        custo_fronteira(remaining, k) + (count - k) * 1.5
+                        + (4 if len(remaining) - k == 1 else 0))
+        grupos.append(remaining[:count])
+        offset += count
     return grupos
 
 
-def melhor_quebra(palavras: list[dict]) -> int:
-    if len(palavras) <= 3:
+def melhor_quebra(palavras: list[dict], line_chars: int = 21) -> int:
+    if len(juntar_palavras(palavras)) <= line_chars or len(palavras) <= 1:
         return len(palavras)
-
-    melhor_score = None
-    melhor_idx = len(palavras)
-
-    for corte in range(1, len(palavras)):
-        linha1 = " ".join(p["texto"] for p in palavras[:corte])
-        linha2 = " ".join(p["texto"] for p in palavras[corte:])
-        maior = max(len(linha1), len(linha2))
-        diferenca = abs(len(linha1) - len(linha2))
-        score = maior * 2 + diferenca
-
-        if melhor_score is None or score < melhor_score:
-            melhor_score = score
-            melhor_idx = corte
-
-    return melhor_idx
+    def score(index):
+        left = juntar_palavras(palavras[:index])
+        right = juntar_palavras(palavras[index:])
+        overflow = max(0, len(left) - line_chars) + max(0, len(right) - line_chars)
+        return (overflow * 30 + abs(len(left) - len(right))
+                + custo_fronteira(palavras, index)
+                + (5 if min(index, len(palavras) - index) == 1 else 0))
+    return min(range(1, len(palavras)), key=score)
 
 
-def texto_ass_grupo(palavras: list[dict], indice_ativo: int) -> str:
+def texto_ass_grupo(palavras: list[dict], indice_ativo: int, line_chars: int = 21) -> str:
     tokens: list[str] = []
 
     for i, p in enumerate(palavras):
@@ -231,7 +241,7 @@ def texto_ass_grupo(palavras: list[dict], indice_ativo: int) -> str:
             texto = r"{\c&H0000FFFF&}" + texto + r"{\c&H00FFFFFF&}"
         tokens.append(texto)
 
-    corte = melhor_quebra(palavras)
+    corte = melhor_quebra(palavras, line_chars)
 
     if corte >= len(tokens):
         return " ".join(tokens)
@@ -239,15 +249,12 @@ def texto_ass_grupo(palavras: list[dict], indice_ativo: int) -> str:
     return " ".join(tokens[:corte]) + r"\N" + " ".join(tokens[corte:])
 
 
-def texto_srt_grupo(grupo: list[dict]) -> str:
+def texto_srt_grupo(grupo: list[dict], line_chars: int = 21) -> str:
     texto = juntar_palavras(grupo)
     tokens = texto.split()
 
-    if len(tokens) < 5:
-        return texto
-
     pseudo = [{"texto": t} for t in tokens]
-    corte = melhor_quebra(pseudo)
+    corte = melhor_quebra(pseudo, line_chars)
 
     if corte >= len(tokens):
         return texto
@@ -265,7 +272,9 @@ def criar_legendas_corte(
 ) -> tuple[Path, Path]:
     style = style or CaptionStyle()
     pasta_fontes = Path(pasta_fontes).expanduser()
-    garantir_archivo_black(pasta_fontes)
+    font_path = garantir_archivo_black(pasta_fontes)
+    from PIL import ImageFont
+    measured_font = ImageFont.truetype(str(font_path), style.font_size)
 
     arquivo_video = Path(arquivo_video)
     base = arquivo_video.with_suffix("")
@@ -294,7 +303,7 @@ def criar_legendas_corte(
             [
                 str(idx),
                 f"{srt_tempo(inicio)} --> {srt_tempo(fim)}",
-                texto_srt_grupo(grupo),
+                texto_srt_grupo(grupo, style.line_chars),
                 "",
             ]
         )
@@ -319,6 +328,11 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
     eventos: list[str] = []
 
     for grupo in grupos:
+        # A long word or an all-caps phrase must not escape the safe area.
+        # Keep one font size for the entire group, including every highlight.
+        lines = texto_srt_grupo(grupo, style.line_chars).splitlines()
+        measured_width = max(measured_font.getlength(line) for line in lines)
+        group_size = min(style.font_size, int(style.font_size * 900 / max(1, measured_width)))
         for wi, palavra in enumerate(grupo):
             inicio = palavra["inicio"]
             if wi + 1 < len(grupo):
@@ -327,7 +341,9 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
                 fim = palavra["fim"]
 
             fim = max(fim, inicio + 0.06)
-            texto_evento = texto_ass_grupo(grupo, wi)
+            texto_evento = texto_ass_grupo(grupo, wi, style.line_chars)
+            if group_size < style.font_size:
+                texto_evento = r"{\fs" + str(group_size) + "}" + texto_evento
 
             eventos.append(
                 "Dialogue: 0,"
@@ -342,7 +358,9 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
         encoding="utf-8",
     )
 
-    filtro = f"ass={ass_path}:fontsdir={pasta_fontes}"
+    def filter_path(path):
+        return str(Path(path).resolve()).replace("\\", "/").replace(":", r"\:").replace("'", r"'\''")
+    filtro = f"ass='{filter_path(ass_path)}':fontsdir='{filter_path(pasta_fontes)}'"
 
     subprocess.run(
         [
