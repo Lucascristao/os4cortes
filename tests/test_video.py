@@ -55,6 +55,13 @@ class FramingTests(unittest.TestCase):
             positions.append(framing.center)
         self.assertLess(max(positions) - min(positions), 0.005)
 
+    def test_speaking_face_prioritized_over_silent_face(self):
+        framing = StableFraming(0.32)
+        silent = Face(0.1, 0.2, 0.15, 0.2, confidence=0.9, speaking_score=0.0)
+        speaker = Face(0.65, 0.2, 0.14, 0.2, confidence=0.9, speaking_score=0.85)
+        framing.observe([silent, speaker], 0)
+        self.assertGreater(framing.position(0), 0.65)
+
 
 def words(text, step=0.3):
     return [{'texto': w, 'inicio': i * step, 'fim': (i + 1) * step} for i, w in enumerate(text.split())]
@@ -84,6 +91,13 @@ class CaptionTests(unittest.TestCase):
         source=words('Você não tem uma empresa')
         layouts=[texto_ass_grupo(source,i).count(r'\N') for i in range(len(source))]
         self.assertEqual(len(set(layouts)),1)
+
+    def test_highlight_includes_pop_animation_scale(self):
+        source=words('Você não tem uma empresa')
+        ass_text = texto_ass_grupo(source, 0)
+        self.assertIn(r'\fscx108', ass_text)
+        self.assertIn(r'\fscy108', ass_text)
+        self.assertIn(r'\fscx100', ass_text)
 
     def test_timestamp_carry(self):
         self.assertEqual(srt_tempo(59.9999),'00:01:00,000')

@@ -455,6 +455,39 @@ $("#btnCopiarTranscricao")?.addEventListener("click", async (event) => {
   setTimeout(() => (botao.textContent = original), 1300);
 });
 
+$("#btnCopiarPromptIA")?.addEventListener("click", async (event) => {
+  const transcricao = transcriptText.value.trim();
+  if (!transcricao) return;
+
+  const promptCompleto = `Você é um especialista em seleção e edição de cortes verticais (9:16) para TikTok, Reels e YouTube Shorts.
+Analise a transcrição abaixo e selecione os melhores trechos de alto engajamento.
+
+Regras editoriais obrigatórias:
+1. Duração: Cada corte deve ter entre 30 e 75 segundos.
+2. Gancho: O início precisa ter um gancho forte nos primeiros 3 segundos.
+3. Conclusão: Não corte pensamentos no meio; garanta encerramento com sentido completo.
+4. Responda ESTRITAMENTE em formato JSON válido, sem texto explicativo antes ou depois:
+
+[
+  {
+    "titulo": "Título curto e impactante",
+    "inicio": "MM:SS",
+    "fim": "MM:SS",
+    "legenda_post": "Texto magnético para a legenda da postagem...",
+    "hashtags": ["#marketing", "#negocios", "#dicas"]
+  }
+]
+
+--- TRANSCRIÇÃO ---
+${transcricao}`;
+
+  await navigator.clipboard.writeText(promptCompleto);
+  const botao = event.currentTarget;
+  const original = botao.textContent;
+  botao.textContent = "Prompt Copiado ✓";
+  setTimeout(() => (botao.textContent = original), 1500);
+});
+
 $("#btnBaixarTranscricao")?.addEventListener("click", () => {
   const blob = new Blob([transcriptText.value], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -467,8 +500,33 @@ $("#btnBaixarTranscricao")?.addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
+function higienizarJsonPacote(texto) {
+  let limpo = texto.trim();
+  limpo = limpo.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+
+  const inicioArray = limpo.indexOf("[");
+  const inicioObj = limpo.indexOf("{");
+  let inicio = -1;
+  if (inicioArray !== -1 && inicioObj !== -1) {
+    inicio = Math.min(inicioArray, inicioObj);
+  } else {
+    inicio = inicioArray !== -1 ? inicioArray : inicioObj;
+  }
+
+  const fimArray = limpo.lastIndexOf("]");
+  const fimObj = limpo.lastIndexOf("}");
+  const fim = Math.max(fimArray, fimObj);
+
+  if (inicio !== -1 && fim !== -1 && fim > inicio) {
+    limpo = limpo.slice(inicio, fim + 1);
+  }
+
+  limpo = limpo.replace(/,\s*([}\]])/g, "$1");
+  return limpo;
+}
+
 function limparFences(texto) {
-  return texto.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  return higienizarJsonPacote(texto);
 }
 
 function normalizarPacote(data) {
@@ -553,7 +611,7 @@ btnImportar?.addEventListener("click", () => {
   }
 
   try {
-    const dados = JSON.parse(limparFences(texto));
+    const dados = JSON.parse(higienizarJsonPacote(texto));
     cortesImportados = normalizarPacote(dados);
     renderizarEditor(cortesImportados);
   } catch (erro) {

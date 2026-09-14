@@ -47,15 +47,18 @@ Render completo levou alguns minutos; logs de tracking são silenciosos, legenda
 gh autenticado funciona via exec escalado; não precisa reutilizar tokens do histórico. Git escalado requer safe.directory explícito e helper gh auth git-credential. Nunca imprimir credenciais.
 Supabase não participa destas mudanças. Se surgir tarefa Supabase, seguir AGENTS do usuário (MCP pessoal obrigatório).
 
-- Enquadramento estabilizado (`processor/framing.py` e `processor/tracking.py`) implementado e testado.
-- Eliminação do flicker/ping-pong entre participantes quando um apenas concorda/reage.
+- Enquadramento estabilizado (`processor/framing.py` e `processor/tracking.py`) com detecção de fala por movimento labial (`speaking_score`).
+- Eliminação do flicker/ping-pong e priorização automática do falante ativo quando há dois participantes em cena.
 - Transição cinematográfica suave através da mesa sem saltos secos desnecessários.
-- 12 testes unitários em Python e 6 testes Node aprovados localmente.
+- Micro-animação "Pop" (zoom sutil \fscx/\fscy) na palavra falada ativa nas legendas (`processor/captions.py`).
+- Botão "Copiar Prompt para IA" na interface com formatação pronta para ChatGPT/Claude (`web/index.html` e `web/app.js`).
+- Higienizador automático de JSON (`higienizarJsonPacote`) que remove crases markdown, vírgulas órfãs e textos conversacionais ao importar cortes.
+- 14 testes unitários em Python e 6 testes Node aprovados localmente com 100% de sucesso.
 - Render de teste do corte 01 gerado com sucesso em `outputs_teste/` e validado visualmente.
 
 ## Repositório e arquivos
 Repositório: `Lucascristao/os4cortes`. Produção: https://os4cortes.netlify.app . Site Netlify: `0723722b-e057-42e3-ad63-6261cb4db4ff`.
-Base anterior: `7ffa58f`.
+Base anterior: `d33ea1b`.
 
 ## Próximas etapas
 1. Realizar novo processamento completo com saída no Google Drive para validar a esteira ponta a ponta.

@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import math
 import re
 import subprocess
 import urllib.request
@@ -8,6 +8,33 @@ from pathlib import Path
 import cv2
 
 from .framing import Face, StableFraming
+
+
+def calcular_movimento_labial(
+    frame, face_box, prev_mouths, w: int, h: int
+) -> tuple[float, tuple[float, float, any] | None]:
+    """Estima variação de movimento da boca para pontuar atividade de fala."""
+    fx, fy, fw, fh = face_box[:4]
+    my1 = max(0, int(fy + 0.60 * fh))
+    my2 = min(h, int(fy + 0.95 * fh))
+    mx1 = max(0, int(fx + 0.20 * fw))
+    mx2 = min(w, int(fx + 0.80 * fw))
+    if my2 <= my1 or mx2 <= mx1:
+        return 0.0, None
+
+    mouth_roi = cv2.resize(
+        cv2.cvtColor(frame[my1:my2, mx1:mx2], cv2.COLOR_BGR2GRAY), (24, 16)
+    )
+    cx, cy = float(fx + fw / 2) / w, float(fy + fh / 2) / h
+    best_score = 0.0
+
+    for pcx, pcy, p_roi in prev_mouths:
+        if math.hypot(cx - pcx, cy - pcy) < 0.12 and p_roi is not None:
+            diff = float(cv2.absdiff(mouth_roi, p_roi).mean())
+            best_score = min(1.0, max(0.0, (diff - 3.0) / 9.0))
+            break
+
+    return best_score, (cx, cy, mouth_roi)
 
 
 def mudou_plano(previous, current) -> tuple[bool, bool]:
@@ -121,6 +148,7 @@ def render_tracking_9x16(
     crop_w = min(int(round(h * 9 / 16)), w)
     framing = StableFraming(crop_w / w)
     previous_scene = None
+    previous_mouths: list[tuple[float, float, any]] = []
 
     cmd = [
         "ffmpeg", "-y",
@@ -161,25 +189,35 @@ def render_tracking_9x16(
 
             if mudou:
                 framing.reset_shot(snap=corte_seco)
+                previous_mouths = []
 
             if mudou or frame_idx % detectar_a_cada == 0:
                 detector.setInputSize((w, h))
                 _, faces = detector.detect(frame)
 
-                detections = (
-                    []
-                    if faces is None
-                    else [
-                        Face(
-                            float(f[0]) / w,
-                            float(f[1]) / h,
-                            float(f[2]) / w,
-                            float(f[3]) / h,
-                            float(f[-1]),
+                detections: list[Face] = []
+                current_mouths: list[tuple[float, float, any]] = []
+
+                if faces is not None:
+                    for f in faces:
+                        score_fala, mouth_data = calcular_movimento_labial(
+                            frame, f, previous_mouths, w, h
                         )
-                        for f in faces
-                    ]
-                )
+                        if mouth_data:
+                            current_mouths.append(mouth_data)
+
+                        detections.append(
+                            Face(
+                                float(f[0]) / w,
+                                float(f[1]) / h,
+                                float(f[2]) / w,
+                                float(f[3]) / h,
+                                float(f[-1]),
+                                speaking_score=score_fala,
+                            )
+                        )
+                    previous_mouths = current_mouths
+
                 framing.observe(detections, frame_idx / fps)
 
             centro_x = framing.position(frame_idx / fps) * w

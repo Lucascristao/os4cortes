@@ -16,6 +16,7 @@ class Face:
     width: float
     height: float
     confidence: float = 1.0
+    speaking_score: float = 0.0
 
     @property
     def center(self) -> float:
@@ -24,6 +25,11 @@ class Face:
     @property
     def area(self) -> float:
         return self.width * self.height
+
+    @property
+    def priority(self) -> float:
+        """Prioridade baseada em tamanho, confiança e movimento labial de fala."""
+        return (self.area * self.confidence) * (1.0 + 0.6 * self.speaking_score)
 
 
 def same_face(a: Face, b: Face) -> bool:
@@ -86,7 +92,7 @@ class StableFraming:
             self.candidate = None
             return  # Hold the last useful frame during missed detections.
 
-        best = max(faces, key=lambda f: f.area * f.confidence)
+        best = max(faces, key=lambda f: f.priority)
 
         if self.fresh_shot:
             self.target = best

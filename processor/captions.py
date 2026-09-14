@@ -238,7 +238,7 @@ def texto_ass_grupo(palavras: list[dict], indice_ativo: int, line_chars: int = 2
     for i, p in enumerate(palavras):
         texto = escapar_ass(p["texto"])
         if i == indice_ativo:
-            texto = r"{\c&H0000FFFF&}" + texto + r"{\c&H00FFFFFF&}"
+            texto = r"{\c&H0000FFFF&\fscx108\fscy108\t(0,80,\fscx104\fscy104)}" + texto + r"{\c&H00FFFFFF&\fscx100\fscy100}"
         tokens.append(texto)
 
     corte = melhor_quebra(palavras, line_chars)
