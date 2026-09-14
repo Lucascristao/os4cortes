@@ -148,6 +148,14 @@
         <textarea id="pacote" rows="10" placeholder='[{"titulo":"...","inicio":"00:00","fim":"00:45","legenda_post":"...","hashtags":["#vendas"]}]'></textarea>
         <button class="secondary" id="btnImportar" type="button">Importar pacote</button>
         <div id="cutsEditor" class="cuts-editor hidden"></div>
+        <div id="cutsLiveProgress" class="cuts-live-progress hidden" aria-live="polite">
+          <div class="cuts-live-head">
+            <strong id="cutsLiveStage">Preparando cortes</strong>
+            <span id="cutsLiveCount" class="cuts-live-count">Aguardando</span>
+          </div>
+          <div class="cuts-live-track"><div id="cutsLiveBar" class="cuts-live-bar"></div></div>
+          <p id="cutsLiveDetail" class="cuts-live-detail">O andamento aparecerá aqui.</p>
+        </div>
         <button id="btnGerarCortes" class="generate-button hidden" type="button">Gerar todos os cortes</button>
       </section>
 
@@ -164,6 +172,5 @@
     </div>
   </main>
   <script src="/app.js" defer></script>
-  <script src="/enhancements.js" defer></script>
 </body>
 </html>

@@ -238,6 +238,14 @@ button:disabled { opacity: .55; cursor: progress; }
 .result-link { display: inline-flex; align-items: center; min-height: 38px; padding: 9px 11px; border-radius: 10px; border: 1px solid #353535; background: #1d1d1d; color: #eee; text-decoration: none; font-size: .8rem; font-weight: 750; }
 .result-link.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
+.cuts-live-progress { margin-top: 16px; border: 1px solid #343434; background: #101010; border-radius: 14px; padding: 14px; }
+.cuts-live-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.cuts-live-head strong { color: #ffc928; font-size: .88rem; }
+.cuts-live-count { color: #ddd; font-size: .8rem; font-weight: 800; white-space: nowrap; }
+.cuts-live-detail { color: #969696; font-size: .8rem; line-height: 1.45; margin: 8px 0 0; }
+.cuts-live-track { height: 9px; border-radius: 999px; background: #0b0b0b; border: 1px solid #303030; overflow: hidden; }
+.cuts-live-bar { height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #b98a00, #ffc928); transition: width .35s ease; }
+
 @media (max-width: 680px) {
   .app-shell { padding-left: 13px; padding-right: 13px; }
   .topbar { align-items: stretch; flex-direction: column; }

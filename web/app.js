@@ -37,6 +37,8 @@ let cortesImportados = [];
 
 const STORAGE_SESSION = "os4_transcription_session";
 const STORAGE_JOB = "os4_current_job";
+const STORAGE_RESULTS = "os4_last_results_view";
+const STORAGE_PACKAGE = "os4_editor_package";
 
 function atualizarProgresso({ percent = 0, title = "Aguardando processamento", detail = "", time = "" } = {}) {
   const valor = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -48,6 +50,15 @@ function atualizarProgresso({ percent = 0, title = "Aguardando processamento", d
   if (progressDetail) progressDetail.textContent = detail;
   if (progressTime) progressTime.textContent = time;
   if (progressTrack) progressTrack.setAttribute("aria-valuenow", String(inteiro));
+
+  const cutsBar = document.getElementById("cutsLiveBar");
+  const cutsStage = document.getElementById("cutsLiveStage");
+  const cutsCount = document.getElementById("cutsLiveCount");
+  const cutsDetail = document.getElementById("cutsLiveDetail");
+  if (cutsBar) cutsBar.style.width = `${valor}%`;
+  if (cutsStage) cutsStage.textContent = title;
+  if (cutsCount) cutsCount.textContent = time ? `${time} • ${inteiro}%` : `${inteiro}%`;
+  if (cutsDetail) cutsDetail.textContent = detail;
 }
 
 window.OS4Progress = { atualizar: atualizarProgresso };
@@ -163,10 +174,23 @@ $("#btnEditarGithub")?.addEventListener("click", () => {
 function restaurarSessao() {
   try {
     const raw = localStorage.getItem(STORAGE_SESSION);
-    if (!raw) return;
-    const sessao = JSON.parse(raw);
-    if (!sessao?.folderId || !sessao?.videoFileId || !sessao?.transcriptJsonFileId) return;
-    mostrarTranscricao(sessao);
+    if (raw) {
+      const sessao = JSON.parse(raw);
+      if (sessao?.folderId && sessao?.videoFileId && sessao?.transcriptJsonFileId) {
+        mostrarTranscricao(sessao);
+      }
+    }
+    const savedPackage = localStorage.getItem(STORAGE_PACKAGE);
+    if (savedPackage && pacote && !pacote.value) {
+      pacote.value = savedPackage;
+    }
+    const rawResults = localStorage.getItem(STORAGE_RESULTS);
+    if (rawResults && !localStorage.getItem(STORAGE_JOB)) {
+      const result = JSON.parse(rawResults);
+      if (result?.cuts?.length) {
+        mostrarResultados(result);
+      }
+    }
   } catch {
     localStorage.removeItem(STORAGE_SESSION);
   }
@@ -181,22 +205,46 @@ $("#btnConcluirDriveSetup")?.addEventListener("click", async () => {
   }
 });
 
+function logout() {
+  document.cookie = "os4_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+  localStorage.removeItem(STORAGE_SESSION);
+  localStorage.removeItem(STORAGE_JOB);
+  localStorage.removeItem(STORAGE_RESULTS);
+  localStorage.removeItem(STORAGE_PACKAGE);
+  location.href = "/";
+}
+
+$(".logout-link")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  logout();
+});
+
+async function api(path, options = {}) {
+  const resposta = await fetch(path, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...options.headers },
+  });
+  const dados = await resposta.json().catch(() => ({}));
+  if (!resposta.ok) {
+    const erro = new Error(dados.detail || dados.error || `Erro HTTP ${resposta.status}`);
+    erro.status = resposta.status;
+    erro.dados = dados;
+    throw erro;
+  }
+  return dados;
+}
+
 async function carregarSessao() {
   try {
-    const dados = await api("/.netlify/functions/auth-session");
-    const user = dados.user;
-
-    $("#userName").textContent = user.name || "Conta Google";
-    $("#userEmail").textContent = user.email || "";
-
-    if (user.picture) {
-      const foto = $("#userPicture");
-      foto.src = user.picture;
-      foto.classList.remove("hidden");
-    }
+    const dados = await api("/.netlify/functions/auth-me");
+    if (!dados?.user) throw new Error("Sem usuário");
 
     loginView.classList.add("hidden");
     appView.classList.remove("hidden");
+
+    $("#userEmail").textContent = dados.user.email || "";
+    $("#userName").textContent = dados.user.name || "Criador";
+    $("#userAvatar").src = dados.user.picture || "";
 
     await verificarSetupDrive();
     await verificarGithubSetup();
@@ -280,12 +328,15 @@ function limparFluxo() {
   sessaoTranscricao = null;
   cortesImportados = [];
   localStorage.removeItem(STORAGE_SESSION);
+  localStorage.removeItem(STORAGE_RESULTS);
+  localStorage.removeItem(STORAGE_PACKAGE);
   transcriptSection?.classList.add("hidden");
   packageSection?.classList.add("hidden");
   resultsSection?.classList.add("hidden");
   cutsEditor.innerHTML = "";
   cutsEditor.classList.add("hidden");
   btnGerarCortes.classList.add("hidden");
+  document.getElementById("cutsLiveProgress")?.classList.add("hidden");
   pacote.value = "";
   setStatus("video", "Preparando", "active");
   setStatus("transcricao", "Aguardando", "idle");
@@ -714,6 +765,7 @@ btnGerarCortes?.addEventListener("click", async () => {
   btnGerarCortes.disabled = true;
   btnGerarCortes.textContent = "Iniciando...";
   resultsSection.classList.add("hidden");
+  document.getElementById("cutsLiveProgress")?.classList.remove("hidden");
   setStatus("cortes", "Preparando", "active");
   atualizarProgresso({ percent: 1, title: "Enviando cortes para processamento", detail: `${cuts.length} cortes na fila` });
 
@@ -739,13 +791,40 @@ btnGerarCortes?.addEventListener("click", async () => {
   }
 });
 
+pacote?.addEventListener("input", () => {
+  try { localStorage.setItem(STORAGE_PACKAGE, pacote.value); } catch {}
+});
+
+function extrairDriveFileId(url) {
+  const match = String(url || "").match(/\/file\/d\/([^/?#]+)/i);
+  if (match?.[1]) return match[1];
+  try {
+    return new URL(url).searchParams.get("id") || "";
+  } catch {
+    return "";
+  }
+}
+
+function urlDownloadDrive(fileId) {
+  return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
+}
+
 function resultLink(texto, url, primary = false) {
   const a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
+  const fileId = primary ? extrairDriveFileId(url) : "";
+  if (primary && fileId) {
+    a.href = urlDownloadDrive(fileId);
+    a.setAttribute("download", "");
+    a.dataset.downloadDireto = "1";
+    a.textContent = "Baixar vídeo com legenda";
+    a.title = "Baixar o MP4 diretamente";
+  } else {
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = texto;
+  }
   a.className = primary ? "result-link primary" : "result-link";
-  a.textContent = texto;
   return a;
 }
 
@@ -753,6 +832,11 @@ function mostrarResultados(result) {
   if (!result?.cuts) return;
   resultsList.innerHTML = "";
   resultsDriveLink.href = result.driveFolderUrl || `https://drive.google.com/drive/folders/${result.folderId}`;
+
+  const tituloEl = resultsSection?.querySelector(".section-title h2");
+  if (tituloEl) {
+    tituloEl.textContent = `${result.cuts.length}/${result.cuts.length} cortes concluídos e salvos no Google Drive`;
+  }
 
   result.cuts.forEach((corte) => {
     const card = document.createElement("article");
@@ -771,6 +855,11 @@ function mostrarResultados(result) {
     resultsList.appendChild(card);
   });
 
+  try {
+    localStorage.setItem(STORAGE_RESULTS, JSON.stringify(result));
+  } catch {}
+
+  document.getElementById("cutsLiveProgress")?.classList.add("hidden");
   resultsSection.classList.remove("hidden");
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
   setStatus("cortes", `${result.cuts.length} concluídos`, "ok");
