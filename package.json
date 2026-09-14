@@ -8,5 +8,10 @@
   },
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^6.0.0",
+    "@types/node": "^26.5.1",
+    "typescript": "^7.0.2"
   }
 }
