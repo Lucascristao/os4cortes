@@ -818,7 +818,19 @@ function extrairDriveFileId(url) {
 }
 
 function urlDownloadDrive(fileId) {
-  return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
+  const url = new URL("https://drive.google.com/uc");
+  url.searchParams.set("id", fileId);
+  url.searchParams.set("export", "download");
+  const email = $("#userEmail")?.textContent?.trim();
+  if (email) url.searchParams.set("authuser", email);
+  return url.href;
+}
+
+function driveAccountUrl(value) {
+  const url = new URL(value);
+  const email = $("#userEmail")?.textContent?.trim();
+  if (url.hostname === "drive.google.com" && email) url.searchParams.set("authuser", email);
+  return url.href;
 }
 
 function resultLink(texto, url, primary = false) {
@@ -826,12 +838,13 @@ function resultLink(texto, url, primary = false) {
   const fileId = primary ? extrairDriveFileId(url) : "";
   if (primary && fileId) {
     a.href = urlDownloadDrive(fileId);
-    a.setAttribute("download", "");
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
     a.dataset.downloadDireto = "1";
     a.textContent = "Baixar vídeo com legenda";
-    a.title = "Baixar o MP4 diretamente";
+    a.title = "Baixar usando a conta Google conectada ao OS4. Se o Google solicitar, confirme essa conta.";
   } else {
-    a.href = url;
+    a.href = driveAccountUrl(url);
     a.target = "_blank";
     a.rel = "noopener noreferrer";
     a.textContent = texto;
@@ -843,7 +856,7 @@ function resultLink(texto, url, primary = false) {
 function mostrarResultados(result) {
   if (!result?.cuts) return;
   resultsList.innerHTML = "";
-  resultsDriveLink.href = result.driveFolderUrl || `https://drive.google.com/drive/folders/${result.folderId}`;
+  resultsDriveLink.href = driveAccountUrl(result.driveFolderUrl || `https://drive.google.com/drive/folders/${result.folderId}`);
 
   const tituloEl = resultsSection?.querySelector(".section-title h2");
   if (tituloEl) {
@@ -859,6 +872,7 @@ function mostrarResultados(result) {
     links.className = "result-links";
     links.append(
       resultLink("Vídeo com legenda", corte.files.videoLegenda.url, true),
+      resultLink("Abrir legendado no Drive", corte.files.videoLegenda.url),
       resultLink("Vídeo sem legenda", corte.files.video.url),
       resultLink("SRT", corte.files.srt.url),
       resultLink("Texto da postagem", corte.files.post.url),
