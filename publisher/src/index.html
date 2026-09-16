@@ -1,6 +1,85 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self';script-src 'self';style-src 'self';connect-src 'none';img-src 'self' data:"><title>OS4 Publicador</title><link rel="stylesheet" href="style.css"></head><body>
-<header><p class="eyebrow">OS4 CORTES · PUBLICADOR LOCAL</p><h1>Suas contas, neste computador.</h1><p>Conecte as redes para a validação do primeiro corte. Os logins ficam somente neste Windows.</p></header>
-<main><section><h2>Configuração inicial</h2><p id="phase"></p><p class="hint">Esta versão prepara as sessões. Não publica nem aceita declarações por você.</p><div id="accounts"></div></section>
-<section><h2>Critérios da fila</h2><p>Uma publicação por vez · até 50 tentativas por rede/dia · pausa de 5–10 minutos por rede.</p><p class="hint">Restrições das plataformas prevalecem. CAPTCHA ou resultado incerto interrompem aquela rede.</p></section>
-<section><h2>Próxima etapa</h2><p>Validar o corte 1 legendado da pasta mais recente do Drive em TikTok, Instagram e YouTube. O YouTube receberá somente o título.</p><button id="site">Abrir OS4 Cortes</button><p id="startup" class="hint"></p></section>
-<p id="message" role="status" aria-live="polite"></p></main><footer id="version"></footer><script src="renderer.js"></script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:">
+  <title>OS4 Publicador</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div>
+        <p class="eyebrow">OS4 CORTES · PUBLICADOR LOCAL</p>
+        <h1>Central de Publicação Automática</h1>
+      </div>
+      <div id="bridge-badge" class="badge badge-active">Ponte Ativa (127.0.0.1:49152)</div>
+    </div>
+    <p class="subtitle">Downloads em segundo plano do Drive e postagem contínua com intervalo seguro de 5 a 10 minutos.</p>
+  </header>
+
+  <main>
+    <!-- Fila de Publicações -->
+    <section class="highlight-section">
+      <div class="section-header">
+        <h2>Fila de Publicações</h2>
+        <span id="queue-counter" class="pill">0 cortes na fila</span>
+      </div>
+
+      <div id="cooldown-banner" class="cooldown-banner hidden">
+        <span class="cooldown-icon">⏱️</span>
+        <div>
+          <strong>Intervalo de segurança ativo</strong>
+          <p id="cooldown-text">Aguardando pausa programada para proteger as contas...</p>
+        </div>
+      </div>
+
+      <div class="queue-stats">
+        <div class="stat-card"><span class="stat-num" id="stat-queued">0</span><span class="stat-label">Na fila</span></div>
+        <div class="stat-card"><span class="stat-num stat-pub" id="stat-pub">0</span><span class="stat-label">Publicando</span></div>
+        <div class="stat-card"><span class="stat-num stat-ok" id="stat-done">0</span><span class="stat-label">Concluídos</span></div>
+        <div class="stat-card"><span class="stat-num stat-err" id="stat-fail">0</span><span class="stat-label">Falhas</span></div>
+      </div>
+
+      <div id="queue-list" class="queue-list">
+        <p class="empty-queue">Aguardando novo lote renderizado ou postagem manual...</p>
+      </div>
+
+      <!-- Logs em tempo real -->
+      <div class="log-container">
+        <div class="log-header">
+          <strong>Atividade Recente (Downloads & Uploads)</strong>
+          <span id="clear-logs" class="log-action">Limpar</span>
+        </div>
+        <div id="log-box" class="log-box">
+          <div class="log-line text-muted">[Sistema] Publicador pronto e escutando ponte local.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Contas e Sessões Conectadas -->
+    <section>
+      <h2>Contas Conectadas</h2>
+      <p class="hint">Os perfis do Chrome ficam salvos neste computador com os cookies ativos.</p>
+      <div id="accounts"></div>
+    </section>
+
+    <!-- Ações e Links -->
+    <section class="actions-section">
+      <div>
+        <h2>Acesso Rápido</h2>
+        <p class="hint" id="startup"></p>
+      </div>
+      <div class="button-group">
+        <button id="site" class="primary">Abrir OS4 Cortes no Navegador</button>
+      </div>
+    </section>
+
+    <p id="message" role="status" aria-live="polite"></p>
+  </main>
+
+  <footer id="version"></footer>
+  <script src="renderer.js"></script>
+</body>
+</html>

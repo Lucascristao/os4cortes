@@ -3,6 +3,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const cp = require('node:child_process');
 const { Queue } = require('./queue.cjs');
+const { QueueExecutor } = require('./executor.cjs');
+const { LocalBridgeServer } = require('./bridge.cjs');
 
 const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
 app.setPath('userData', path.join(dataDir, 'interface'));
@@ -13,7 +15,7 @@ const platforms = {
   youtube: 'https://studio.youtube.com/'
 };
 
-let win, tray, q, quitting = false;
+let win, tray, q, executor, bridge, quitting = false;
 const contexts = new Map();
 const loginProcesses = new Map();
 
@@ -48,6 +50,24 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     fs.mkdirSync(dataDir, { recursive: true });
     q = new Queue(path.join(dataDir, 'queue.sqlite'));
+    executor = new QueueExecutor(q);
+
+    bridge = new LocalBridgeServer({
+      executor,
+      onLog: (msg) => {
+        console.log('[Bridge Log]', msg);
+        win?.webContents.send('app-log', { msg, time: new Date().toLocaleTimeString('pt-BR') });
+      }
+    });
+    bridge.start();
+
+    // Eventos do executor para a UI
+    executor.on('queue-updated', (status) => win?.webContents.send('queue-status', status));
+    executor.on('job-started', (data) => win?.webContents.send('queue-status', data.status));
+    executor.on('job-completed', (data) => win?.webContents.send('queue-status', data.status));
+    executor.on('job-failed', (data) => win?.webContents.send('queue-status', data.status));
+    executor.on('cooldown', (data) => win?.webContents.send('cooldown', data));
+    executor.ensureWorkerRunning();
 
     const browserDir = app.isPackaged
       ? path.join(process.resourcesPath, 'browser')
@@ -55,10 +75,10 @@ if (!app.requestSingleInstanceLock()) {
     process.env.PLAYWRIGHT_BROWSERS_PATH = browserDir;
 
     win = new BrowserWindow({
-      width: 980,
-      height: 780,
-      minWidth: 720,
-      minHeight: 620,
+      width: 1040,
+      height: 820,
+      minWidth: 780,
+      minHeight: 640,
       title: 'OS4 Publicador',
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
@@ -87,7 +107,7 @@ if (!app.requestSingleInstanceLock()) {
       pixels[i + 3] = 255;
     }
     tray = new Tray(nativeImage.createFromBitmap(pixels, { width: 32, height: 32 }));
-    tray.setToolTip('OS4 Publicador — configuração');
+    tray.setToolTip('OS4 Publicador — Fila Ativa');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Abrir OS4 Publicador', click: () => win.show() },
       { label: 'Abrir site OS4', click: () => shell.openExternal('https://os4cortes.netlify.app/') },
@@ -111,6 +131,8 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     quitting = true;
+    try { bridge?.stop(); } catch (_) {}
+    try { executor?.stop(); } catch (_) {}
     for (const proc of loginProcesses.values()) {
       try { proc.kill(); } catch (_) {}
     }
@@ -231,3 +253,15 @@ ipcMain.handle('open-site', (event) => {
   validateEvent(event);
   return shell.openExternal('https://os4cortes.netlify.app/');
 });
+
+ipcMain.handle('get-queue', (event) => {
+  validateEvent(event);
+  return executor ? executor.getStatus() : null;
+});
+
+ipcMain.handle('enqueue-manual', (event, payload) => {
+  validateEvent(event);
+  if (!executor) throw new Error('Executor não iniciado');
+  return executor.enqueueCorte(payload);
+});
+

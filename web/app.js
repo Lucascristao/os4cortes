@@ -889,7 +889,86 @@ function mostrarResultados(result) {
   resultsSection.classList.remove("hidden");
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
   setStatus("cortes", `${result.cuts.length} concluídos`, "ok");
+
+  // Envia automaticamente para o OS4 Publicador se ele estiver aberto no PC
+  enviarParaPublicadorLocal(result, false);
 }
+
+async function enviarParaPublicadorLocal(result, manual = false) {
+  const banner = document.getElementById("publisherAutoBanner");
+  const titleEl = document.getElementById("publisherBannerTitle");
+  const msgEl = document.getElementById("publisherBannerMsg");
+  const btnReenviar = document.getElementById("btnEnviarPublicador");
+
+  if (!result || !result.cuts || result.cuts.length === 0) return;
+
+  if (manual && btnReenviar) {
+    btnReenviar.disabled = true;
+    btnReenviar.textContent = "Conectando...";
+  }
+
+  try {
+    const health = await fetch("http://127.0.0.1:49152/health", {
+      method: "GET",
+      signal: AbortSignal.timeout(3500)
+    }).then(r => r.json()).catch(() => null);
+
+    if (!health || !health.ok) {
+      if (manual) {
+        if (banner) banner.classList.remove("hidden");
+        if (titleEl) {
+          titleEl.textContent = "OS4 Publicador não detectado";
+          titleEl.style.color = "#f87171";
+        }
+        if (msgEl) msgEl.textContent = "Abra o aplicativo OS4 Publicador no seu Windows e clique novamente em Reenviar.";
+        if (btnReenviar) {
+          btnReenviar.disabled = false;
+          btnReenviar.textContent = "Tentar novamente";
+        }
+      }
+      return;
+    }
+
+    const res = await fetch("http://127.0.0.1:49152/enqueue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result)
+    }).then(r => r.json());
+
+    if (res && res.ok) {
+      if (banner) banner.classList.remove("hidden");
+      if (titleEl) {
+        titleEl.textContent = "🚀 Enviado para o OS4 Publicador Local!";
+        titleEl.style.color = "#4ade80";
+      }
+      if (msgEl) msgEl.textContent = `Lote de ${result.cuts.length} cortes recebido! Downloads e fila de postagem (com pausas de 5–10 min) já iniciados no seu computador.`;
+      if (btnReenviar) {
+        btnReenviar.disabled = false;
+        btnReenviar.textContent = "Reenviado com sucesso ✓";
+        setTimeout(() => { btnReenviar.textContent = "Reenviar para Publicador"; }, 3000);
+      }
+    }
+  } catch (err) {
+    if (manual) {
+      if (banner) banner.classList.remove("hidden");
+      if (titleEl) {
+        titleEl.textContent = "Falha ao enviar";
+        titleEl.style.color = "#f87171";
+      }
+      if (msgEl) msgEl.textContent = `Erro ao comunicar com o Publicador: ${err.message}`;
+      if (btnReenviar) {
+        btnReenviar.disabled = false;
+        btnReenviar.textContent = "Tentar novamente";
+      }
+    }
+  }
+}
+
+document.getElementById("btnEnviarPublicador")?.addEventListener("click", () => {
+  const stored = JSON.parse(localStorage.getItem(STORAGE_RESULTS) || "null");
+  enviarParaPublicadorLocal(stored, true);
+});
+
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
