@@ -58,8 +58,27 @@ Supabase não participa destas mudanças. Se surgir tarefa Supabase, seguir AGEN
 
 ## Repositório e arquivos
 Repositório: `Lucascristao/os4cortes`. Produção: https://os4cortes.netlify.app . Site Netlify: `0723722b-e057-42e3-ad63-6261cb4db4ff`.
-Base anterior: `d33ea1b`.
+Base anterior: `d33ea1b`. Branch do Publicador: `feat/local-publisher`.
 
-## Próximas etapas
-1. Realizar novo processamento completo com saída no Google Drive para validar a esteira ponta a ponta.
-2. Monitorar o comportamento em vídeos de formato monólogo e múltiplos convidados em produção.
+## OS4 Publicador — Fluxo Contínuo Concluído e Validado (16/09/2026)
+- **Download silencioso do Google Drive (`publisher/src/downloader.cjs`):**
+  - Conexão direta via sessão autenticada do Google Chrome (`profiles/youtube`).
+  - Filtro estrito: baixa apenas `*_legenda.mp4` e `*_post.txt`. Arquivos crus (`.srt` e `.mp4` sem legenda) são sumariamente ignorados.
+  - Medição em tempo real de taxa de download (MB/s) e tempo decorrido.
+- **Instagram Reels (`publisher/src/adapters/instagram.cjs`):**
+  - Seleção explícita e obrigatória da proporção `9:16` vertical no modal de corte.
+  - Inserção integral do texto do post (título, parágrafos explicativos e hashtags).
+  - Publicação validada e confirmada pelo usuário na conta real `@os4.cortes`.
+- **TikTok Studio (`publisher/src/adapters/tiktok.cjs`):**
+  - Rolagem automática até o rodapé e clique nativo por coordenadas no botão vermelho `Publicar`.
+  - Validação estrita de confirmação com captura de evidência. Testado e confirmado em 84.5s.
+- **YouTube Shorts (`publisher/src/adapters/youtube.cjs`):**
+  - Título limpo e formatado extraído da 1ª linha do `_post.txt` com pontuação e acentuação corretas + tag `#shorts`.
+  - Preenchimento da descrição completa, seleção de não infantil, avanço até visibilidade Pública e fechamento do modal pós-publicação.
+- **Fila Sequencial Segura (`publisher/src/executor.cjs`):**
+  - Intervalo de proteção aleatório de 5 a 10 minutos (300–600s) entre postagens na mesma rede.
+- **Ponte Local (`publisher/src/bridge.cjs`):**
+  - Porta `127.0.0.1:49152` conectada ao término de render da aplicação web.
+- **Sincronização:**
+  - Arquivos sincronizados na pasta do app instalado em `C:\Users\lucas\Projetos\OS4Publicador\resources\app\src\`.
+
