@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const https = require('node:https');
 const http = require('node:http');
+const { withGoogleLock } = require('./google-lock.cjs');
 
 const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
 const downloadsBaseDir = path.join(dataDir, 'downloads');
@@ -153,36 +154,39 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, reques
   }
 
   console.log(`[Downloader] Iniciando sessão para o Corte ${cutIndex}...`);
-  const ctx = await chromium.launchPersistentContext(googleProfileDir, {
-    executablePath: chromePath,
-    headless: true,
-    viewport: { width: 1280, height: 800 },
-    ignoreDefaultArgs: ['--enable-automation'],
-    args: ['--disable-blink-features=AutomationControlled']
-  });
-
   const t0 = Date.now();
-  try {
-    // 1. Download do Texto de Post
-    if (postFileId) {
-      console.log(`[Downloader] Baixando texto do post para o Corte ${cutIndex}...`);
-      postText = await downloadTextFileWithContext(ctx, postFileId);
-      if (postText) {
-        fs.writeFileSync(postDestPath, postText, 'utf8');
-        console.log(`[Downloader] Texto do post salvo (${postText.length} caracteres).`);
-      }
-    }
 
-    // 2. Download do Vídeo com cronometragem
-    console.log(`[Downloader] Iniciando download do vídeo do Corte ${cutIndex} (ID: ${videoFileId})...`);
-    await downloadGoogleDriveFileWithContext(ctx, videoFileId, videoDestPath);
-  } catch (errAuth) {
-    console.warn(`[Downloader] Tentativa autenticada falhou (${errAuth.message}), tentando download direto...`);
-    const directUrl = `https://drive.google.com/uc?id=${videoFileId}&export=download`;
-    await downloadDirectHttp(directUrl, videoDestPath);
-  } finally {
-    await ctx.close().catch(() => {});
-  }
+  await withGoogleLock(async () => {
+    const ctx = await chromium.launchPersistentContext(googleProfileDir, {
+      executablePath: chromePath,
+      headless: true,
+      viewport: { width: 1280, height: 800 },
+      ignoreDefaultArgs: ['--enable-automation'],
+      args: ['--disable-blink-features=AutomationControlled']
+    });
+
+    try {
+      // 1. Download do Texto de Post
+      if (postFileId) {
+        console.log(`[Downloader] Baixando texto do post para o Corte ${cutIndex}...`);
+        postText = await downloadTextFileWithContext(ctx, postFileId);
+        if (postText) {
+          fs.writeFileSync(postDestPath, postText, 'utf8');
+          console.log(`[Downloader] Texto do post salvo (${postText.length} caracteres).`);
+        }
+      }
+
+      // 2. Download do Vídeo com cronometragem
+      console.log(`[Downloader] Iniciando download do vídeo do Corte ${cutIndex} (ID: ${videoFileId})...`);
+      await downloadGoogleDriveFileWithContext(ctx, videoFileId, videoDestPath);
+    } catch (errAuth) {
+      console.warn(`[Downloader] Tentativa autenticada falhou (${errAuth.message}), tentando download direto...`);
+      const directUrl = `https://drive.google.com/uc?id=${videoFileId}&export=download`;
+      await downloadDirectHttp(directUrl, videoDestPath);
+    } finally {
+      await ctx.close().catch(() => {});
+    }
+  });
 
   const durationSec = Number(((Date.now() - t0) / 1000).toFixed(1));
   const stats = fs.statSync(videoDestPath);
@@ -274,49 +278,52 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
   const folderUrl = `https://drive.google.com/drive/folders/${folderId}`;
   onLog(`[Drive Scan] Acessando pasta: ${folderUrl}`);
 
-  const ctx = await chromium.launchPersistentContext(googleProfileDir, {
-    executablePath: chromePath,
-    headless: true,
-    viewport: { width: 1280, height: 900 },
-    ignoreDefaultArgs: ['--enable-automation'],
-    args: ['--disable-blink-features=AutomationControlled']
-  });
-
-  const page = await ctx.newPage();
   const allFound = new Map();
 
-  try {
-    await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await page.waitForTimeout(3000);
+  await withGoogleLock(async () => {
+    const ctx = await chromium.launchPersistentContext(googleProfileDir, {
+      executablePath: chromePath,
+      headless: true,
+      viewport: { width: 1280, height: 900 },
+      ignoreDefaultArgs: ['--enable-automation'],
+      args: ['--disable-blink-features=AutomationControlled']
+    });
 
-    for (let scrollStep = 0; scrollStep < 15; scrollStep++) {
-      const items = await page.evaluate(() => {
-        const allWithId = Array.from(document.querySelectorAll('[data-id]'));
-        const list = [];
-        for (const el of allWithId) {
-          const id = el.getAttribute('data-id');
-          const text = (el.innerText || el.textContent || '').trim();
-          const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
-          if (id && lines.length > 0) {
-            const fileNameCandidate = lines.find(l => l.includes('corte_') || l.includes('.') || l.endsWith('.mp4') || l.endsWith('.txt') || l.endsWith('.srt') || l.endsWith('.json')) || lines[0];
-            list.push({ id, name: fileNameCandidate });
+    const page = await ctx.newPage();
+
+    try {
+      await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      await page.waitForTimeout(3000);
+
+      for (let scrollStep = 0; scrollStep < 15; scrollStep++) {
+        const items = await page.evaluate(() => {
+          const allWithId = Array.from(document.querySelectorAll('[data-id]'));
+          const list = [];
+          for (const el of allWithId) {
+            const id = el.getAttribute('data-id');
+            const text = (el.innerText || el.textContent || '').trim();
+            const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+            if (id && lines.length > 0) {
+              const fileNameCandidate = lines.find(l => l.includes('corte_') || l.includes('.') || l.endsWith('.mp4') || l.endsWith('.txt') || l.endsWith('.srt') || l.endsWith('.json')) || lines[0];
+              list.push({ id, name: fileNameCandidate });
+            }
+          }
+          return list;
+        });
+
+        for (const item of items) {
+          if (!allFound.has(item.id)) {
+            allFound.set(item.id, item.name);
           }
         }
-        return list;
-      });
 
-      for (const item of items) {
-        if (!allFound.has(item.id)) {
-          allFound.set(item.id, item.name);
-        }
+        await page.keyboard.press('PageDown');
+        await page.waitForTimeout(600);
       }
-
-      await page.keyboard.press('PageDown');
-      await page.waitForTimeout(600);
+    } finally {
+      await ctx.close().catch(() => {});
     }
-  } finally {
-    await ctx.close().catch(() => {});
-  }
+  });
 
   const files = Array.from(allFound.entries()).map(([id, name]) => ({ id, name }));
   const cutsMap = new Map();

@@ -172,6 +172,36 @@ class QueueExecutor extends EventEmitter {
       this.q.status(job.id, 'completed', detail);
       this.emit('job-completed', { job, result, nextInSeconds: delaySec, status: this.getStatus() });
       console.log(`[Executor] ✅ Job ${job.id} CONCLUÍDO! Pausa de ${delaySec}s aplicada na rede ${net}.`);
+
+      // Auto-exclusão segura (Opção 1): após 2 minutos da conclusão nas 3 redes
+      try {
+        const allJobs = this.q.list();
+        const cutJobs = allJobs.filter(j => j.payload && j.payload.cutIndex === p.cutIndex);
+        const allThreeDone = cutJobs.length >= 3 && cutJobs.every(j => j.state === 'completed');
+
+        if (allThreeDone) {
+          console.log(`[Auto-Cleanup] 🎯 Corte ${p.cutIndex} concluído com sucesso nas 3 redes!`);
+          console.log(`[Auto-Cleanup] Agendando exclusão segura dos arquivos do PC em 2 minutos (120s)...`);
+
+          setTimeout(() => {
+            try {
+              if (p.videoPath && fs.existsSync(p.videoPath)) {
+                fs.unlinkSync(p.videoPath);
+                console.log(`[Auto-Cleanup] Vídeo do Corte ${p.cutIndex} excluído do PC: ${p.videoPath}`);
+              }
+              if (p.postPath && fs.existsSync(p.postPath)) {
+                fs.unlinkSync(p.postPath);
+                console.log(`[Auto-Cleanup] Post do Corte ${p.cutIndex} excluído do PC: ${p.postPath}`);
+              }
+              console.log(`[Auto-Cleanup] ✅ Corte ${p.cutIndex}: espaço em disco liberado! (Originais mantidos no Drive)`);
+            } catch (errDel) {
+              console.warn(`[Auto-Cleanup] Aviso ao excluir arquivos do corte ${p.cutIndex}: ${errDel.message}`);
+            }
+          }, 120000);
+        }
+      } catch (errCheck) {
+        console.warn(`[Auto-Cleanup] Erro na verificação: ${errCheck.message}`);
+      }
     } else {
       const detail = `Falha: ${error || 'Erro desconhecido'}. Tentativa reagendada para ${delaySec}s`;
       this.q.status(job.id, 'failed', detail);

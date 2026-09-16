@@ -105,17 +105,43 @@ async function publishTikTok({ videoPath, caption }) {
       await modalPubBtn.click({ force: true });
     }
 
-    // Aguarda confirmação
+    // Aguarda confirmação com retentativa de clique caso o TikTok estivesse verificando
     console.log('[TikTok] Aguardando confirmação do TikTok...');
     let confirmed = false;
-    for (let w = 1; w <= 35; w++) {
+    for (let w = 1; w <= 40; w++) {
       await page.waitForTimeout(2000);
       const url = page.url();
-      const hasSuccessText = await page.locator('text="Seu vídeo foi publicado", text="Publicado com sucesso", text="Gerenciar publicações", text="Manage your posts"').first().isVisible().catch(() => false);
+      const hasSuccessText = await page.locator('text="Seu vídeo foi publicado", text="Publicado com sucesso", text="Gerenciar publicações", text="Manage your posts", text="Vídeo publicado"').first().isVisible().catch(() => false);
       if (url.includes('/tiktokstudio/content') || hasSuccessText) {
         confirmed = true;
         console.log('[TikTok] >>> CONFIRMADO: VÍDEO PUBLICADO NO TIKTOK! <<<');
         break;
+      }
+
+      // Se abrir modal de confirmação no meio do caminho
+      const modalPubBtn = page.locator('div[role="dialog"] button:has-text("Publicar"), div[role="dialog"] div[role="button"]:has-text("Publicar")').first();
+      if (await modalPubBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        console.log('[TikTok] Confirmando modal pendente de publicação...');
+        await modalPubBtn.click({ force: true }).catch(() => {});
+        continue;
+      }
+
+      // Se após 3 segundos o botão vermelho Publicar ainda estiver na tela (ex: terminou verificação de direitos autorais agora)
+      if (w % 3 === 0) {
+        const stillPostBtn = page.locator('button:has-text("Publicar")').last();
+        if (await stillPostBtn.isVisible().catch(() => false)) {
+          console.log(`[TikTok] [Tentativa ${w}] Botão Publicar ainda presente, reenviando clique...`);
+          await stillPostBtn.scrollIntoViewIfNeeded().catch(() => {});
+          const b = await stillPostBtn.boundingBox().catch(() => null);
+          if (b) {
+            await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+            await page.mouse.down();
+            await page.waitForTimeout(100);
+            await page.mouse.up();
+          } else {
+            await stillPostBtn.click({ force: true }).catch(() => {});
+          }
+        }
       }
     }
 

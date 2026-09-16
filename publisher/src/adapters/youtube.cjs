@@ -1,27 +1,29 @@
 const { chromium } = require('playwright');
 const path = require('node:path');
 const fs = require('node:fs');
+const { withGoogleLock } = require('../google-lock.cjs');
 
 async function publishYouTubeShorts({ videoPath, title, description = '' }) {
-  const startTime = Date.now();
-  const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
-  const profileDir = path.join(dataDir, 'profiles', 'youtube');
-  const chromePath = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
+  return withGoogleLock(async () => {
+    const startTime = Date.now();
+    const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
+    const profileDir = path.join(dataDir, 'profiles', 'youtube');
+    const chromePath = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
 
-  console.log('[YouTube] Iniciando publicação de Shorts...');
-  console.log('[YouTube] Vídeo:', videoPath);
-  console.log('[YouTube] Título:', title);
+    console.log('[YouTube] Iniciando publicação de Shorts...');
+    console.log('[YouTube] Vídeo:', videoPath);
+    console.log('[YouTube] Título:', title);
 
-  const ctx = await chromium.launchPersistentContext(profileDir, {
-    executablePath: chromePath,
-    headless: false,
-    viewport: { width: 1366, height: 850 },
-    ignoreDefaultArgs: ['--enable-automation'],
-    args: ['--disable-blink-features=AutomationControlled']
-  });
+    const ctx = await chromium.launchPersistentContext(profileDir, {
+      executablePath: chromePath,
+      headless: false,
+      viewport: { width: 1366, height: 850 },
+      ignoreDefaultArgs: ['--enable-automation'],
+      args: ['--disable-blink-features=AutomationControlled']
+    });
 
-  const page = ctx.pages()[0] || await ctx.newPage();
-  page.setDefaultTimeout(60000);
+    const page = ctx.pages()[0] || await ctx.newPage();
+    page.setDefaultTimeout(60000);
 
   try {
     console.log('[YouTube 1/5] Carregando YouTube Studio...');
@@ -152,6 +154,7 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
     await page.waitForTimeout(3000);
     await ctx.close();
   }
+  });
 }
 
 module.exports = { publishYouTubeShorts };
