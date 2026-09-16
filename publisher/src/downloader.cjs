@@ -122,6 +122,36 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, reques
 
   onProgress({ status: 'starting', cutIndex, titulo });
 
+  let postText = '';
+  if (fs.existsSync(postDestPath)) {
+    try {
+      postText = fs.readFileSync(postDestPath, 'utf8');
+    } catch (_) {}
+  }
+
+  // Se o vídeo e o texto já existem no disco, não gasta banda nem tempo
+  if (fs.existsSync(videoDestPath) && fs.statSync(videoDestPath).size > 500000 && postText) {
+    const stats = fs.statSync(videoDestPath);
+    const sizeMb = Number((stats.size / (1024 * 1024)).toFixed(1));
+    console.log(`[Downloader] Corte ${cutIndex} já existe localmente em ${videoDestPath} (${sizeMb} MB). Reutilizando.`);
+    let cleanTitle = titulo;
+    const firstLine = postText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
+    if (firstLine && firstLine.length > 3) cleanTitle = firstLine;
+
+    const result = {
+      cutIndex,
+      titulo: cleanTitle,
+      videoPath: videoDestPath,
+      postPath: postDestPath,
+      postText,
+      sizeMb,
+      durationSec: 0,
+      speedMbPerSec: 0
+    };
+    onProgress({ status: 'completed', ...result });
+    return result;
+  }
+
   console.log(`[Downloader] Iniciando sessão para o Corte ${cutIndex}...`);
   const ctx = await chromium.launchPersistentContext(googleProfileDir, {
     executablePath: chromePath,
@@ -131,7 +161,6 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, reques
     args: ['--disable-blink-features=AutomationControlled']
   });
 
-  let postText = '';
   const t0 = Date.now();
   try {
     // 1. Download do Texto de Post
@@ -227,9 +256,175 @@ async function downloadBatch(batch, onCutDownloaded = () => {}) {
   return downloadedCuts;
 }
 
+function extractDriveFolderId(urlOrId) {
+  if (!urlOrId) return null;
+  const str = String(urlOrId).trim();
+  const match = str.match(/folders\/([a-zA-Z0-9_-]+)/i);
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(str)) return str;
+  return null;
+}
+
+async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
+  const folderId = extractDriveFolderId(folderUrlOrId);
+  if (!folderId) {
+    throw new Error('Link ou ID da pasta do Google Drive inválido.');
+  }
+
+  const folderUrl = `https://drive.google.com/drive/folders/${folderId}`;
+  onLog(`[Drive Scan] Acessando pasta: ${folderUrl}`);
+
+  const ctx = await chromium.launchPersistentContext(googleProfileDir, {
+    executablePath: chromePath,
+    headless: true,
+    viewport: { width: 1280, height: 900 },
+    ignoreDefaultArgs: ['--enable-automation'],
+    args: ['--disable-blink-features=AutomationControlled']
+  });
+
+  const page = await ctx.newPage();
+  const allFound = new Map();
+
+  try {
+    await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.waitForTimeout(3000);
+
+    for (let scrollStep = 0; scrollStep < 15; scrollStep++) {
+      const items = await page.evaluate(() => {
+        const allWithId = Array.from(document.querySelectorAll('[data-id]'));
+        const list = [];
+        for (const el of allWithId) {
+          const id = el.getAttribute('data-id');
+          const text = (el.innerText || el.textContent || '').trim();
+          const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+          if (id && lines.length > 0) {
+            const fileNameCandidate = lines.find(l => l.includes('corte_') || l.includes('.') || l.endsWith('.mp4') || l.endsWith('.txt') || l.endsWith('.srt') || l.endsWith('.json')) || lines[0];
+            list.push({ id, name: fileNameCandidate });
+          }
+        }
+        return list;
+      });
+
+      for (const item of items) {
+        if (!allFound.has(item.id)) {
+          allFound.set(item.id, item.name);
+        }
+      }
+
+      await page.keyboard.press('PageDown');
+      await page.waitForTimeout(600);
+    }
+  } finally {
+    await ctx.close().catch(() => {});
+  }
+
+  const files = Array.from(allFound.entries()).map(([id, name]) => ({ id, name }));
+  const cutsMap = new Map();
+
+  for (const f of files) {
+    const match = f.name.match(/corte_(\d+)/i);
+    if (!match) continue;
+
+    const cutNum = parseInt(match[1], 10);
+    if (!cutsMap.has(cutNum)) {
+      cutsMap.set(cutNum, { cutIndex: cutNum, rawName: f.name });
+    }
+    const cut = cutsMap.get(cutNum);
+
+    if (f.name.endsWith('_legenda.mp4')) {
+      cut.videoLegenda = { id: f.id, name: f.name };
+    } else if (f.name.endsWith('_post.txt')) {
+      cut.post = { id: f.id, name: f.name };
+    } else if (f.name.endsWith('.srt')) {
+      cut.srt = { id: f.id, name: f.name };
+    } else if (f.name.endsWith('.mp4') && !f.name.endsWith('_legenda.mp4')) {
+      cut.rawVideo = { id: f.id, name: f.name };
+    }
+
+    if (!cut.titulo) {
+      const clean = f.name
+        .replace(/^corte_\d+_/i, '')
+        .replace(/(_legenda\.mp4|_post\.txt|\.mp4|\.srt)$/i, '')
+        .replace(/_/g, ' ')
+        .trim();
+      if (clean) cut.titulo = clean;
+    }
+  }
+
+  const validCuts = Array.from(cutsMap.values())
+    .filter(c => c.videoLegenda && c.videoLegenda.id)
+    .sort((a, b) => a.cutIndex - b.cutIndex);
+
+  onLog(`[Drive Scan] ${validCuts.length} cortes com vídeo legendado identificados na pasta.`);
+  return { folderId, cuts: validCuts };
+}
+
+async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = console.log, onProgress = () => {} }) {
+  onLog(`[Drive Import] Iniciando escaneamento da pasta do Google Drive...`);
+  const { folderId, cuts } = await scanDriveFolder(folderUrlOrId, onLog);
+
+  if (cuts.length === 0) {
+    onLog(`[Drive Import] Nenhum corte com arquivo *_legenda.mp4 encontrado nesta pasta.`);
+    return { ok: false, message: 'Nenhum corte com legenda encontrado na pasta.' };
+  }
+
+  onLog(`[Drive Import] ${cuts.length} cortes identificados na pasta. Verificando histórico...`);
+  
+  const existingJobs = executor.q.list();
+  const requestId = `drive_${folderId.slice(0, 12)}`;
+  let enqueuedCount = 0;
+  let skippedCount = 0;
+
+  for (const cut of cuts) {
+    const cutJobs = existingJobs.filter(j => j.payload && j.payload.cutIndex === cut.cutIndex);
+    const completedJobs = cutJobs.filter(j => j.state === 'completed');
+    
+    if (completedJobs.length >= 3) {
+      onLog(`[Drive Import] ⏭️ Corte ${cut.cutIndex} já foi publicado nas 3 redes. Pulando.`);
+      skippedCount++;
+      continue;
+    }
+
+    onLog(`[Drive Import] ⬇️ Preparando Corte ${cut.cutIndex}: "${cut.titulo}" (apenas _legenda.mp4 e _post.txt)...`);
+    
+    try {
+      const downloaded = await downloadCorte({
+        cutIndex: cut.cutIndex,
+        titulo: cut.titulo,
+        videoFileId: cut.videoLegenda.id,
+        postFileId: cut.post?.id,
+        requestId,
+        onProgress: (p) => {
+          onProgress({ cutIndex: cut.cutIndex, status: p.status });
+        }
+      });
+
+      const jobIds = executor.enqueueCorte({
+        cutIndex: cut.cutIndex,
+        titulo: downloaded.titulo,
+        videoPath: downloaded.videoPath,
+        postPath: downloaded.postPath,
+        postText: downloaded.postText,
+        requestId
+      });
+
+      enqueuedCount++;
+      onLog(`[Drive Import] ✅ Corte ${cut.cutIndex} adicionado à fila de postagens (${jobIds.length} tarefas criadas).`);
+    } catch (err) {
+      onLog(`[Drive Import] ❌ Erro ao baixar Corte ${cut.cutIndex}: ${err.message}`);
+    }
+  }
+
+  onLog(`[Drive Import] Fila atualizada: ${enqueuedCount} cortes adicionados (${skippedCount} já publicados anteriormente).`);
+  return { ok: true, enqueuedCount, skippedCount, totalCuts: cuts.length };
+}
+
 module.exports = {
   downloadCorte,
   downloadBatch,
-  downloadGoogleDriveFileWithContext
+  downloadGoogleDriveFileWithContext,
+  extractDriveFolderId,
+  scanDriveFolder,
+  importAndEnqueueDriveFolder
 };
 

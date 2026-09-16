@@ -79,6 +79,12 @@ Base anterior: `d33ea1b`. Branch do Publicador: `feat/local-publisher`.
   - Intervalo de proteção aleatório de 5 a 10 minutos (300–600s) entre postagens na mesma rede.
 - **Ponte Local (`publisher/src/bridge.cjs`):**
   - Porta `127.0.0.1:49152` conectada ao término de render da aplicação web.
+- **Importação Sob Demanda do Google Drive (Opção B):**
+  - Campo na interface do desktop app para colar qualquer link de pasta do Google Drive.
+  - Varredura e indexação inteligente com rolagem contínua para carregar todos os cortes.
+  - Filtro estrito: baixa e enfileira exclusivamente `*_legenda.mp4` e `*_post.txt`, descartando `.srt` e `.mp4` crus.
+  - Pula automaticamente cortes já marcados como concluídos no histórico local do aplicativo.
+  - Cache local: reutiliza arquivos já presentes em disco sem gastar banda ou tempo.
 - **Sincronização:**
   - Arquivos sincronizados na pasta do app instalado em `C:\Users\lucas\Projetos\OS4Publicador\resources\app\src\`.
 

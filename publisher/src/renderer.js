@@ -192,6 +192,49 @@ async function refresh() {
   }
 }
 
+// Importação de Pasta do Google Drive (Opção B)
+const driveFolderInput = document.querySelector('#drive-folder-input');
+const btnImportDrive = document.querySelector('#btn-import-drive');
+const driveFeedback = document.querySelector('#drive-import-feedback');
+
+if (btnImportDrive) {
+  btnImportDrive.addEventListener('click', async () => {
+    const url = driveFolderInput.value.trim();
+    if (!url) {
+      driveFeedback.textContent = 'Por favor, insira o link ou ID da pasta do Google Drive.';
+      driveFeedback.classList.remove('hidden');
+      return;
+    }
+
+    btnImportDrive.disabled = true;
+    driveFeedback.classList.remove('hidden');
+    driveFeedback.textContent = '🔍 Conectando e escaneando a pasta do Google Drive em segundo plano...';
+
+    try {
+      await window.os4.importDriveFolder(url);
+      driveFeedback.textContent = '🚀 Varredura iniciada! Acompanhe o progresso nos logs de atividade e na fila.';
+      appendLog('[Drive UI] Pedido de importação da pasta enviado.');
+    } catch (err) {
+      btnImportDrive.disabled = false;
+      driveFeedback.textContent = `Erro ao iniciar importação: ${err.message}`;
+    }
+  });
+}
+
+if (window.os4?.onDriveImportFinished) {
+  window.os4.onDriveImportFinished((res) => {
+    if (btnImportDrive) btnImportDrive.disabled = false;
+    if (driveFeedback) {
+      if (res.ok) {
+        driveFeedback.textContent = `✅ Importação concluída! ${res.enqueuedCount} novos cortes adicionados à fila (${res.skippedCount} já constavam como publicados).`;
+      } else {
+        driveFeedback.textContent = `❌ ${res.error || res.message || 'Falha na importação.'}`;
+      }
+    }
+    updateQueueUi();
+  });
+}
+
 document.querySelector('#site').onclick = () => window.os4.openSite();
 
 refresh();
@@ -200,3 +243,4 @@ setInterval(() => {
     refresh();
   }
 }, 4000);
+

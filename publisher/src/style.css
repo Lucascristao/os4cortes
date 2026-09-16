@@ -71,6 +71,47 @@ section {
   margin-top: 20px;
 }
 
+.drive-section {
+  border-color: #4f46e5;
+  background: linear-gradient(180deg, #181d2f 0%, #111422 100%);
+}
+
+.drive-input-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.drive-input {
+  flex: 1;
+  min-width: 280px;
+  padding: 11px 14px;
+  background: #0d1017;
+  border: 1px solid #364153;
+  border-radius: 8px;
+  color: #f1f3f7;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.drive-input:focus {
+  border-color: #6366f1;
+}
+
+.drive-feedback {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  background: #1a2333;
+  border: 1px solid #2b3a54;
+  color: #93c5fd;
+}
+
 .highlight-section {
   border-color: #3b82f6;
   background: linear-gradient(180deg, #181d2a 0%, #131620 100%);

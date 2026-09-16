@@ -20,6 +20,21 @@
   </header>
 
   <main>
+    <!-- Importar Pasta do Google Drive (Opção B) -->
+    <section class="drive-section">
+      <div class="section-header">
+        <div>
+          <h2>Importar Pasta do Google Drive</h2>
+          <p class="hint">Cole o link da pasta gerada no Drive para varrer os cortes, baixar apenas os arquivos finais com legenda e enfileirar as publicações.</p>
+        </div>
+      </div>
+      <div class="drive-input-row">
+        <input type="text" id="drive-folder-input" class="drive-input" placeholder="https://drive.google.com/drive/folders/..." value="https://drive.google.com/drive/folders/1E1QdjsorCGeGPVTGnX_Xsq9Agkvnvd2t" aria-label="Link da pasta do Google Drive" />
+        <button id="btn-import-drive" class="primary">📥 Escanear & Iniciar Fila</button>
+      </div>
+      <div id="drive-import-feedback" class="drive-feedback hidden"></div>
+    </section>
+
     <!-- Fila de Publicações -->
     <section class="highlight-section">
       <div class="section-header">

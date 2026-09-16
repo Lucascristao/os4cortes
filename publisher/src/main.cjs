@@ -5,6 +5,7 @@ const cp = require('node:child_process');
 const { Queue } = require('./queue.cjs');
 const { QueueExecutor } = require('./executor.cjs');
 const { LocalBridgeServer } = require('./bridge.cjs');
+const { importAndEnqueueDriveFolder } = require('./downloader.cjs');
 
 const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
 app.setPath('userData', path.join(dataDir, 'interface'));
@@ -264,4 +265,44 @@ ipcMain.handle('enqueue-manual', (event, payload) => {
   if (!executor) throw new Error('Executor não iniciado');
   return executor.enqueueCorte(payload);
 });
+
+let isImportingDrive = false;
+
+ipcMain.handle('import-drive-folder', async (event, folderUrl) => {
+  validateEvent(event);
+  if (!executor) throw new Error('Executor não iniciado');
+  if (isImportingDrive) throw new Error('Já existe uma importação de pasta em andamento.');
+
+  isImportingDrive = true;
+  const logToUi = (msg) => {
+    console.log(msg);
+    win?.webContents.send('app-log', { msg, time: new Date().toLocaleTimeString('pt-BR') });
+  };
+
+  (async () => {
+    try {
+      logToUi(`[Drive] Iniciando varredura da pasta: ${folderUrl}`);
+      const res = await importAndEnqueueDriveFolder({
+        folderUrlOrId: folderUrl,
+        executor,
+        onLog: logToUi,
+        onProgress: (p) => {
+          win?.webContents.send('app-log', {
+            msg: `[Download] Corte ${p.cutIndex}: ${p.status}`,
+            time: new Date().toLocaleTimeString('pt-BR')
+          });
+        }
+      });
+      win?.webContents.send('drive-import-finished', res);
+    } catch (err) {
+      logToUi(`[Drive] ❌ Falha na importação: ${err.message}`);
+      win?.webContents.send('drive-import-finished', { ok: false, error: err.message });
+    } finally {
+      isImportingDrive = false;
+    }
+  })();
+
+  return { ok: true, message: 'Varredura da pasta do Drive iniciada com sucesso!' };
+});
+
 

@@ -8,7 +8,9 @@ contextBridge.exposeInMainWorld('os4', {
   openSite: () => ipcRenderer.invoke('open-site'),
   getQueue: () => ipcRenderer.invoke('get-queue'),
   enqueueManual: (data) => ipcRenderer.invoke('enqueue-manual', data),
+  importDriveFolder: (url) => ipcRenderer.invoke('import-drive-folder', url),
   onLog: (cb) => ipcRenderer.on('app-log', (_event, data) => cb(data)),
   onQueueStatus: (cb) => ipcRenderer.on('queue-status', (_event, data) => cb(data)),
-  onCooldown: (cb) => ipcRenderer.on('cooldown', (_event, data) => cb(data))
+  onCooldown: (cb) => ipcRenderer.on('cooldown', (_event, data) => cb(data)),
+  onDriveImportFinished: (cb) => ipcRenderer.on('drive-import-finished', (_event, data) => cb(data))
 });
