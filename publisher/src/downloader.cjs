@@ -168,9 +168,17 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, reques
   console.log(`Salvo em: ${videoDestPath}`);
   console.log('====================================================');
 
+  let cleanTitle = titulo;
+  if (postText) {
+    const firstLine = postText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
+    if (firstLine && firstLine.length > 3) {
+      cleanTitle = firstLine;
+    }
+  }
+
   const result = {
     cutIndex,
-    titulo,
+    titulo: cleanTitle,
     videoPath: videoDestPath,
     postPath: postDestPath,
     postText,

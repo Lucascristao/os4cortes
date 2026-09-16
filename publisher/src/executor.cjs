@@ -124,21 +124,35 @@ class QueueExecutor extends EventEmitter {
     let error = null;
 
     try {
+      let effectiveText = p.postText || '';
+      let effectiveTitle = p.titulo || '';
+
+      if (p.postPath && fs.existsSync(p.postPath)) {
+        try {
+          effectiveText = fs.readFileSync(p.postPath, 'utf8').trim();
+          const firstLine = effectiveText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
+          if (firstLine && firstLine.length > 3) {
+            effectiveTitle = firstLine;
+          }
+        } catch (_) {}
+      }
+
       if (net === 'youtube') {
+        const ytTitle = (effectiveTitle.toLowerCase().includes('#shorts') ? effectiveTitle : `${effectiveTitle} #shorts`).slice(0, 95);
         result = await publishYouTubeShorts({
           videoPath: p.videoPath,
-          title: p.titulo,
-          description: p.postText
+          title: ytTitle,
+          description: effectiveText || effectiveTitle
         });
       } else if (net === 'tiktok') {
         result = await publishTikTok({
           videoPath: p.videoPath,
-          caption: p.postText
+          caption: effectiveText || effectiveTitle
         });
       } else if (net === 'instagram') {
         result = await publishInstagramReels({
           videoPath: p.videoPath,
-          caption: p.postText
+          caption: effectiveText || effectiveTitle
         });
       } else {
         throw new Error(`Rede desconhecida: ${net}`);

@@ -71,6 +71,15 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
       console.log('[YouTube] Título definido com sucesso!');
     }
 
+    const descBox = page.locator('#description-textarea #textbox, #textbox[aria-label*="descrição" i], #textbox[aria-label*="description" i]').first();
+    if (description && await descBox.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await descBox.click({ force: true });
+      await page.keyboard.press('Control+A');
+      await page.keyboard.press('Delete');
+      await page.keyboard.insertText(description);
+      console.log('[YouTube] Descrição preenchida com sucesso!');
+    }
+
     // Seleciona "Não é conteúdo para crianças"
     const notForKids = page.locator('tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"], [name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]').first();
     if (await notForKids.isVisible({ timeout: 10000 }).catch(() => false)) {
@@ -110,10 +119,14 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
     let confirmed = false;
     for (let w = 1; w <= 30; w++) {
       await page.waitForTimeout(1500);
-      const success = page.locator('text="Vídeo publicado", text="Vídeo enviado", text="Short publicado", #dialog-title:has-text("publicado")').first();
-      if (await success.isVisible().catch(() => false)) {
+      const isSuccess = await page.locator('button:has-text("Fechar"), ytcp-button:has-text("Fechar"), text="Vídeo publicado", text="Vídeo enviado", text="Short publicado", text*="Verificação", #dialog-title:has-text("publicado")').first().isVisible().catch(() => false);
+      if (isSuccess) {
         confirmed = true;
         console.log('[YouTube] >>> CONFIRMADO: VÍDEO PUBLICADO NO YOUTUBE! <<<');
+        const closeBtn = page.locator('button:has-text("Fechar"), ytcp-button:has-text("Fechar")').first();
+        if (await closeBtn.isVisible().catch(() => false)) {
+          await closeBtn.click().catch(() => {});
+        }
         break;
       }
     }
@@ -122,6 +135,10 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
     const uploadSeconds = ((Date.now() - tUpload) / 1000).toFixed(1);
     const screenshotPath = path.join(dataDir, `yt-published-${Date.now()}.png`);
     await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+
+    if (!confirmed) {
+      throw new Error('YouTube não confirmou a publicação do vídeo (verifique o screenshot salvo em: ' + screenshotPath + ')');
+    }
 
     return {
       ok: true,

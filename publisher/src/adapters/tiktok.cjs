@@ -75,8 +75,27 @@ async function publishTikTok({ videoPath, caption }) {
       await page.waitForTimeout(500);
     }
 
-    console.log('[TikTok 4/4] >>> CLICANDO EM PUBLICAR NO TIKTOK <<<');
-    await publishBtn.click({ force: true });
+    console.log('[TikTok 4/4] >>> LOCALIZANDO BOTÃO PUBLICAR NO TIKTOK <<<');
+    // Rola até o rodapé para garantir que os botões inferiores estejam na tela
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(1500);
+
+    const postBtn = page.locator('button:has-text("Publicar")').last();
+    await postBtn.waitFor({ state: 'visible', timeout: 30000 });
+    await postBtn.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1000);
+
+    console.log('[TikTok] Clicando no botão vermelho Publicar...');
+    const box = await postBtn.boundingBox();
+    if (box) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForTimeout(200);
+      await page.mouse.down();
+      await page.waitForTimeout(150);
+      await page.mouse.up();
+    } else {
+      await postBtn.click({ force: true });
+    }
     await page.waitForTimeout(3000);
 
     // Se abrir modal de confirmação "Deseja publicar agora?"
@@ -89,10 +108,11 @@ async function publishTikTok({ videoPath, caption }) {
     // Aguarda confirmação
     console.log('[TikTok] Aguardando confirmação do TikTok...');
     let confirmed = false;
-    for (let w = 1; w <= 30; w++) {
+    for (let w = 1; w <= 35; w++) {
       await page.waitForTimeout(2000);
       const url = page.url();
-      if (url.includes('/tiktokstudio/content') || await page.locator('text="Seu vídeo foi publicado", text="Publicado com sucesso"').first().isVisible().catch(() => false)) {
+      const hasSuccessText = await page.locator('text="Seu vídeo foi publicado", text="Publicado com sucesso", text="Gerenciar publicações", text="Manage your posts"').first().isVisible().catch(() => false);
+      if (url.includes('/tiktokstudio/content') || hasSuccessText) {
         confirmed = true;
         console.log('[TikTok] >>> CONFIRMADO: VÍDEO PUBLICADO NO TIKTOK! <<<');
         break;
@@ -103,6 +123,10 @@ async function publishTikTok({ videoPath, caption }) {
     const uploadSeconds = ((Date.now() - tUpload) / 1000).toFixed(1);
     const screenshotPath = path.join(dataDir, `tiktok-published-${Date.now()}.png`);
     await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+
+    if (!confirmed) {
+      throw new Error('TikTok não confirmou a publicação do vídeo (verifique o screenshot salvo em: ' + screenshotPath + ')');
+    }
 
     return {
       ok: true,

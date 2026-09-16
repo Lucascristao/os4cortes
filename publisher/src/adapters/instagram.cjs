@@ -63,17 +63,20 @@ async function publishInstagramReels({ videoPath, caption }) {
       await page.waitForTimeout(500);
     }
 
-    console.log('[Instagram 4/6] Definindo proporção Original (9:16 vertical)...');
-    const cropBtn = page.locator('button[aria-label*="corte" i], button[aria-label*="crop" i], svg[aria-label*="corte" i], svg[aria-label*="crop" i]').first();
-    if (await cropBtn.count() > 0 && await cropBtn.isVisible().catch(() => false)) {
-      await cropBtn.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(500);
-      const originalOption = page.locator('button:has-text("Original"), span:has-text("Original"), div[role="button"]:has-text("Original"), button:has-text("9:16"), span:has-text("9:16")').first();
-      if (await originalOption.count() > 0 && await originalOption.isVisible().catch(() => false)) {
-        await originalOption.click({ force: true }).catch(() => {});
-        console.log('[Instagram] Proporção definida como Original!');
-        await page.waitForTimeout(500);
-      }
+    console.log('[Instagram 4/6] Definindo proporção 9:16 vertical...');
+    try {
+      const cropBtn = page.locator('button:has(svg[aria-label*="corte" i]), button:has(svg[aria-label*="crop" i]), [aria-label*="Selecionar corte" i]').first();
+      await cropBtn.waitFor({ state: 'visible', timeout: 12000 });
+      await cropBtn.click();
+      await page.waitForTimeout(1000);
+
+      const opt916 = page.locator('span:text-is("9:16"), div:text-is("9:16")').last();
+      await opt916.waitFor({ state: 'visible', timeout: 8000 });
+      await opt916.click({ force: true });
+      console.log('[Instagram] ✅ Proporção 9:16 vertical confirmada!');
+      await page.waitForTimeout(1500);
+    } catch (errCrop) {
+      console.warn(`[Instagram] Aviso na seleção de proporção: ${errCrop.message}`);
     }
 
     console.log('[Instagram 5/6] Avançando telas...');
