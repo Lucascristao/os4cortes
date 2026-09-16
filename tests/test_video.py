@@ -102,5 +102,26 @@ class CaptionTests(unittest.TestCase):
     def test_timestamp_carry(self):
         self.assertEqual(srt_tempo(59.9999),'00:01:00,000')
 
+    def test_gerar_capa_composicao(self):
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        from processor.captions import gerar_capa_frame0, DEFAULT_FONT_DIR
+        with tempfile.TemporaryDirectory() as td:
+            base_dir = Path(td)
+            dummy_frame = base_dir / "frame.jpg"
+            Image.new("RGB", (1080, 1920), (80, 80, 80)).save(str(dummy_frame))
+            destino_capa = base_dir / "capa.jpg"
+            capa = gerar_capa_frame0(
+                arquivo_video=dummy_frame,
+                titulo="Como construir autoridade e escala",
+                destino_capa=destino_capa,
+                pasta_fontes=DEFAULT_FONT_DIR,
+                tempo_frame=0.0,
+            )
+            self.assertTrue(capa.exists())
+            with Image.open(capa) as img:
+                self.assertEqual(img.size, (1080, 1920))
+
 if __name__=='__main__': unittest.main()
 

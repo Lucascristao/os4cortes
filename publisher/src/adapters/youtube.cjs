@@ -82,6 +82,13 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
       console.log('[YouTube] Descrição preenchida com sucesso!');
     }
 
+    // Verifica se atingiu o limite diário de envios do canal
+    const limitNotice = page.locator('text=/limite di[aá]rio de envio/i, text=/daily upload limit/i, text=/limite de envio atingido/i, :has-text("limite de envio")').first();
+    if (await limitNotice.isVisible({ timeout: 2000 }).catch(() => false)) {
+      const msg = await limitNotice.innerText().catch(() => 'Limite diário de envio atingido');
+      throw new Error(`Limite diário do YouTube atingido: "${msg.trim()}". O YouTube libera novos envios em 24h ou após verificação de recursos avançados.`);
+    }
+
     // Seleciona "Não é conteúdo para crianças"
     const notForKids = page.locator('tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"], [name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]').first();
     if (await notForKids.isVisible({ timeout: 10000 }).catch(() => false)) {
@@ -94,6 +101,9 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
     const nextBtn = page.locator('ytcp-button#next-button, button:has-text("Próximo")').first();
     for (let step = 1; step <= 3; step++) {
       await page.waitForTimeout(2000);
+      if (await limitNotice.isVisible({ timeout: 500 }).catch(() => false)) {
+        throw new Error('Limite diário do YouTube atingido nesta conta (cota máxima de ~10 envios por 24h).');
+      }
       if (await nextBtn.isVisible().catch(() => false)) {
         await nextBtn.click();
         console.log(`[YouTube] Avançou etapa ${step}`);
@@ -119,13 +129,35 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
     // Aguarda confirmação
     console.log('[YouTube] Aguardando confirmação do YouTube...');
     let confirmed = false;
+    const successSelectors = [
+      'ytcp-video-share-dialog',
+      'ytcp-uploads-still-processing-dialog',
+      '#dialog-title:has-text("publicado")',
+      '#dialog-title:has-text("Processando")',
+      'text="Vídeo publicado"',
+      'text="Short publicado"',
+      'text="Vídeo enviado"',
+      'text="Processando vídeo"',
+      'text="Verificações concluídas"',
+      'button:has-text("Fechar")',
+      'ytcp-button:has-text("Fechar")',
+      'ytcp-button#close-button'
+    ];
+
     for (let w = 1; w <= 30; w++) {
       await page.waitForTimeout(1500);
-      const isSuccess = await page.locator('button:has-text("Fechar"), ytcp-button:has-text("Fechar"), text="Vídeo publicado", text="Vídeo enviado", text="Short publicado", text*="Verificação", #dialog-title:has-text("publicado")').first().isVisible().catch(() => false);
+      let isSuccess = false;
+      for (const sel of successSelectors) {
+        if (await page.locator(sel).first().isVisible().catch(() => false)) {
+          isSuccess = true;
+          break;
+        }
+      }
+
       if (isSuccess) {
         confirmed = true;
         console.log('[YouTube] >>> CONFIRMADO: VÍDEO PUBLICADO NO YOUTUBE! <<<');
-        const closeBtn = page.locator('button:has-text("Fechar"), ytcp-button:has-text("Fechar")').first();
+        const closeBtn = page.locator('ytcp-button#close-button, ytcp-button:has-text("Fechar"), button:has-text("Fechar")').first();
         if (await closeBtn.isVisible().catch(() => false)) {
           await closeBtn.click().catch(() => {});
         }
@@ -150,6 +182,11 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
       uploadSeconds,
       screenshot: screenshotPath
     };
+  } catch (err) {
+    const errScreenshot = path.join(dataDir, `yt-error-${Date.now()}.png`);
+    await page.screenshot({ path: errScreenshot, fullPage: true }).catch(() => {});
+    console.error(`[YouTube] Erro durante o fluxo: ${err.message} (screenshot salva em ${errScreenshot})`);
+    throw err;
   } finally {
     await page.waitForTimeout(3000);
     await ctx.close();

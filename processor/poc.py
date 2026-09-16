@@ -110,11 +110,12 @@ def main() -> int:
 
     print("[5/6] Gerando legenda Archivo Black + SRT...")
     progresso("legendas", 80, "Gerando legendas")
-    srt_path, video_legenda = criar_legendas_corte(
+    srt_path, video_legenda, capa_path = criar_legendas_corte(
         transcricao_json,
         video_corte,
         inicio,
         fim,
+        titulo=args.titulo,
         style=CaptionStyle(),
     )
 
@@ -139,6 +140,8 @@ def main() -> int:
         post_path,
         out / "transcricao_para_chatgpt.txt",
     ]
+    if capa_path and capa_path.exists():
+        arquivos.append(capa_path)
 
     if uploader is not None:
         total_arquivos = len(arquivos)

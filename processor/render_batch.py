@@ -122,11 +122,12 @@ def main() -> int:
                 cut=i,
                 total_cuts=total,
             )
-            srt_path, video_legenda = criar_legendas_corte(
+            srt_path, video_legenda, capa_path = criar_legendas_corte(
                 transcricao_json,
                 video_corte,
                 corte["inicio"],
                 corte["fim"],
+                titulo=corte["titulo"],
                 style=CaptionStyle(),
             )
             post_path = escrever_post(
@@ -150,6 +151,9 @@ def main() -> int:
                 ("srt", srt_path),
                 ("post", post_path),
             ]
+            if capa_path and capa_path.exists():
+                arquivos.append(("capa", capa_path))
+
             ids: dict[str, str] = {}
 
             for pos, (chave, arquivo) in enumerate(arquivos, start=1):
@@ -163,30 +167,37 @@ def main() -> int:
                     total_cuts=total,
                 )
 
+            files_dict = {
+                "video": {
+                    "id": ids["video"],
+                    "url": f"https://drive.google.com/file/d/{ids['video']}/view",
+                },
+                "videoLegenda": {
+                    "id": ids["videoLegenda"],
+                    "url": f"https://drive.google.com/file/d/{ids['videoLegenda']}/view",
+                },
+                "srt": {
+                    "id": ids["srt"],
+                    "url": f"https://drive.google.com/file/d/{ids['srt']}/view",
+                },
+                "post": {
+                    "id": ids["post"],
+                    "url": f"https://drive.google.com/file/d/{ids['post']}/view",
+                },
+            }
+            if "capa" in ids:
+                files_dict["capa"] = {
+                    "id": ids["capa"],
+                    "url": f"https://drive.google.com/file/d/{ids['capa']}/view",
+                }
+
             resultados.append(
                 {
                     "index": i,
                     "titulo": corte["titulo"],
                     "inicio": corte["inicio"],
                     "fim": corte["fim"],
-                    "files": {
-                        "video": {
-                            "id": ids["video"],
-                            "url": f"https://drive.google.com/file/d/{ids['video']}/view",
-                        },
-                        "videoLegenda": {
-                            "id": ids["videoLegenda"],
-                            "url": f"https://drive.google.com/file/d/{ids['videoLegenda']}/view",
-                        },
-                        "srt": {
-                            "id": ids["srt"],
-                            "url": f"https://drive.google.com/file/d/{ids['srt']}/view",
-                        },
-                        "post": {
-                            "id": ids["post"],
-                            "url": f"https://drive.google.com/file/d/{ids['post']}/view",
-                        },
-                    },
+                    "files": files_dict,
                 }
             )
 

@@ -262,14 +262,141 @@ def texto_srt_grupo(grupo: list[dict], line_chars: int = 21) -> str:
     return " ".join(tokens[:corte]) + "\n" + " ".join(tokens[corte:])
 
 
+def gerar_capa_frame0(
+    arquivo_video: str | Path,
+    titulo: str,
+    destino_capa: str | Path,
+    pasta_fontes: str | Path = DEFAULT_FONT_DIR,
+    tempo_frame: float = 2.0,
+) -> Path:
+    from PIL import Image, ImageDraw, ImageFont
+
+    arquivo_video = Path(arquivo_video)
+    destino_capa = Path(destino_capa)
+    font_path = garantir_archivo_black(pasta_fontes)
+
+    temp_frame = destino_capa.with_suffix(".temp_frame.jpg")
+
+    # 1. Extrair frame estático com FFmpeg
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-ss", str(max(0.0, float(tempo_frame))),
+                "-i", str(arquivo_video),
+                "-vframes", "1",
+                "-q:v", "2",
+                str(temp_frame),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+    if not temp_frame.exists():
+        if arquivo_video.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
+            shutil.copy2(arquivo_video, temp_frame)
+        else:
+            Image.new("RGB", (1080, 1920), (24, 24, 28)).save(str(temp_frame))
+
+    # 2. Composição gráfica 1080x1920 com Pillow
+    img = Image.open(temp_frame).convert("RGBA")
+    if img.size != (1080, 1920):
+        img = img.resize((1080, 1920), Image.Resampling.LANCZOS)
+
+    # Gradiente cinematográfico escuro no terço superior/médio para contraste de texto
+    overlay = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+    draw_ov = ImageDraw.Draw(overlay)
+
+    for y in range(0, 180):
+        draw_ov.line([(0, y), (1080, y)], fill=(0, 0, 0, 190))
+    for y in range(180, 950):
+        prog = (y - 180) / (950 - 180)
+        alpha = int(190 * (1.0 - prog) ** 1.3)
+        draw_ov.line([(0, y), (1080, y)], fill=(0, 0, 0, alpha))
+
+    img = Image.alpha_composite(img, overlay)
+    draw = ImageDraw.Draw(img)
+
+    # 3. Badge sutil "OS4 CORTES"
+    font_badge = ImageFont.truetype(str(font_path), 32)
+    badge_text = "OS4 CORTES"
+    bbox_b = font_badge.getbbox(badge_text)
+    bw = bbox_b[2] - bbox_b[0]
+    bx = (1080 - bw) // 2
+    by = 220
+    pad_x, pad_y = 28, 10
+    draw.rounded_rectangle(
+        [bx - pad_x, by - pad_y, bx + bw + pad_x, by + 36 + pad_y],
+        radius=14,
+        fill=(0, 0, 0, 170),
+        outline=(255, 230, 0, 230),  # Amarelo elétrico marcante
+        width=2,
+    )
+    draw.text((bx, by), badge_text, font=font_badge, fill=(255, 255, 255, 255))
+
+    # 4. Título do corte
+    font_size = 72
+    font_titulo = ImageFont.truetype(str(font_path), font_size)
+    words = titulo.strip().split()
+    lines = []
+    curr = []
+    for w in words:
+        test = " ".join(curr + [w])
+        bbox = font_titulo.getbbox(test)
+        if bbox[2] - bbox[0] > 920 and curr:
+            lines.append(" ".join(curr))
+            curr = [w]
+        else:
+            curr.append(w)
+    if curr:
+        lines.append(" ".join(curr))
+
+    if len(lines) > 3:
+        font_size = 62
+        font_titulo = ImageFont.truetype(str(font_path), font_size)
+        lines = []
+        curr = []
+        for w in words:
+            test = " ".join(curr + [w])
+            bbox = font_titulo.getbbox(test)
+            if bbox[2] - bbox[0] > 920 and curr:
+                lines.append(" ".join(curr))
+                curr = [w]
+            else:
+                curr.append(w)
+        if curr:
+            lines.append(" ".join(curr))
+
+    start_y = 350
+    line_h = int(font_size * 1.22)
+    for idx, l in enumerate(lines):
+        bbox = font_titulo.getbbox(l)
+        lw = bbox[2] - bbox[0]
+        lx = (1080 - lw) // 2
+        ly = start_y + idx * line_h
+        draw.text((lx + 4, ly + 4), l, font=font_titulo, fill=(0, 0, 0, 240))
+        draw.text((lx, ly), l, font=font_titulo, fill=(255, 255, 255, 255))
+
+    destino_capa.parent.mkdir(parents=True, exist_ok=True)
+    img.convert("RGB").save(str(destino_capa), "JPEG", quality=95)
+    temp_frame.unlink(missing_ok=True)
+    return destino_capa
+
+
 def criar_legendas_corte(
     transcricao_path: str | Path,
     arquivo_video: str | Path,
     inicio_corte: float,
     fim_corte: float,
+    titulo: str = "",
     pasta_fontes: str | Path = DEFAULT_FONT_DIR,
     style: CaptionStyle | None = None,
-) -> tuple[Path, Path]:
+    color_grading: bool = True,
+    gerar_capa: bool = True,
+) -> tuple[Path, Path, Path | None]:
     style = style or CaptionStyle()
     pasta_fontes = Path(pasta_fontes).expanduser()
     font_path = garantir_archivo_black(pasta_fontes)
@@ -328,8 +455,6 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
     eventos: list[str] = []
 
     for grupo in grupos:
-        # A long word or an all-caps phrase must not escape the safe area.
-        # Keep one font size for the entire group, including every highlight.
         lines = texto_srt_grupo(grupo, style.line_chars).splitlines()
         measured_width = max(measured_font.getlength(line) for line in lines)
         group_size = min(style.font_size, int(style.font_size * 900 / max(1, measured_width)))
@@ -360,25 +485,70 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
 
     def filter_path(path):
         return str(Path(path).resolve()).replace("\\", "/").replace(":", r"\:").replace("'", r"'\''")
-    filtro = f"ass='{filter_path(ass_path)}':fontsdir='{filter_path(pasta_fontes)}'"
 
-    subprocess.run(
-        [
+    capa_path = None
+    if gerar_capa and titulo.strip():
+        try:
+            caminho_capa = Path(str(base) + "_capa.jpg")
+            duracao_corte = float(fim_corte) - float(inicio_corte)
+            t_frame = min(2.0, max(0.5, duracao_corte / 2.0))
+            capa_path = gerar_capa_frame0(
+                arquivo_video=arquivo_video,
+                titulo=titulo,
+                destino_capa=caminho_capa,
+                pasta_fontes=pasta_fontes,
+                tempo_frame=t_frame,
+            )
+        except Exception as e:
+            capa_path = None
+
+    # Base de filtros: Color Grading Cinematográfico Leve + Legendas ASS
+    # eq: contraste e saturação suaves para realçar pretos e tons naturais de pele
+    # unsharp: nitidez sutil de bordas para resistir à compressão das redes sociais
+    filtros_base = []
+    if color_grading:
+        filtros_base.append("eq=contrast=1.06:saturation=1.08")
+        filtros_base.append("unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=0.5")
+    filtros_base.append(f"ass='{filter_path(ass_path)}':fontsdir='{filter_path(pasta_fontes)}'")
+
+    chain_base = ",".join(filtros_base)
+
+    if capa_path and capa_path.exists():
+        # Overlay do Frame 0 de Alto Impacto durante os primeiros 0.14s (~4 frames a 30fps)
+        filtro_complex = (
+            f"[0:v]{chain_base}[base];"
+            f"[base][1:v]overlay=0:0:enable='between(t,0,0.14)'[outv]"
+        )
+        cmd = [
             "ffmpeg", "-y",
             "-i", str(arquivo_video),
-            "-vf", filtro,
+            "-i", str(capa_path),
+            "-filter_complex", filtro_complex,
+            "-map", "[outv]",
+            "-map", "0:a?",
             "-c:v", "libx264",
             "-preset", "veryfast",
             "-crf", "18",
             "-c:a", "copy",
             "-movflags", "+faststart",
             str(video_legenda),
-        ],
-        check=True,
-    )
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(arquivo_video),
+            "-vf", chain_base,
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "18",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            str(video_legenda),
+        ]
 
+    subprocess.run(cmd, check=True)
     ass_path.unlink(missing_ok=True)
-    return srt_path, video_legenda
+    return srt_path, video_legenda, capa_path
 
 
 def escrever_post(
