@@ -306,39 +306,40 @@ def gerar_capa_frame0(
     if img.size != (1080, 1920):
         img = img.resize((1080, 1920), Image.Resampling.LANCZOS)
 
-    # Gradiente cinematográfico escuro no terço superior/médio para contraste de texto
+    # Gradiente cinematográfico escuro na área do texto para alto contraste e legibilidade
     overlay = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
     draw_ov = ImageDraw.Draw(overlay)
 
-    for y in range(0, 180):
-        draw_ov.line([(0, y), (1080, y)], fill=(0, 0, 0, 190))
-    for y in range(180, 950):
-        prog = (y - 180) / (950 - 180)
-        alpha = int(190 * (1.0 - prog) ** 1.3)
+    # Cobertura do gradiente ajustada para a área central da grade (Instagram 1:1 e TikTok 3:4)
+    for y in range(0, 360):
+        draw_ov.line([(0, y), (1080, y)], fill=(0, 0, 0, 160))
+    for y in range(360, 1100):
+        prog = (y - 360) / (1100 - 360)
+        alpha = int(210 * (1.0 - prog) ** 1.2)
         draw_ov.line([(0, y), (1080, y)], fill=(0, 0, 0, alpha))
 
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    # 3. Badge sutil "OS4 CORTES"
+    # 3. Badge "OS4 CORTES" centralizado no grid seguro (Instagram 1:1 é Y: 420-1500, TikTok 3:4 é Y: 240-1680)
     font_badge = ImageFont.truetype(str(font_path), 32)
     badge_text = "OS4 CORTES"
     bbox_b = font_badge.getbbox(badge_text)
     bw = bbox_b[2] - bbox_b[0]
     bx = (1080 - bw) // 2
-    by = 220
-    pad_x, pad_y = 28, 10
+    by = 490
+    pad_x, pad_y = 26, 10
     draw.rounded_rectangle(
-        [bx - pad_x, by - pad_y, bx + bw + pad_x, by + 36 + pad_y],
+        [bx - pad_x, by - pad_y, bx + bw + pad_x, by + 34 + pad_y],
         radius=14,
-        fill=(0, 0, 0, 170),
-        outline=(255, 230, 0, 230),  # Amarelo elétrico marcante
+        fill=(0, 0, 0, 190),
+        outline=(255, 230, 0, 240),  # Amarelo elétrico
         width=2,
     )
     draw.text((bx, by), badge_text, font=font_badge, fill=(255, 255, 255, 255))
 
-    # 4. Título do corte
-    font_size = 72
+    # 4. Título do corte centralizado na grade
+    font_size = 68
     font_titulo = ImageFont.truetype(str(font_path), font_size)
     words = titulo.strip().split()
     lines = []
@@ -346,7 +347,7 @@ def gerar_capa_frame0(
     for w in words:
         test = " ".join(curr + [w])
         bbox = font_titulo.getbbox(test)
-        if bbox[2] - bbox[0] > 920 and curr:
+        if bbox[2] - bbox[0] > 900 and curr:
             lines.append(" ".join(curr))
             curr = [w]
         else:
@@ -355,14 +356,14 @@ def gerar_capa_frame0(
         lines.append(" ".join(curr))
 
     if len(lines) > 3:
-        font_size = 62
+        font_size = 58
         font_titulo = ImageFont.truetype(str(font_path), font_size)
         lines = []
         curr = []
         for w in words:
             test = " ".join(curr + [w])
             bbox = font_titulo.getbbox(test)
-            if bbox[2] - bbox[0] > 920 and curr:
+            if bbox[2] - bbox[0] > 900 and curr:
                 lines.append(" ".join(curr))
                 curr = [w]
             else:
@@ -370,14 +371,14 @@ def gerar_capa_frame0(
         if curr:
             lines.append(" ".join(curr))
 
-    start_y = 350
-    line_h = int(font_size * 1.22)
+    start_y = 575
+    line_h = int(font_size * 1.24)
     for idx, l in enumerate(lines):
         bbox = font_titulo.getbbox(l)
         lw = bbox[2] - bbox[0]
         lx = (1080 - lw) // 2
         ly = start_y + idx * line_h
-        draw.text((lx + 4, ly + 4), l, font=font_titulo, fill=(0, 0, 0, 240))
+        draw.text((lx + 4, ly + 4), l, font=font_titulo, fill=(0, 0, 0, 245))
         draw.text((lx, ly), l, font=font_titulo, fill=(255, 255, 255, 255))
 
     destino_capa.parent.mkdir(parents=True, exist_ok=True)
@@ -502,13 +503,13 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
         except Exception as e:
             capa_path = None
 
-    # Base de filtros: Color Grading Cinematográfico Leve + Legendas ASS
-    # eq: contraste e saturação suaves para realçar pretos e tons naturais de pele
-    # unsharp: nitidez sutil de bordas para resistir à compressão das redes sociais
+    # Base de filtros: Color Grading Cinematográfico Médio + Legendas ASS
+    # eq: contraste e saturação médios para pretos mais profundos e tons de pele ricos
+    # unsharp: nitidez refinada para preservar textura de pele e cabelo após compressão
     filtros_base = []
     if color_grading:
-        filtros_base.append("eq=contrast=1.06:saturation=1.08")
-        filtros_base.append("unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=0.5")
+        filtros_base.append("eq=contrast=1.12:saturation=1.14")
+        filtros_base.append("unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=0.75")
     filtros_base.append(f"ass='{filter_path(ass_path)}':fontsdir='{filter_path(pasta_fontes)}'")
 
     chain_base = ",".join(filtros_base)

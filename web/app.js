@@ -914,17 +914,15 @@ async function enviarParaPublicadorLocal(result, manual = false) {
     }).then(r => r.json()).catch(() => null);
 
     if (!health || !health.ok) {
-      if (manual) {
-        if (banner) banner.classList.remove("hidden");
-        if (titleEl) {
-          titleEl.textContent = "OS4 Publicador não detectado";
-          titleEl.style.color = "#f87171";
-        }
-        if (msgEl) msgEl.textContent = "Abra o aplicativo OS4 Publicador no seu Windows e clique novamente em Reenviar.";
-        if (btnReenviar) {
-          btnReenviar.disabled = false;
-          btnReenviar.textContent = "Tentar novamente";
-        }
+      if (banner) banner.classList.remove("hidden");
+      if (titleEl) {
+        titleEl.textContent = manual ? "OS4 Publicador não detectado" : "OS4 Publicador pronto para conexão";
+        titleEl.style.color = manual ? "#f87171" : "#facc15";
+      }
+      if (msgEl) msgEl.textContent = "Abra o aplicativo OS4 Publicador no seu Windows e clique no botão para iniciar a fila de postagens automaticamente.";
+      if (btnReenviar) {
+        btnReenviar.disabled = false;
+        btnReenviar.textContent = "Enviar para Publicador";
       }
       return;
     }
@@ -944,22 +942,20 @@ async function enviarParaPublicadorLocal(result, manual = false) {
       if (msgEl) msgEl.textContent = `Lote de ${result.cuts.length} cortes recebido! Downloads e fila de postagem (com pausas de 5–10 min) já iniciados no seu computador.`;
       if (btnReenviar) {
         btnReenviar.disabled = false;
-        btnReenviar.textContent = "Reenviado com sucesso ✓";
-        setTimeout(() => { btnReenviar.textContent = "Reenviar para Publicador"; }, 3000);
+        btnReenviar.textContent = "Enviado com sucesso ✓";
+        setTimeout(() => { btnReenviar.textContent = "Reenviar para Publicador"; }, 4000);
       }
     }
   } catch (err) {
-    if (manual) {
-      if (banner) banner.classList.remove("hidden");
-      if (titleEl) {
-        titleEl.textContent = "Falha ao enviar";
-        titleEl.style.color = "#f87171";
-      }
-      if (msgEl) msgEl.textContent = `Erro ao comunicar com o Publicador: ${err.message}`;
-      if (btnReenviar) {
-        btnReenviar.disabled = false;
-        btnReenviar.textContent = "Tentar novamente";
-      }
+    if (banner) banner.classList.remove("hidden");
+    if (titleEl) {
+      titleEl.textContent = manual ? "Falha ao enviar" : "OS4 Publicador aguardando";
+      titleEl.style.color = manual ? "#f87171" : "#facc15";
+    }
+    if (msgEl) msgEl.textContent = `Abra o aplicativo OS4 Publicador no seu computador e clique em 'Enviar para Publicador'. (${err.message})`;
+    if (btnReenviar) {
+      btnReenviar.disabled = false;
+      btnReenviar.textContent = "Tentar enviar";
     }
   }
 }

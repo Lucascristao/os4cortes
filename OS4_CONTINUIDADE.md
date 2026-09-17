@@ -83,8 +83,15 @@ Base anterior: `d33ea1b`. Branch do Publicador: `feat/local-publisher`.
   - Campo na interface do desktop app para colar qualquer link de pasta do Google Drive.
   - Varredura e indexação inteligente com rolagem contínua para carregar todos os cortes.
   - Filtro estrito: baixa e enfileira exclusivamente `*_legenda.mp4` e `*_post.txt`, descartando `.srt` e `.mp4` crus.
-  - Pula automaticamente cortes já marcados como concluídos no histórico local do aplicativo.
-  - Cache local: reutiliza arquivos já presentes em disco sem gastar banda ou tempo.
+- **Correções de Desduplicação e Varredura (Opção B - Atualizado):**
+  - O filtro de duplicidades do downloader agora é estritamente isolado pela pasta/sessão (`requestId`/`folderId`), impedindo que cortes de um novo vídeo sejam pulados por terem números iguais a cortes de vídeos anteriores.
+  - O `videoFileId` no executor agora incorpora o `requestId`, prevenindo colisões de fingerprint no SQLite.
+  - Varredura no Drive reforçada com suporte a regex flexível (`/corte[_\s-]*\d+/i`), leitura de atributos de acessibilidade (`aria-label`, `title`) e rolagem ampla de contêiner.
+- **Conexão Web -> Desktop (Opção A - Atualizado):**
+  - Desbloqueio da Content Security Policy (CSP) em `netlify.toml` liberando `http://127.0.0.1:49152` na diretiva `connect-src`.
+  - Suporte a Private Network Access (PNA) no `bridge.cjs` com o cabeçalho `Access-Control-Allow-Private-Network: true`, permitindo requisições originadas do site público HTTPS (`https://os4cortes.netlify.app`).
+  - Banner informativo no site `web/app.js` com status em tempo real e botão de reenvio.
 - **Sincronização:**
   - Arquivos sincronizados na pasta do app instalado em `C:\Users\lucas\Projetos\OS4Publicador\resources\app\src\`.
+
 

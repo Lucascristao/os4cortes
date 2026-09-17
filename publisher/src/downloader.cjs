@@ -295,17 +295,50 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
       await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
       await page.waitForTimeout(3000);
 
-      for (let scrollStep = 0; scrollStep < 15; scrollStep++) {
+      // Foca na área de arquivos
+      await page.click('[role="main"], [data-id], .a-u-j').catch(() => {});
+
+      for (let scrollStep = 0; scrollStep < 25; scrollStep++) {
         const items = await page.evaluate(() => {
           const allWithId = Array.from(document.querySelectorAll('[data-id]'));
           const list = [];
           for (const el of allWithId) {
             const id = el.getAttribute('data-id');
-            const text = (el.innerText || el.textContent || '').trim();
-            const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
-            if (id && lines.length > 0) {
-              const fileNameCandidate = lines.find(l => l.includes('corte_') || l.includes('.') || l.endsWith('.mp4') || l.endsWith('.txt') || l.endsWith('.srt') || l.endsWith('.json')) || lines[0];
-              list.push({ id, name: fileNameCandidate });
+            if (!id) continue;
+
+            const sources = [
+              el.getAttribute('title'),
+              el.querySelector('[title]')?.getAttribute('title'),
+              el.getAttribute('aria-label'),
+              el.querySelector('[aria-label]')?.getAttribute('aria-label'),
+              el.innerText,
+              el.textContent
+            ].filter(Boolean);
+
+            let matchedName = null;
+            for (const src of sources) {
+              // 1. Procura nome de corte com extensão
+              const m1 = src.match(/(corte[_\s-]*\d+[^"\n\r\t*?<>]+?\.(?:mp4|txt|srt|json))/i);
+              if (m1) {
+                matchedName = m1[1].trim();
+                break;
+              }
+              // 2. Procura identificador de corte em elementos associados a mídia
+              const m2 = src.match(/(corte[_\s-]*\d+[^"\n\r\t*?<>]+)/i);
+              if (m2 && (src.includes('.mp4') || src.includes('.txt') || src.includes('.srt') || src.includes('legenda'))) {
+                matchedName = m2[1].trim();
+                break;
+              }
+            }
+
+            if (!matchedName) {
+              const text = (el.innerText || el.textContent || '').trim();
+              const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+              matchedName = lines.find(l => /corte[_\s-]*\d+/i.test(l) || /\.(mp4|txt|srt|json)$/i.test(l)) || lines[0];
+            }
+
+            if (matchedName) {
+              list.push({ id, name: matchedName });
             }
           }
           return list;
@@ -317,8 +350,21 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
           }
         }
 
+        // Rola tanto o container interno do Drive quanto o teclado
+        await page.evaluate(() => {
+          const scrollable = document.querySelector('[role="main"]') ||
+                             document.querySelector('[aria-label="Arquivos"]') ||
+                             document.querySelector('.a-u-j') ||
+                             document.scrollingElement ||
+                             document.body;
+          if (scrollable) {
+            scrollable.scrollTop += 600;
+          }
+          window.scrollBy(0, 600);
+        });
+
         await page.keyboard.press('PageDown');
-        await page.waitForTimeout(600);
+        await page.waitForTimeout(800);
       }
     } finally {
       await ctx.close().catch(() => {});
@@ -329,7 +375,7 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
   const cutsMap = new Map();
 
   for (const f of files) {
-    const match = f.name.match(/corte_(\d+)/i);
+    const match = f.name.match(/corte[_\s-]*(\d+)/i);
     if (!match) continue;
 
     const cutNum = parseInt(match[1], 10);
@@ -338,20 +384,27 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
     }
     const cut = cutsMap.get(cutNum);
 
-    if (f.name.endsWith('_legenda.mp4')) {
+    const isLegenda = /(?:_|\s|-)?legenda\.(?:mp4|mov|mkv)$/i.test(f.name) ||
+                      (f.name.toLowerCase().includes('legenda') && f.name.toLowerCase().endsWith('.mp4'));
+    const isPost = /(?:_|\s|-)?post\.txt$/i.test(f.name) ||
+                   (f.name.toLowerCase().includes('post') && f.name.toLowerCase().endsWith('.txt'));
+    const isSrt = /\.srt$/i.test(f.name);
+    const isRawVideo = /\.mp4$/i.test(f.name) && !isLegenda;
+
+    if (isLegenda) {
       cut.videoLegenda = { id: f.id, name: f.name };
-    } else if (f.name.endsWith('_post.txt')) {
+    } else if (isPost) {
       cut.post = { id: f.id, name: f.name };
-    } else if (f.name.endsWith('.srt')) {
+    } else if (isSrt) {
       cut.srt = { id: f.id, name: f.name };
-    } else if (f.name.endsWith('.mp4') && !f.name.endsWith('_legenda.mp4')) {
+    } else if (isRawVideo) {
       cut.rawVideo = { id: f.id, name: f.name };
     }
 
     if (!cut.titulo) {
       const clean = f.name
-        .replace(/^corte_\d+_/i, '')
-        .replace(/(_legenda\.mp4|_post\.txt|\.mp4|\.srt)$/i, '')
+        .replace(/^(?:Text)?corte[_\s-]*\d+[_\s-]*/i, '')
+        .replace(/(?:_|\s|-)?(?:legenda\.mp4|post\.txt|\.mp4|\.srt|\.json)$/i, '')
         .replace(/_/g, ' ')
         .trim();
       if (clean) cut.titulo = clean;
@@ -359,10 +412,17 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
   }
 
   const validCuts = Array.from(cutsMap.values())
+    .map(c => {
+      // Se tiver vídeo com legenda, usa ele. Se não tiver mas tiver vídeo cru, usa como fallback
+      if (!c.videoLegenda && c.rawVideo) {
+        c.videoLegenda = c.rawVideo;
+      }
+      return c;
+    })
     .filter(c => c.videoLegenda && c.videoLegenda.id)
     .sort((a, b) => a.cutIndex - b.cutIndex);
 
-  onLog(`[Drive Scan] ${validCuts.length} cortes com vídeo legendado identificados na pasta.`);
+  onLog(`[Drive Scan] ${validCuts.length} cortes com vídeo identificados na pasta.`);
   return { folderId, cuts: validCuts };
 }
 
@@ -371,23 +431,38 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
   const { folderId, cuts } = await scanDriveFolder(folderUrlOrId, onLog);
 
   if (cuts.length === 0) {
-    onLog(`[Drive Import] Nenhum corte com arquivo *_legenda.mp4 encontrado nesta pasta.`);
-    return { ok: false, message: 'Nenhum corte com legenda encontrado na pasta.' };
+    onLog(`[Drive Import] Nenhum corte com arquivo de vídeo encontrado nesta pasta.`);
+    return { ok: false, message: 'Nenhum corte com vídeo encontrado na pasta.' };
   }
 
-  onLog(`[Drive Import] ${cuts.length} cortes identificados na pasta. Verificando histórico...`);
+  const requestId = `drive_${folderId.slice(0, 12)}`;
+  onLog(`[Drive Import] ${cuts.length} cortes identificados na pasta. Verificando histórico para a pasta ${folderId.slice(0, 8)}...`);
   
   const existingJobs = executor.q.list();
-  const requestId = `drive_${folderId.slice(0, 12)}`;
   let enqueuedCount = 0;
   let skippedCount = 0;
 
   for (const cut of cuts) {
-    const cutJobs = existingJobs.filter(j => j.payload && j.payload.cutIndex === cut.cutIndex);
+    // Escopo estrito: verifica se este corte DESTA PASTA já foi publicado ou está na fila
+    const cutJobs = existingJobs.filter(j => {
+      if (!j.payload) return false;
+      const sameFolder = (j.id && j.id.startsWith(requestId)) || 
+                         j.payload.requestId === requestId || 
+                         j.payload.folderId === folderId;
+      const sameFile = cut.videoLegenda?.id && (j.payload.driveFileId === cut.videoLegenda.id);
+      return (sameFolder && j.payload.cutIndex === cut.cutIndex) || sameFile;
+    });
+
     const completedJobs = cutJobs.filter(j => j.state === 'completed');
-    
     if (completedJobs.length >= 3) {
-      onLog(`[Drive Import] ⏭️ Corte ${cut.cutIndex} já foi publicado nas 3 redes. Pulando.`);
+      onLog(`[Drive Import] ⏭️ Corte ${cut.cutIndex} ("${cut.titulo || 'Corte ' + cut.cutIndex}") já foi publicado nas 3 redes nesta pasta. Pulando.`);
+      skippedCount++;
+      continue;
+    }
+
+    const pendingJobs = cutJobs.filter(j => j.state === 'queued' || j.state === 'publishing');
+    if (pendingJobs.length > 0) {
+      onLog(`[Drive Import] ⏳ Corte ${cut.cutIndex} ("${cut.titulo || 'Corte ' + cut.cutIndex}") já está na fila de postagens. Pulando.`);
       skippedCount++;
       continue;
     }
@@ -412,7 +487,9 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
         videoPath: downloaded.videoPath,
         postPath: downloaded.postPath,
         postText: downloaded.postText,
-        requestId
+        requestId,
+        folderId,
+        driveFileId: cut.videoLegenda.id
       });
 
       enqueuedCount++;
@@ -422,7 +499,7 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
     }
   }
 
-  onLog(`[Drive Import] Fila atualizada: ${enqueuedCount} cortes adicionados (${skippedCount} já publicados anteriormente).`);
+  onLog(`[Drive Import] Fila atualizada: ${enqueuedCount} cortes adicionados (${skippedCount} já publicados/enfileirados anteriormente).`);
   return { ok: true, enqueuedCount, skippedCount, totalCuts: cuts.length };
 }
 

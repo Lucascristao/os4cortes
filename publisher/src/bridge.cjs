@@ -14,11 +14,12 @@ class LocalBridgeServer {
 
   start() {
     this.server = http.createServer(async (req, res) => {
-      // Configuração de CORS para permitir requisições do site do OS4
+      // Configuração de CORS e Private Network Access (PNA) para permitir requisições do site do OS4
       const origin = req.headers.origin || '*';
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type, Authorization, Access-Control-Request-Private-Network');
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
 
       if (req.method === 'OPTIONS') {
@@ -104,8 +105,10 @@ class LocalBridgeServer {
           cutIndex: downloadedCut.cutIndex,
           titulo: downloadedCut.titulo,
           videoPath: downloadedCut.videoPath,
+          postPath: downloadedCut.postPath,
           postText: downloadedCut.postText,
-          requestId: batch.requestId
+          requestId: batch.requestId,
+          folderId: batch.folderId
         });
       });
       this.onLog(`Todos os downloads da sessão ${batch.requestId} foram concluídos! Fila em execução.`);

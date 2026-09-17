@@ -22,7 +22,7 @@ class QueueExecutor extends EventEmitter {
   }
 
   // Enfileira um corte pronto para as 3 redes
-  enqueueCorte({ cutIndex, titulo, videoPath, postText, requestId = 'sessao' }) {
+  enqueueCorte({ cutIndex, titulo, videoPath, postPath = null, postText, requestId = 'sessao', folderId = null, driveFileId = null }) {
     console.log(`[Executor] Enfileirando Corte ${cutIndex} para publicação...`);
     const networks = ['youtube', 'tiktok', 'instagram'];
     const jobIds = [];
@@ -35,8 +35,12 @@ class QueueExecutor extends EventEmitter {
         account: `@os4.cortes`,
         cutIndex,
         titulo: titulo || `Corte ${cutIndex}`,
-        videoFileId: path.basename(videoPath),
+        requestId,
+        folderId,
+        driveFileId,
+        videoFileId: `${requestId}_${path.basename(videoPath)}`,
         videoPath,
+        postPath: postPath || null,
         postText: postText || titulo || '',
         enqueuedAt: Date.now()
       };
@@ -176,7 +180,12 @@ class QueueExecutor extends EventEmitter {
       // Auto-exclusão segura (Opção 1): após 2 minutos da conclusão nas 3 redes
       try {
         const allJobs = this.q.list();
-        const cutJobs = allJobs.filter(j => j.payload && j.payload.cutIndex === p.cutIndex);
+        const cutJobs = allJobs.filter(j => {
+          if (!j.payload) return false;
+          const sameFolder = (j.id && p.id && j.id.split('_cut')[0] === p.id.split('_cut')[0]) ||
+                             (j.payload.requestId && j.payload.requestId === p.requestId);
+          return sameFolder && j.payload.cutIndex === p.cutIndex;
+        });
         const allThreeDone = cutJobs.length >= 3 && cutJobs.every(j => j.state === 'completed');
 
         if (allThreeDone) {
