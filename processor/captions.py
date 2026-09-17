@@ -648,11 +648,11 @@ def escrever_post(
 
     if hashtags.strip():
         tags = hashtags.strip()
-        if "#os4cortes" not in tags.lower():
-            tags += " #os4cortes"
-        if "#os4" not in tags.lower():
-            tags += " #os4"
-        texto += "\n\n" + tags
+        tags = re.sub(r"#os4cortes\b", "", tags, flags=re.IGNORECASE)
+        tags = re.sub(r"#os4\b", "", tags, flags=re.IGNORECASE)
+        tags = " ".join(tags.split())
+        if tags:
+            texto += "\n\n" + tags
 
     destino.write_text(texto.strip() + "\n", encoding="utf-8")
     return destino
