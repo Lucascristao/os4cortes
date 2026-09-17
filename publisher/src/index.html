@@ -29,7 +29,7 @@
         </div>
       </div>
       <div class="drive-input-row">
-        <input type="text" id="drive-folder-input" class="drive-input" placeholder="https://drive.google.com/drive/folders/..." value="https://drive.google.com/drive/folders/1E1QdjsorCGeGPVTGnX_Xsq9Agkvnvd2t" aria-label="Link da pasta do Google Drive" />
+        <input type="text" id="drive-folder-input" class="drive-input" placeholder="Cole o link ou ID da pasta do Google Drive aqui..." aria-label="Link da pasta do Google Drive" />
         <button id="btn-import-drive" class="primary">📥 Escanear & Iniciar Fila</button>
       </div>
       <div id="drive-import-feedback" class="drive-feedback hidden"></div>
@@ -38,8 +38,22 @@
     <!-- Fila de Publicações -->
     <section class="highlight-section">
       <div class="section-header">
-        <h2>Fila de Publicações</h2>
-        <span id="queue-counter" class="pill">0 cortes na fila</span>
+        <div class="header-left">
+          <h2>Fila de Publicações</h2>
+          <span id="queue-counter" class="pill">0 cortes na fila</span>
+        </div>
+        <div class="queue-controls">
+          <button id="btn-retry-all" class="secondary btn-sm hidden" title="Reenfileirar todos os itens com falha">🔄 Reprocessar Falhas</button>
+          <button id="btn-toggle-pause" class="btn-pause btn-sm" title="Pausar ou retomar a fila automática">⏸️ Pausar Fila</button>
+        </div>
+      </div>
+
+      <div id="pause-banner" class="pause-banner hidden">
+        <span class="pause-icon">⏸️</span>
+        <div>
+          <strong>Fila Pausada</strong>
+          <p>O envio automático está suspenso. Clique em "▶️ Retomar Fila" quando desejar continuar.</p>
+        </div>
       </div>
 
       <div id="cooldown-banner" class="cooldown-banner hidden">
@@ -51,10 +65,17 @@
       </div>
 
       <div class="queue-stats">
-        <div class="stat-card"><span class="stat-num" id="stat-queued">0</span><span class="stat-label">Na fila</span></div>
-        <div class="stat-card"><span class="stat-num stat-pub" id="stat-pub">0</span><span class="stat-label">Publicando</span></div>
-        <div class="stat-card"><span class="stat-num stat-ok" id="stat-done">0</span><span class="stat-label">Concluídos</span></div>
-        <div class="stat-card"><span class="stat-num stat-err" id="stat-fail">0</span><span class="stat-label">Falhas</span></div>
+        <div class="stat-card" data-filter="queued"><span class="stat-num" id="stat-queued">0</span><span class="stat-label">Na fila</span></div>
+        <div class="stat-card" data-filter="publishing"><span class="stat-num stat-pub" id="stat-pub">0</span><span class="stat-label">Publicando</span></div>
+        <div class="stat-card" data-filter="today"><span class="stat-num stat-ok" id="stat-done">0</span><span class="stat-label">Concluídos Hoje</span></div>
+        <div class="stat-card" data-filter="failed"><span class="stat-num stat-err" id="stat-fail">0</span><span class="stat-label">Falhas</span></div>
+      </div>
+
+      <div class="queue-filter-tabs">
+        <button class="filter-tab active" data-filter="all">Todos</button>
+        <button class="filter-tab" data-filter="queued">Na Fila</button>
+        <button class="filter-tab" data-filter="today">Concluídos Hoje</button>
+        <button class="filter-tab" data-filter="failed">Falhas (<span id="tab-failed-count">0</span>)</button>
       </div>
 
       <div id="queue-list" class="queue-list">
@@ -92,6 +113,24 @@
     </section>
 
     <p id="message" role="status" aria-live="polite"></p>
+
+    <!-- Modal de Detalhes de Falha -->
+    <div id="error-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="modal-error-title">Motivo da Falha</h3>
+          <button id="modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p id="modal-error-job" class="modal-job-info"></p>
+          <pre id="modal-error-text" class="error-pre"></pre>
+        </div>
+        <div class="modal-actions">
+          <button id="modal-btn-retry" class="primary">🔄 Tentar Novamente Agora</button>
+          <button id="modal-btn-delete" class="secondary">🗑️ Descartar</button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <footer id="version"></footer>

@@ -12,6 +12,7 @@ class QueueExecutor extends EventEmitter {
     super();
     this.q = queueInstance;
     this.isRunning = false;
+    this.isPaused = Boolean(this.q.get('queue_paused', false));
     this.activeJob = null;
     this.timer = null;
     this.nextAvailable = {
@@ -75,6 +76,12 @@ class QueueExecutor extends EventEmitter {
     console.log('[Executor] Loop do processador de fila iniciado.');
 
     while (this.isRunning) {
+      if (this.isPaused) {
+        this.emit('paused', this.getStatus());
+        await new Promise(res => setTimeout(res, 2000));
+        continue;
+      }
+
       const allJobs = this.q.list();
       const pendingJobs = allJobs.filter(j => j.state === 'queued');
 
@@ -221,9 +228,54 @@ class QueueExecutor extends EventEmitter {
     this.activeJob = null;
   }
 
+  pause() {
+    this.isPaused = true;
+    this.q.set('queue_paused', true);
+    console.log('[Executor] ⏸️ Fila de publicações PAUSADA pelo usuário.');
+    this.emit('queue-paused', this.getStatus());
+    this.emit('queue-updated', this.getStatus());
+    return true;
+  }
+
+  resume() {
+    this.isPaused = false;
+    this.q.set('queue_paused', false);
+    console.log('[Executor] ▶️ Fila de publicações RETOMADA pelo usuário.');
+    this.ensureWorkerRunning();
+    this.emit('queue-resumed', this.getStatus());
+    this.emit('queue-updated', this.getStatus());
+    return true;
+  }
+
+  retryJob(id) {
+    console.log(`[Executor] 🔄 Reenfileirando job ${id}...`);
+    this.q.retry(id);
+    this.emit('queue-updated', this.getStatus());
+    this.ensureWorkerRunning();
+    return true;
+  }
+
+  retryAllFailed() {
+    console.log('[Executor] 🔄 Reenfileirando todos os jobs com falha...');
+    const count = this.q.retryAllFailed();
+    this.emit('queue-updated', this.getStatus());
+    this.ensureWorkerRunning();
+    return count;
+  }
+
+  deleteJob(id) {
+    console.log(`[Executor] 🗑️ Excluindo job ${id}...`);
+    this.q.delete(id);
+    this.emit('queue-updated', this.getStatus());
+    return true;
+  }
+
   getStatus() {
     const list = this.q.list();
+    const completedToday = this.q.completedTodayCount ? this.q.completedTodayCount() : 0;
+    const todayIds = this.q.completedTodayJobIds ? this.q.completedTodayJobIds() : new Set();
     return {
+      isPaused: this.isPaused,
       activeJob: this.activeJob ? {
         id: this.activeJob.id,
         network: this.activeJob.payload.network,
@@ -235,6 +287,7 @@ class QueueExecutor extends EventEmitter {
         queued: list.filter(j => j.state === 'queued').length,
         publishing: list.filter(j => j.state === 'publishing').length,
         completed: list.filter(j => j.state === 'completed').length,
+        completedToday,
         failed: list.filter(j => j.state === 'failed').length
       },
       nextAvailable: this.nextAvailable,
@@ -245,7 +298,8 @@ class QueueExecutor extends EventEmitter {
         cutIndex: j.payload.cutIndex,
         titulo: j.payload.titulo,
         evidence: j.evidence,
-        created: j.created
+        created: j.created,
+        completedToday: todayIds.has(j.id)
       }))
     };
   }

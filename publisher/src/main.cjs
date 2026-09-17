@@ -305,4 +305,34 @@ ipcMain.handle('import-drive-folder', async (event, folderUrl) => {
   return { ok: true, message: 'Varredura da pasta do Drive iniciada com sucesso!' };
 });
 
+ipcMain.handle('queue:pause', (event) => {
+  validateEvent(event);
+  if (!executor) throw new Error('Executor não iniciado');
+  return executor.pause();
+});
+
+ipcMain.handle('queue:resume', (event) => {
+  validateEvent(event);
+  if (!executor) throw new Error('Executor não iniciado');
+  return executor.resume();
+});
+
+ipcMain.handle('queue:retry', (event, id) => {
+  validateEvent(event);
+  if (!executor) throw new Error('Executor não iniciado');
+  return executor.retryJob(id);
+});
+
+ipcMain.handle('queue:retry-all', (event) => {
+  validateEvent(event);
+  if (!executor) throw new Error('Executor não iniciado');
+  return executor.retryAllFailed();
+});
+
+ipcMain.handle('queue:delete', (event, id) => {
+  validateEvent(event);
+  if (!executor) throw new Error('Executor não iniciado');
+  return executor.deleteJob(id);
+});
+
 

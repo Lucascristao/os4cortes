@@ -38,6 +38,51 @@ class Queue {
       this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(),id,'publishing',now,'Intenção persistida antes do clique final');
     });
   }
+  completedTodayJobIds(now = Date.now()) {
+    try {
+      const todayStr = day(now);
+      const rows = this.db.prepare("SELECT at, job FROM events WHERE state='completed'").all();
+      const unique = new Set();
+      for (const r of rows) {
+        if (day(r.at) === todayStr) {
+          unique.add(r.job);
+        }
+      }
+      return unique;
+    } catch {
+      return new Set();
+    }
+  }
+  completedTodayCount(now = Date.now()) {
+    return this.completedTodayJobIds(now).size;
+  }
+  retry(id, now = Date.now()) {
+    return this.transaction(() => {
+      const job = this.db.prepare('SELECT * FROM jobs WHERE id=?').get(id);
+      if (!job) throw new Error('Corte não encontrado na fila');
+      this.db.prepare("UPDATE jobs SET state='queued', evidence='Reenfileirado manualmente' WHERE id=?").run(id);
+      this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(), id, 'queued', now, 'Reenfileirado pelo usuário');
+      return true;
+    });
+  }
+  retryAllFailed(now = Date.now()) {
+    return this.transaction(() => {
+      const failed = this.db.prepare("SELECT id FROM jobs WHERE state='failed'").all();
+      for (const j of failed) {
+        this.db.prepare("UPDATE jobs SET state='queued', evidence='Reenfileirado em lote' WHERE id=?").run(j.id);
+        this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(), j.id, 'queued', now, 'Reenfileiramento de falhas em lote');
+      }
+      return failed.length;
+    });
+  }
+  delete(id) {
+    return this.transaction(() => {
+      this.db.prepare('DELETE FROM jobs WHERE id=?').run(id);
+      this.db.prepare('DELETE FROM attempts WHERE job=?').run(id);
+      this.db.prepare('DELETE FROM events WHERE job=?').run(id);
+      return true;
+    });
+  }
   set(key,value) {this.db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run(key,JSON.stringify(value));}
   get(key,fallback=null) {const r=this.db.prepare('SELECT value FROM settings WHERE key=?').get(key);return r?JSON.parse(r.value):fallback;}
   close(){this.db.close();}
