@@ -306,40 +306,10 @@ def gerar_capa_frame0(
     if img.size != (1080, 1920):
         img = img.resize((1080, 1920), Image.Resampling.LANCZOS)
 
-    # Gradiente cinematográfico escuro na área do texto para alto contraste e legibilidade
-    overlay = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
-    draw_ov = ImageDraw.Draw(overlay)
-
-    # Cobertura do gradiente ajustada para a área central da grade (Instagram 1:1 e TikTok 3:4)
-    for y in range(0, 360):
-        draw_ov.line([(0, y), (1080, y)], fill=(0, 0, 0, 160))
-    for y in range(360, 1100):
-        prog = (y - 360) / (1100 - 360)
-        alpha = int(210 * (1.0 - prog) ** 1.2)
-        draw_ov.line([(0, y), (1080, y)], fill=(0, 0, 0, alpha))
-
-    img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    # 3. Badge "OS4 CORTES" centralizado no grid seguro (Instagram 1:1 é Y: 420-1500, TikTok 3:4 é Y: 240-1680)
-    font_badge = ImageFont.truetype(str(font_path), 32)
-    badge_text = "OS4 CORTES"
-    bbox_b = font_badge.getbbox(badge_text)
-    bw = bbox_b[2] - bbox_b[0]
-    bx = (1080 - bw) // 2
-    by = 490
-    pad_x, pad_y = 26, 10
-    draw.rounded_rectangle(
-        [bx - pad_x, by - pad_y, bx + bw + pad_x, by + 34 + pad_y],
-        radius=14,
-        fill=(0, 0, 0, 190),
-        outline=(255, 230, 0, 240),  # Amarelo elétrico
-        width=2,
-    )
-    draw.text((bx, by), badge_text, font=font_badge, fill=(255, 255, 255, 255))
-
-    # 4. Título do corte centralizado na grade
-    font_size = 68
+    # 3. Quebra de linha do título do corte
+    font_size = 64
     font_titulo = ImageFont.truetype(str(font_path), font_size)
     words = titulo.strip().split()
     lines = []
@@ -347,7 +317,7 @@ def gerar_capa_frame0(
     for w in words:
         test = " ".join(curr + [w])
         bbox = font_titulo.getbbox(test)
-        if bbox[2] - bbox[0] > 900 and curr:
+        if bbox[2] - bbox[0] > 920 and curr:
             lines.append(" ".join(curr))
             curr = [w]
         else:
@@ -356,14 +326,14 @@ def gerar_capa_frame0(
         lines.append(" ".join(curr))
 
     if len(lines) > 3:
-        font_size = 58
+        font_size = 54
         font_titulo = ImageFont.truetype(str(font_path), font_size)
         lines = []
         curr = []
         for w in words:
             test = " ".join(curr + [w])
             bbox = font_titulo.getbbox(test)
-            if bbox[2] - bbox[0] > 900 and curr:
+            if bbox[2] - bbox[0] > 920 and curr:
                 lines.append(" ".join(curr))
                 curr = [w]
             else:
@@ -371,15 +341,55 @@ def gerar_capa_frame0(
         if curr:
             lines.append(" ".join(curr))
 
-    start_y = 575
-    line_h = int(font_size * 1.24)
+    line_h = int(font_size * 1.22)
+    total_title_h = len(lines) * line_h
+
+    # 4. Badge "OS4 CORTES" discreto posicionado na base logo acima do título
+    # Grade segura: Instagram 1:1 é Y: 420-1500, TikTok 3:4 é Y: 240-1680.
+    # Posicionamento na base: peito/mesa (Y=1140-1420), mantendo a cabeça/rosto 100% livres e em destaque.
+    font_badge = ImageFont.truetype(str(font_path), 30)
+    badge_text = "OS4 CORTES"
+    bbox_b = font_badge.getbbox(badge_text)
+    bw = bbox_b[2] - bbox_b[0]
+    bh = bbox_b[3] - bbox_b[1]
+    bx = (1080 - bw) // 2
+    pad_x, pad_y = 22, 8
+    badge_box_h = bh + (pad_y * 2)
+
+    spacing_badge_title = 24
+    total_block_h = badge_box_h + spacing_badge_title + total_title_h
+
+    # Ancoragem na base segura (limite inferior em 1420, deixando margem antes do corte de 1500 do Instagram)
+    by = 1420 - total_block_h
+    by = max(1120, by)
+
+    draw.rounded_rectangle(
+        [bx - pad_x, by, bx + bw + pad_x, by + badge_box_h],
+        radius=12,
+        fill=(0, 0, 0, 210),
+        outline=(255, 230, 0, 255),  # Amarelo elétrico
+        width=2,
+    )
+    draw.text((bx, by + pad_y - bbox_b[1]), badge_text, font=font_badge, fill=(255, 255, 255, 255))
+
+    # 5. Renderização do título com contorno sólido e sombra individual nos caracteres (sem tarja de fundo)
+    start_y = by + badge_box_h + spacing_badge_title
     for idx, l in enumerate(lines):
         bbox = font_titulo.getbbox(l)
         lw = bbox[2] - bbox[0]
         lx = (1080 - lw) // 2
         ly = start_y + idx * line_h
-        draw.text((lx + 4, ly + 4), l, font=font_titulo, fill=(0, 0, 0, 245))
-        draw.text((lx, ly), l, font=font_titulo, fill=(255, 255, 255, 255))
+        # Sombra projetada sutil
+        draw.text((lx + 3, ly + 3), l, font=font_titulo, fill=(0, 0, 0, 220))
+        # Texto nítido com contorno (stroke) preto de 4px para legibilidade perfeita sobre qualquer roupa/fundo
+        draw.text(
+            (lx, ly),
+            l,
+            font=font_titulo,
+            fill=(255, 255, 255, 255),
+            stroke_width=4,
+            stroke_fill=(0, 0, 0, 255),
+        )
 
     destino_capa.parent.mkdir(parents=True, exist_ok=True)
     img.convert("RGB").save(str(destino_capa), "JPEG", quality=95)
