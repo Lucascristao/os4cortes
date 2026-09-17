@@ -6,9 +6,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .captions import CaptionStyle, criar_legendas_corte, escrever_post
+from .captions import CaptionStyle, carregar_palavras, criar_legendas_corte, escrever_post
 from .download import baixar_youtube
 from .drive import uploader_por_env
+from .render_batch import ajustar_inicio_sem_silencio
 from .tracking import render_tracking_9x16
 from .transcribe import extrair_audio, transcrever
 from .utils import nome_seguro, tempo_para_segundos
@@ -97,11 +98,14 @@ def main() -> int:
     titulo_arquivo = nome_seguro(args.titulo)
     video_corte = out / f"corte_01_{titulo_arquivo}.mp4"
 
+    palavras_globais = carregar_palavras(transcricao_json)
+    inicio_efetivo = ajustar_inicio_sem_silencio(palavras_globais, inicio, fim)
+
     progresso("tracking", 58, "Iniciando enquadramento 9:16")
     print("[4/6] Renderizando tracking 9:16...")
     render_tracking_9x16(
         video,
-        inicio,
+        inicio_efetivo,
         fim,
         video_corte,
         work_dir=work,
@@ -113,7 +117,7 @@ def main() -> int:
     srt_path, video_legenda, capa_path = criar_legendas_corte(
         transcricao_json,
         video_corte,
-        inicio,
+        inicio_efetivo,
         fim,
         titulo=args.titulo,
         style=CaptionStyle(),

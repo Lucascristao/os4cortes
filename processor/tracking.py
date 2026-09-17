@@ -220,11 +220,20 @@ def render_tracking_9x16(
 
                 framing.observe(detections, frame_idx / fps)
 
-            centro_x = framing.position(frame_idx / fps) * w
+            tempo_decorrido = frame_idx / fps
+            centro_x = framing.position(tempo_decorrido) * w
 
-            x0 = int(round(centro_x - crop_w / 2))
-            x0 = max(0, min(w - crop_w, x0))
-            crop = frame[:, x0:x0 + crop_w]
+            # Zoom Punch no Início: escala sutil de 1.08x nos primeiros 2.0s para retenção visual instantânea
+            fator_zoom = 1.08 if tempo_decorrido < 2.0 else 1.0
+            cur_crop_w = int(round(crop_w / fator_zoom))
+            cur_crop_h = int(round(h / fator_zoom))
+
+            x0 = int(round(centro_x - cur_crop_w / 2))
+            x0 = max(0, min(w - cur_crop_w, x0))
+            y0 = int(round((h - cur_crop_h) / 2))
+            y0 = max(0, min(h - cur_crop_h, y0))
+
+            crop = frame[y0:y0 + cur_crop_h, x0:x0 + cur_crop_w]
 
             vertical = cv2.resize(
                 crop,

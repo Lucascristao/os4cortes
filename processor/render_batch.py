@@ -5,11 +5,27 @@ import json
 import shutil
 from pathlib import Path
 
-from .captions import CaptionStyle, criar_legendas_corte, escrever_post
+from .captions import CaptionStyle, carregar_palavras, criar_legendas_corte, escrever_post
 from .drive import uploader_por_env
 from .progress import completed, emit, failed
 from .tracking import render_tracking_9x16
 from .utils import nome_seguro, tempo_para_segundos
+
+
+def ajustar_inicio_sem_silencio(palavras: list[dict], inicio_corte: float, fim_corte: float) -> float:
+    """Elimina silêncio ou respiração inicial para que a primeira fala coincida rigorosamente com os primeiros 100ms."""
+    for p in palavras:
+        if p["fim"] <= inicio_corte:
+            continue
+        if p["inicio"] >= fim_corte:
+            break
+        p_inicio = float(p.get("inicio", inicio_corte))
+        gap = p_inicio - inicio_corte
+        if 0.12 < gap <= 2.0:
+            # Puxa o início para 80ms antes da primeira sílaba audível
+            return max(inicio_corte, p_inicio - 0.08)
+        break
+    return inicio_corte
 
 
 def normalizar_cortes(raw: str) -> list[dict]:
@@ -91,6 +107,7 @@ def main() -> int:
         uploader.download(args.transcript_json_file_id, transcricao_json)
         emit("baixando_base", 10.0, "Transcrição carregada", total_cuts=total)
 
+        palavras_globais = carregar_palavras(transcricao_json)
         resultados: list[dict] = []
         faixa = 85.0 / total
 
@@ -99,6 +116,11 @@ def main() -> int:
             titulo_arquivo = nome_seguro(corte["titulo"])
             prefixo = f"corte_{i:02d}_{titulo_arquivo}"
             video_corte = out / f"{prefixo}.mp4"
+
+            # Ajuste dinâmico para o som coincidir rigorosamente com os primeiros ~100ms do corte
+            inicio_efetivo = ajustar_inicio_sem_silencio(
+                palavras_globais, corte["inicio"], corte["fim"]
+            )
 
             emit(
                 "tracking",
@@ -109,7 +131,7 @@ def main() -> int:
             )
             render_tracking_9x16(
                 video,
-                corte["inicio"],
+                inicio_efetivo,
                 corte["fim"],
                 video_corte,
                 work_dir=work,
@@ -125,7 +147,7 @@ def main() -> int:
             srt_path, video_legenda, capa_path = criar_legendas_corte(
                 transcricao_json,
                 video_corte,
-                corte["inicio"],
+                inicio_efetivo,
                 corte["fim"],
                 titulo=corte["titulo"],
                 style=CaptionStyle(),

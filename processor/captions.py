@@ -275,31 +275,62 @@ def gerar_capa_frame0(
     destino_capa = Path(destino_capa)
     font_path = garantir_archivo_black(pasta_fontes)
 
-    temp_frame = destino_capa.with_suffix(".temp_frame.jpg")
+    # 1. Extrair frame estático com FFmpeg com seleção inteligente de nitidez
+    if arquivo_video.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
+        shutil.copy2(arquivo_video, temp_frame)
+    else:
+        # Avaliar múltiplos candidatos para selecionar o frame mais nítido (evitando olhos fechados e piscadas)
+        candidatos_t = [
+            max(0.5, float(tempo_frame)),
+            max(0.5, float(tempo_frame) - 0.7),
+            max(0.5, float(tempo_frame) + 0.7),
+            max(0.5, float(tempo_frame) + 1.4),
+        ]
+        melhor_score = -1.0
+        melhor_frame = None
 
-    # 1. Extrair frame estático com FFmpeg
-    try:
-        subprocess.run(
-            [
-                "ffmpeg", "-y",
-                "-ss", str(max(0.0, float(tempo_frame))),
-                "-i", str(arquivo_video),
-                "-vframes", "1",
-                "-q:v", "2",
-                str(temp_frame),
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        pass
+        for idx, t_cand in enumerate(candidatos_t):
+            cand_path = destino_capa.with_suffix(f".cand_{idx}.jpg")
+            try:
+                subprocess.run(
+                    [
+                        "ffmpeg", "-y",
+                        "-ss", f"{t_cand:.2f}",
+                        "-i", str(arquivo_video),
+                        "-vframes", "1",
+                        "-q:v", "2",
+                        str(cand_path),
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
+
+            if cand_path.exists() and cand_path.stat().st_size > 1000:
+                score = 10.0
+                try:
+                    import cv2
+                    img_cv = cv2.imread(str(cand_path), cv2.IMREAD_GRAYSCALE)
+                    if img_cv is not None:
+                        score = float(cv2.Laplacian(img_cv, cv2.CV_64F).var())
+                except Exception:
+                    pass
+
+                if score > melhor_score or melhor_frame is None:
+                    if melhor_frame and melhor_frame.exists():
+                        melhor_frame.unlink(missing_ok=True)
+                    melhor_score = score
+                    melhor_frame = cand_path
+                else:
+                    cand_path.unlink(missing_ok=True)
+
+        if melhor_frame and melhor_frame.exists():
+            shutil.move(str(melhor_frame), str(temp_frame))
 
     if not temp_frame.exists():
-        if arquivo_video.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
-            shutil.copy2(arquivo_video, temp_frame)
-        else:
-            Image.new("RGB", (1080, 1920), (24, 24, 28)).save(str(temp_frame))
+        Image.new("RGB", (1080, 1920), (24, 24, 28)).save(str(temp_frame))
 
     # 2. Composição gráfica 1080x1920 com Pillow
     img = Image.open(temp_frame).convert("RGBA")
@@ -524,6 +555,28 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
 
     chain_base = ",".join(filtros_base)
 
+    duracao = max(1.0, float(fim_corte) - float(inicio_corte))
+    st_fade = max(0.0, duracao - 0.4)
+    audio_filter = f"loudnorm=I=-14:TP=-1.5:LRA=11,acompressor=threshold=-18dB:ratio=3:attack=15:release=100,afade=t=out:st={st_fade:.2f}:d=0.4"
+
+    def tem_audio(caminho: str | Path) -> bool:
+        try:
+            res = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-select_streams", "a:0",
+                    "-show_entries", "stream=codec_type",
+                    "-of", "csv=p=0",
+                    str(caminho),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return bool(res.stdout.strip())
+        except Exception:
+            return True
+
     if capa_path and capa_path.exists():
         # Overlay do Frame 0 de Alto Impacto durante os primeiros 0.14s (~4 frames a 30fps)
         filtro_complex = (
@@ -536,26 +589,40 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
             "-i", str(capa_path),
             "-filter_complex", filtro_complex,
             "-map", "[outv]",
-            "-map", "0:a?",
+        ]
+        if tem_audio(arquivo_video):
+            cmd.extend([
+                "-map", "0:a:0",
+                "-af", audio_filter,
+                "-c:a", "aac",
+                "-b:a", "192k",
+            ])
+        cmd.extend([
             "-c:v", "libx264",
             "-preset", "veryfast",
             "-crf", "18",
-            "-c:a", "copy",
             "-movflags", "+faststart",
             str(video_legenda),
-        ]
+        ])
     else:
         cmd = [
             "ffmpeg", "-y",
             "-i", str(arquivo_video),
             "-vf", chain_base,
+        ]
+        if tem_audio(arquivo_video):
+            cmd.extend([
+                "-af", audio_filter,
+                "-c:a", "aac",
+                "-b:a", "192k",
+            ])
+        cmd.extend([
             "-c:v", "libx264",
             "-preset", "veryfast",
             "-crf", "18",
-            "-c:a", "copy",
             "-movflags", "+faststart",
             str(video_legenda),
-        ]
+        ])
 
     subprocess.run(cmd, check=True)
     ass_path.unlink(missing_ok=True)
@@ -574,8 +641,18 @@ def escrever_post(
     if legenda_post.strip():
         texto += "\n\n" + legenda_post.strip()
 
+    # Assinatura oficial @os4.cortes
+    assinatura = "Siga @os4.cortes para mais insights diários sobre negócios e liderança."
+    if "@os4.cortes" not in texto:
+        texto += "\n\n" + assinatura
+
     if hashtags.strip():
-        texto += "\n\n" + hashtags.strip()
+        tags = hashtags.strip()
+        if "#os4cortes" not in tags.lower():
+            tags += " #os4cortes"
+        if "#os4" not in tags.lower():
+            tags += " #os4"
+        texto += "\n\n" + tags
 
     destino.write_text(texto.strip() + "\n", encoding="utf-8")
     return destino
