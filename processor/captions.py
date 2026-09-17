@@ -274,6 +274,7 @@ def gerar_capa_frame0(
     arquivo_video = Path(arquivo_video)
     destino_capa = Path(destino_capa)
     font_path = garantir_archivo_black(pasta_fontes)
+    temp_frame = destino_capa.with_suffix(".temp_frame.jpg")
 
     # 1. Extrair frame estático com FFmpeg com seleção inteligente de nitidez
     if arquivo_video.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
