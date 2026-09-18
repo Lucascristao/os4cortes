@@ -225,11 +225,15 @@ button:disabled { opacity: .55; cursor: progress; }
 .cut-card { border: 1px solid #303030; background: #101010; border-radius: 14px; padding: 14px; }
 .cut-card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
 .cut-card-head strong { color: var(--accent); }
+.cut-card-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cut-field { margin: 10px 0 0; }
 .cut-field span { display: block; color: #bdbdbd; font-size: .78rem; margin-bottom: 6px; }
 .cut-field textarea { margin-top: 0; min-height: 100px; }
 .cut-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.mini-button { width: auto; padding: 8px 10px; border-radius: 9px; background: #252525; color: #fff; font-size: .75rem; }
+.mini-button { width: auto; padding: 8px 10px; border-radius: 9px; background: #252525; color: #fff; font-size: .75rem; border: 1px solid #383838; cursor: pointer; transition: all .2s ease; }
+.mini-button:hover { background: #323232; border-color: #4a4a4a; }
+.btn-delete-cut { background: #221212; border: 1px solid #4a2121; color: #ff7b7b; display: inline-flex; align-items: center; gap: 5px; }
+.btn-delete-cut:hover { background: rgba(255, 82, 82, 0.22); border-color: #ff5252; color: #fff; }
 
 .results-list { display: grid; gap: 10px; margin-top: 16px; }
 .result-card { border: 1px solid #303030; background: #101010; border-radius: 14px; padding: 14px; }

@@ -759,7 +759,7 @@ Legenda da postagem
 Hashtags
 ```
 
-Existe botão para copiar legenda/post.
+Existe botão para copiar legenda/post e botão de lixeira para excluir cortes indesejados antes do processamento. Ao excluir, a numeração é reajustada automaticamente e sincronizada com o armazenamento local.
 
 As alterações são persistidas no navegador.
 
@@ -1702,7 +1702,8 @@ Regras:
 - evitar cortes redundantes;
 - mantenha timestamps fiéis à transcrição;
 - gere no máximo 15 cortes, salvo se eu pedir outra quantidade;
-- crie uma legenda curta de postagem e hashtags relevantes.
+- crie uma legenda curta de postagem e hashtags relevantes;
+- Diretriz Anti-Bloqueio (TikTok, Reels, Shorts, Kwai): NUNCA use no título, legenda ou hashtags termos proibidos ou sensíveis (remédios controlados/emagrecedores como Mounjaro, Ozempic, etc., armas, violência, drogas, morte/suicídio ou promessas milagrosas). Se o vídeo tratar disso, use eufemismos seguros e conceituais ("canetas injetáveis", "terapia metabólica", etc.).
 
 Responda SOMENTE em JSON válido neste formato:
 [

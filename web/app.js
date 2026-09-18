@@ -651,7 +651,18 @@ Regras editoriais obrigatórias:
   🎙️ Com: [Nomes dos Participantes Principais extraídos do vídeo]
 - Mantenha a reflexão do corte 100% focada no conteúdo. Não force menções artificiais a nomes no meio da explicação da fala.
 - No array "hashtags", inclua apenas 2 a 3 hashtags exclusivas sobre o tema específico daquele corte (ex: ["#negocios", "#gestao"] ou ["#vendas", "#lideranca"]). NÃO inclua "#os4cortes" nem "#os4".
-11. Responda ESTRITAMENTE em JSON válido, sem Markdown nem texto explicativo. Use o formato abaixo, compatível com a importação do OS4 Cortes. Se não houver nenhum candidato completo, retorne [] em vez de inventar um corte:
+11. Diretriz de Segurança e Anti-Bloqueio Multiplataforma (TikTok, Instagram Reels, YouTube Shorts e Kwai):
+As plataformas de vídeo curto possuem sistemas rígidos de moderação automática (OCR na capa/título, análise de texto na legenda e filtro de hashtags). O uso de palavras sensíveis pode causar remoção imediata do vídeo, desmonetização ou redução drástica de alcance (shadowban).
+Portanto, NUNCA utilize no "titulo", na "legenda_post" ou nas "hashtags":
+- Nomes comerciais ou substâncias de medicamentos controlados/tarjados ou emagrecedores (ex: Mounjaro, Ozempic, Wegovy, Rybelsus, Saxenda, Tirzepatida, Semaglutida, Ritalina, Venvanse, Roacutan, Zolpidem, Clonazepam, Rivotril, Anabolizantes, Trembolona, Durateston).
+  * Como contornar com segurança: se o corte tratar desse assunto, use termos conceituais e eufemismos neutros: "canetas injetáveis", "novo medicamento", "tratamento metabólico", "rotina de emagrecimento", "saúde e peso".
+- Promessas milagrosas de emagrecimento ou saúde (ex: "emagrecer 10kg em dias", "secar barriga rápido", "cura milagrosa").
+- Termos de violência explícita, morte, armas ou saúde mental crítica (ex: "suicídio", "se matar", "matar", "assassinato", "tiro", "arma", "facada", "estupro", "sangue", "massacre"). Substitua por termos seguros: "perdeu a vida", "tragédia", "conflito", "crime", "caso grave".
+- Substâncias ilícitas ou restritas (ex: "cocaína", "maconha", "drogas", "vape", "pod", "cigarro eletrônico").
+- Promessas financeiras ilusórias ou jogos de azar (ex: "dinheiro fácil", "ganhe dormindo", "robô do pix", "pirâmide", "tigrinho", "cassino", "aposta garantida").
+- Termos explícitos de cunho sexual ou plataformas adultas.
+Mantenha os títulos magnéticos, chamativos e com alto CTR, mas 100% limpos e protegidos contra filtros algorítmicos.
+12. Responda ESTRITAMENTE em JSON válido, sem Markdown nem texto explicativo. Use o formato abaixo, compatível com a importação do OS4 Cortes. Se não houver nenhum candidato completo, retorne [] em vez de inventar um corte:
 
 [
   {
@@ -751,11 +762,32 @@ function renderizarEditor(cortes) {
     top.className = "cut-card-head";
     const strong = document.createElement("strong");
     strong.textContent = `Corte ${index + 1}`;
+
+    const actions = document.createElement("div");
+    actions.className = "cut-card-actions";
+
     const copy = document.createElement("button");
     copy.type = "button";
     copy.className = "mini-button";
     copy.textContent = "Copiar legenda";
-    top.append(strong, copy);
+
+    const btnDelete = document.createElement("button");
+    btnDelete.type = "button";
+    btnDelete.className = "mini-button btn-delete-cut";
+    btnDelete.title = "Excluir este corte";
+    btnDelete.setAttribute("aria-label", `Excluir corte ${index + 1}`);
+    btnDelete.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -1px;">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        <line x1="10" y1="11" x2="10" y2="17"></line>
+        <line x1="14" y1="11" x2="14" y2="17"></line>
+      </svg>
+      <span>Excluir</span>
+    `;
+
+    actions.append(copy, btnDelete);
+    top.append(strong, actions);
 
     const titulo = criarCampo("Título", corte.titulo);
     titulo.campo.dataset.field = "titulo";
@@ -777,6 +809,47 @@ function renderizarEditor(cortes) {
       const original = copy.textContent;
       copy.textContent = "Copiado ✓";
       setTimeout(() => (copy.textContent = original), 1200);
+    });
+
+    btnDelete.addEventListener("click", () => {
+      if (btnGerarCortes.disabled) {
+        alert("Não é possível excluir cortes enquanto o processamento estiver em andamento.");
+        return;
+      }
+
+      const todosCards = [...cutsEditor.querySelectorAll(".cut-card")];
+      const idxAtual = todosCards.indexOf(card);
+      const numAtual = idxAtual !== -1 ? idxAtual + 1 : index + 1;
+      const titAtual = titulo.campo.value.trim() || `Corte ${numAtual}`;
+
+      if (!confirm(`Deseja realmente excluir o Corte ${numAtual} ("${titAtual}")?`)) {
+        return;
+      }
+
+      card.remove();
+
+      const cardsRestantes = [...cutsEditor.querySelectorAll(".cut-card")];
+      cardsRestantes.forEach((c, i) => {
+        c.dataset.index = String(i);
+        const lbl = c.querySelector(".cut-card-head strong");
+        if (lbl) lbl.textContent = `Corte ${i + 1}`;
+        const bDel = c.querySelector(".btn-delete-cut");
+        if (bDel) bDel.setAttribute("aria-label", `Excluir corte ${i + 1}`);
+      });
+
+      cortesImportados = lerCortesEditor();
+      if (pacote) {
+        pacote.value = JSON.stringify(cortesImportados, null, 2);
+        try { localStorage.setItem(STORAGE_PACKAGE, pacote.value); } catch {}
+      }
+
+      if (cardsRestantes.length > 0) {
+        setStatus("cortes", `${cardsRestantes.length} cortes prontos para gerar`, "active");
+      } else {
+        cutsEditor.classList.add("hidden");
+        btnGerarCortes.classList.add("hidden");
+        setStatus("cortes", "Aguardando pacote", "idle");
+      }
     });
 
     card.append(top, titulo.wrap, tempos, legenda.wrap, hashtags.wrap);
