@@ -616,11 +616,13 @@ function mostrarTranscricao(result) {
 }
 
 $("#btnCopiarTranscricao")?.addEventListener("click", async (event) => {
+  const botao = event?.currentTarget || $("#btnCopiarTranscricao");
+  const original = botao?.textContent || "Copiar transcrição";
   await navigator.clipboard.writeText(transcriptText.value);
-  const botao = event.currentTarget;
-  const original = botao.textContent;
-  botao.textContent = "Copiada ✓";
-  setTimeout(() => (botao.textContent = original), 1300);
+  if (botao) {
+    botao.textContent = "Copiada ✓";
+    setTimeout(() => (botao.textContent = original), 1300);
+  }
 });
 
 $("#btnCopiarPromptIA")?.addEventListener("click", async (event) => {
@@ -699,11 +701,13 @@ ${blocoVideoOriginal}
 --- TRANSCRIÇÃO ---
 ${transcricao}`;
 
+  const botao = event?.currentTarget || $("#btnCopiarPromptIA");
+  const original = botao?.textContent || "Copiar Prompt para IA";
   await navigator.clipboard.writeText(promptCompleto);
-  const botao = event.currentTarget;
-  const original = botao.textContent;
-  botao.textContent = "Prompt Copiado ✓";
-  setTimeout(() => (botao.textContent = original), 1500);
+  if (botao) {
+    botao.textContent = "Prompt Copiado ✓";
+    setTimeout(() => (botao.textContent = original), 1500);
+  }
 });
 
 $("#btnBaixarTranscricao")?.addEventListener("click", () => {
