@@ -9,5 +9,13 @@
   "theme_color": "#111111",
   "lang": "pt-BR",
   "orientation": "portrait-primary",
-  "categories": ["video", "productivity", "utilities"]
+  "categories": ["video", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }

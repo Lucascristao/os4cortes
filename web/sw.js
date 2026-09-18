@@ -1,5 +1,5 @@
-const CACHE = "os4-cortes-v12";
-const APP_SHELL = ["/", "/index.html", "/style.css", "/app.js", "/enhancements.js", "/manifest.webmanifest"];
+const CACHE = "os4-cortes-v13";
+const APP_SHELL = ["/", "/index.html", "/style.css", "/app.js", "/enhancements.js", "/manifest.webmanifest", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));
