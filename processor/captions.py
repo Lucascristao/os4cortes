@@ -545,13 +545,12 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
         except Exception as e:
             capa_path = None
 
-    # Base de filtros: Color Grading Cinematográfico Médio + Legendas ASS
-    # eq: contraste e saturação médios para pretos mais profundos e tons de pele ricos
-    # unsharp: nitidez refinada para preservar textura de pele e cabelo após compressão
+    # Base de filtros: Nitidez Adaptativa Inteligente (FidelityFX CAS) + Legendas ASS
+    # Mantém cores e iluminação naturais do estúdio, preservando brancos puros e sombras abertas,
+    # enquanto realça microtexturas de alta definição (cabelo, barba, olhos) sem criar contornos artificiais.
     filtros_base = []
     if color_grading:
-        filtros_base.append("eq=contrast=1.12:saturation=1.14")
-        filtros_base.append("unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=0.75")
+        filtros_base.append("cas=strength=0.75")
     filtros_base.append(f"ass='{filter_path(ass_path)}':fontsdir='{filter_path(pasta_fontes)}'")
 
     chain_base = ",".join(filtros_base)

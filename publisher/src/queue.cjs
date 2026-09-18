@@ -25,8 +25,8 @@ class Queue {
     const next=this.db.prepare('SELECT max(next) n FROM attempts WHERE network=?').get(network).n || 0;
     return {eligible:count<50 && now>=next,count,next};
   }
-  begin(id,now=Date.now(),delay=crypto.randomInt(300,601)*1000) {
-    if(delay<300000 || delay>600000) throw new Error('Intervalo inválido');
+  begin(id,now=Date.now(),delay=crypto.randomInt(180,301)*1000) {
+    if(delay<30000 || delay>600000) throw new Error('Intervalo inválido');
     return this.transaction(()=>{
       const job=this.db.prepare('SELECT * FROM jobs WHERE id=?').get(id);
       if(!job || !['queued','preparing'].includes(job.state)) throw new Error('Pedido já iniciado ou indisponível');

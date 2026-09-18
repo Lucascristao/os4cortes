@@ -75,8 +75,11 @@ Base anterior: `d33ea1b`. Branch do Publicador: `feat/local-publisher`.
 - **YouTube Shorts (`publisher/src/adapters/youtube.cjs`):**
   - Título limpo e formatado extraído da 1ª linha do `_post.txt` com pontuação e acentuação corretas + tag `#shorts`.
   - Preenchimento da descrição completa, seleção de não infantil, avanço até visibilidade Pública e fechamento do modal pós-publicação.
-- **Fila Sequencial Segura (`publisher/src/executor.cjs`):**
-  - Intervalo de proteção aleatório de 5 a 10 minutos (300–600s) entre postagens na mesma rede.
+- **Fila e Proteção Ativa Inteligente por Rede (`publisher/src/executor.cjs`):**
+  - Intervalo de proteção calibrado de 3 a 5 minutos (180–300s) estritamente entre cortes da mesma rede, com desconto automático do tempo gasto no upload (impedindo estouro de 10 min).
+  - Desacoplamento entre redes: postagens em redes diferentes ocorrem sem bloqueio mútuo.
+  - Pausa de recuperação rápida em caso de falhas (30–60s) e liberação imediata ao clicar em reenfileirar manual.
+  - Exibição de chips de cooldown individuais em tempo real na interface (`index.html`, `renderer.js`).
 - **Ponte Local (`publisher/src/bridge.cjs`):**
   - Porta `127.0.0.1:49152` conectada ao término de render da aplicação web.
 - **Importação Sob Demanda do Google Drive (Opção B):**

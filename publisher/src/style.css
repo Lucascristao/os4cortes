@@ -190,10 +190,10 @@ section {
 
 .cooldown-banner {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
-  background: rgba(234, 179, 8, 0.12);
-  border: 1px solid rgba(234, 179, 8, 0.3);
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.28);
   padding: 12px 16px;
   border-radius: 10px;
   margin-bottom: 16px;
@@ -201,6 +201,92 @@ section {
 
 .cooldown-icon {
   font-size: 24px;
+  margin-top: 2px;
+}
+
+.cooldown-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cooldown-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cooldown-header strong {
+  font-size: 14px;
+  color: #fbbf24;
+}
+
+.cooldown-text {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.network-cooldown-chips {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.net-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.net-chip.is-ready {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #86efac;
+}
+
+.net-chip.is-ready .net-dot {
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+}
+
+.net-chip.is-cooling {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde047;
+}
+
+.net-chip.is-cooling .net-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+  animation: pulse-dot 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.net-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.net-label {
+  font-weight: 600;
+}
+
+.net-timer {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .hidden {

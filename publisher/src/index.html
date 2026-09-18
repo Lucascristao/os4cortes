@@ -16,7 +16,7 @@
       </div>
       <div id="bridge-badge" class="badge badge-active">Ponte Ativa (127.0.0.1:49152)</div>
     </div>
-    <p class="subtitle">Downloads em segundo plano do Drive e postagem contínua com intervalo seguro de 5 a 10 minutos.</p>
+    <p class="subtitle">Downloads em segundo plano do Drive e postagem contínua com proteção ativa inteligente por rede (3 a 5 min).</p>
   </header>
 
   <main>
@@ -58,9 +58,28 @@
 
       <div id="cooldown-banner" class="cooldown-banner hidden">
         <span class="cooldown-icon">⏱️</span>
-        <div>
-          <strong>Intervalo de segurança ativo</strong>
-          <p id="cooldown-text">Aguardando pausa programada para proteger as contas...</p>
+        <div class="cooldown-content">
+          <div class="cooldown-header">
+            <strong>Proteção Ativa por Rede</strong>
+            <span id="cooldown-text" class="cooldown-text">Intervalo seguro entre cortes do mesmo canal</span>
+          </div>
+          <div class="network-cooldown-chips">
+            <div id="chip-youtube" class="net-chip is-ready">
+              <span class="net-dot"></span>
+              <span class="net-label">YouTube:</span>
+              <span id="timer-youtube" class="net-timer">Pronto</span>
+            </div>
+            <div id="chip-tiktok" class="net-chip is-ready">
+              <span class="net-dot"></span>
+              <span class="net-label">TikTok:</span>
+              <span id="timer-tiktok" class="net-timer">Pronto</span>
+            </div>
+            <div id="chip-instagram" class="net-chip is-ready">
+              <span class="net-dot"></span>
+              <span class="net-label">Instagram:</span>
+              <span id="timer-instagram" class="net-timer">Pronto</span>
+            </div>
+          </div>
         </div>
       </div>
 

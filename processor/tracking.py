@@ -100,9 +100,10 @@ def render_tracking_9x16(
 
     duracao = fim - inicio
     stem = nome_seguro(saida.stem)
-    proxy = work_dir / f"_proxy_{stem}.mp4"
+    segmento = work_dir / f"_segmento_{stem}.mp4"
     sem_audio = work_dir / f"_sem_audio_{stem}.mp4"
 
+    # Extrai o segmento de corte na resolução nativa do vídeo de origem (sem forçar scale=-2:720)
     subprocess.run(
         [
             "ffmpeg", "-y",
@@ -110,21 +111,20 @@ def render_tracking_9x16(
             "-t", str(duracao),
             "-i", str(video_origem),
             "-an",
-            "-vf", "scale=-2:720",
             "-c:v", "libx264",
             "-preset", "veryfast",
-            "-crf", "21",
+            "-crf", "18",
             "-pix_fmt", "yuv420p",
-            str(proxy),
+            str(segmento),
         ],
         check=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
 
-    cap = cv2.VideoCapture(str(proxy))
+    cap = cv2.VideoCapture(str(segmento))
     if not cap.isOpened():
-        raise RuntimeError("OpenCV não conseguiu abrir o proxy H.264.")
+        raise RuntimeError("OpenCV não conseguiu abrir o segmento de vídeo H.264.")
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -132,14 +132,18 @@ def render_tracking_9x16(
 
     if w <= 0 or h <= 0:
         cap.release()
-        raise RuntimeError("Dimensões inválidas no proxy.")
+        raise RuntimeError("Dimensões inválidas no segmento de vídeo.")
 
     yunet = garantir_yunet(work_dir)
+
+    # Resolução otimizada para detecção facial rápida com IA (máx 1280px de largura)
+    det_w = min(1280, w)
+    det_h = int(round(h * det_w / w))
 
     detector = cv2.FaceDetectorYN.create(
         str(yunet),
         "",
-        (w, h),
+        (det_w, det_h),
         score_threshold=0.70,
         nms_threshold=0.30,
         top_k=5000,
@@ -160,7 +164,7 @@ def render_tracking_9x16(
         "-an",
         "-c:v", "libx264",
         "-preset", "veryfast",
-        "-crf", "20",
+        "-crf", "18",
         "-pix_fmt", "yuv420p",
         "-movflags", "+faststart",
         str(sem_audio),
@@ -192,8 +196,13 @@ def render_tracking_9x16(
                 previous_mouths = []
 
             if mudou or frame_idx % detectar_a_cada == 0:
-                detector.setInputSize((w, h))
-                _, faces = detector.detect(frame)
+                det_frame = (
+                    cv2.resize(frame, (det_w, det_h))
+                    if (det_w != w or det_h != h)
+                    else frame
+                )
+                detector.setInputSize((det_w, det_h))
+                _, faces = detector.detect(det_frame)
 
                 detections: list[Face] = []
                 current_mouths: list[tuple[float, float, any]] = []
@@ -201,17 +210,17 @@ def render_tracking_9x16(
                 if faces is not None:
                     for f in faces:
                         score_fala, mouth_data = calcular_movimento_labial(
-                            frame, f, previous_mouths, w, h
+                            det_frame, f, previous_mouths, det_w, det_h
                         )
                         if mouth_data:
                             current_mouths.append(mouth_data)
 
                         detections.append(
                             Face(
-                                float(f[0]) / w,
-                                float(f[1]) / h,
-                                float(f[2]) / w,
-                                float(f[3]) / h,
+                                float(f[0]) / det_w,
+                                float(f[1]) / det_h,
+                                float(f[2]) / det_w,
+                                float(f[3]) / det_h,
                                 float(f[-1]),
                                 speaking_score=score_fala,
                             )
@@ -277,7 +286,7 @@ def render_tracking_9x16(
         stderr=subprocess.DEVNULL,
     )
 
-    for temporario in (proxy, sem_audio):
+    for temporario in (segmento, sem_audio):
         try:
             temporario.unlink(missing_ok=True)
         except Exception:

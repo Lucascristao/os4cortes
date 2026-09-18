@@ -24,8 +24,16 @@ const modalErrorText = document.querySelector('#modal-error-text');
 const modalBtnRetry = document.querySelector('#modal-btn-retry');
 const modalBtnDelete = document.querySelector('#modal-btn-delete');
 
+// Chips de Cooldown por Rede
+const chipYoutube = document.querySelector('#chip-youtube');
+const timerYoutube = document.querySelector('#timer-youtube');
+const chipTiktok = document.querySelector('#chip-tiktok');
+const timerTiktok = document.querySelector('#timer-tiktok');
+const chipInstagram = document.querySelector('#chip-instagram');
+const timerInstagram = document.querySelector('#timer-instagram');
+
 let cooldownTimer = null;
-let remainingCooldownSec = 0;
+let currentNextAvailable = { youtube: 0, tiktok: 0, instagram: 0 };
 let currentQueueStatus = null;
 let activeFilter = 'all';
 let currentModalJobId = null;
@@ -61,36 +69,61 @@ if (window.os4?.onQueueStatus) {
   });
 }
 
-// Listener de cooldown
-if (window.os4?.onCooldown) {
-  window.os4.onCooldown((data) => {
-    startCooldownCountdown(data.waitSec);
-    if (data.status) renderQueue(data.status);
-  });
+function formatCooldown(sec) {
+  const min = String(Math.floor(sec / 60)).padStart(2, '0');
+  const s = String(sec % 60).padStart(2, '0');
+  return `${min}:${s}`;
 }
 
-function startCooldownCountdown(seconds) {
-  remainingCooldownSec = seconds;
-  cooldownBanner.classList.remove('hidden');
-
-  if (cooldownTimer) clearInterval(cooldownTimer);
-  updateCooldownDisplay();
-
-  cooldownTimer = setInterval(() => {
-    remainingCooldownSec--;
-    if (remainingCooldownSec <= 0) {
-      clearInterval(cooldownTimer);
-      cooldownBanner.classList.add('hidden');
-    } else {
-      updateCooldownDisplay();
-    }
-  }, 1000);
+function updateNetworkChip(chipEl, timerEl, remainingSec) {
+  if (!chipEl || !timerEl) return;
+  if (remainingSec > 0) {
+    chipEl.className = 'net-chip is-cooling';
+    timerEl.textContent = formatCooldown(remainingSec);
+  } else {
+    chipEl.className = 'net-chip is-ready';
+    timerEl.textContent = 'Pronto ✓';
+  }
 }
 
 function updateCooldownDisplay() {
-  const min = String(Math.floor(remainingCooldownSec / 60)).padStart(2, '0');
-  const sec = String(remainingCooldownSec % 60).padStart(2, '0');
-  cooldownText.textContent = `Pausa segura de proteção ativa. Próxima publicação liberada em ${min}:${sec}.`;
+  const now = Date.now();
+  const ytSec = Math.max(0, Math.ceil(((currentNextAvailable.youtube || 0) - now) / 1000));
+  const ttSec = Math.max(0, Math.ceil(((currentNextAvailable.tiktok || 0) - now) / 1000));
+  const igSec = Math.max(0, Math.ceil(((currentNextAvailable.instagram || 0) - now) / 1000));
+
+  updateNetworkChip(chipYoutube, timerYoutube, ytSec);
+  updateNetworkChip(chipTiktok, timerTiktok, ttSec);
+  updateNetworkChip(chipInstagram, timerInstagram, igSec);
+
+  const anyCooling = ytSec > 0 || ttSec > 0 || igSec > 0;
+  if (anyCooling) {
+    cooldownBanner.classList.remove('hidden');
+    cooldownText.textContent = 'Intervalo inteligente ativo (3 a 5 min entre cortes do mesmo canal).';
+  } else {
+    cooldownBanner.classList.add('hidden');
+  }
+}
+
+function syncCooldowns(nextAvailable) {
+  if (!nextAvailable) return;
+  currentNextAvailable = { ...nextAvailable };
+  if (!cooldownTimer) {
+    cooldownTimer = setInterval(updateCooldownDisplay, 1000);
+  }
+  updateCooldownDisplay();
+}
+
+// Listener de cooldown
+if (window.os4?.onCooldown) {
+  window.os4.onCooldown((data) => {
+    if (data.status?.nextAvailable) {
+      syncCooldowns(data.status.nextAvailable);
+    } else if (data.nextAvailable) {
+      syncCooldowns(data.nextAvailable);
+    }
+    if (data.status) renderQueue(data.status);
+  });
 }
 
 // Controle de Pausa da Fila
@@ -221,6 +254,11 @@ function syncStatCardsActive(filter) {
 function renderQueue(status) {
   if (!status) return;
   currentQueueStatus = status;
+
+  // Sincroniza cooldowns individuais por rede
+  if (status.nextAvailable) {
+    syncCooldowns(status.nextAvailable);
+  }
 
   // Atualiza Pausa
   if (btnTogglePause) {
