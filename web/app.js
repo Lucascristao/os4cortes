@@ -744,6 +744,10 @@ function higienizarJsonPacote(texto) {
   }
 
   limpo = limpo.replace(/,\s*([}\]])/g, "$1");
+
+  // Se houver aspas duplas não-escapadas em torno do título do episódio no rodapé, converte para aspas simples
+  limpo = limpo.replace(/🎬\s*Episódio completo:\s*\\?["“](.*?)\\?["”]/gi, "🎬 Episódio completo: '$1'");
+
   return limpo;
 }
 
