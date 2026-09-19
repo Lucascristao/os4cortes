@@ -12,8 +12,8 @@ from .framing import Face, StableFraming
 
 def calcular_movimento_labial(
     frame, face_box, prev_mouths, w: int, h: int
-) -> tuple[float, tuple[float, float, any] | None]:
-    """Estima variação de movimento da boca para pontuar atividade de fala."""
+) -> tuple[float, tuple[float, float, any, float] | None]:
+    """Estima variação de movimento da boca para pontuar atividade de fala com suavização temporal."""
     fx, fy, fw, fh = face_box[:4]
     my1 = max(0, int(fy + 0.60 * fh))
     my2 = min(h, int(fy + 0.95 * fh))
@@ -28,13 +28,20 @@ def calcular_movimento_labial(
     cx, cy = float(fx + fw / 2) / w, float(fy + fh / 2) / h
     best_score = 0.0
 
-    for pcx, pcy, p_roi in prev_mouths:
+    for item in prev_mouths:
+        pcx, pcy, p_roi = item[0], item[1], item[2]
+        prev_score = item[3] if len(item) > 3 else 0.0
         if math.hypot(cx - pcx, cy - pcy) < 0.12 and p_roi is not None:
             diff = float(cv2.absdiff(mouth_roi, p_roi).mean())
-            best_score = min(1.0, max(0.0, (diff - 3.0) / 9.0))
+            raw_score = min(1.0, max(0.0, (diff - 3.0) / 9.0))
+            # Suavização temporal (EMA assimétrico): ataque rápido para fala e decaimento suave para pausas
+            if raw_score >= prev_score:
+                best_score = 0.60 * raw_score + 0.40 * prev_score
+            else:
+                best_score = 0.20 * raw_score + 0.80 * prev_score
             break
 
-    return best_score, (cx, cy, mouth_roi)
+    return best_score, (cx, cy, mouth_roi, best_score)
 
 
 def mudou_plano(previous, current) -> tuple[bool, bool]:

@@ -62,6 +62,52 @@ class FramingTests(unittest.TestCase):
         framing.observe([silent, speaker], 0)
         self.assertGreater(framing.position(0), 0.65)
 
+    def test_speaker_takes_over_from_silent_listener(self):
+        framing = StableFraming(0.32, switch_hold=0.50)
+        # Inicialmente apenas o ouvinte está no enquadramento (ouvinte tem rosto maior)
+        listener = Face(0.1, 0.2, 0.18, 0.22, confidence=0.9, speaking_score=0.0)
+        speaker_silent = Face(0.65, 0.2, 0.14, 0.2, confidence=0.9, speaking_score=0.0)
+        framing.observe([listener, speaker_silent], 0)
+        self.assertLess(framing.center, 0.3)
+
+        # O falante começa a falar (speaking_score alto), ouvinte continua calado
+        for i in range(1, 10):
+            t = i * 0.1  # 0.1s até 0.9s
+            speaking_face = Face(0.65, 0.2, 0.14, 0.2, confidence=0.9, speaking_score=0.65)
+            silent_listener = Face(0.1, 0.2, 0.18, 0.22, confidence=0.9, speaking_score=0.0)
+            framing.observe([silent_listener, speaking_face], t)
+            framing.position(t)
+
+        # Após 0.5s de fala, o alvo deve ter mudado para o falante e a câmera movido em sua direção
+        self.assertEqual(framing.target.center, speaker_silent.center)
+        self.assertGreater(framing.center, 0.45)
+
+    def test_brief_pause_in_speech_does_not_reset_candidate(self):
+        framing = StableFraming(0.32, switch_hold=0.50)
+        listener = Face(0.1, 0.2, 0.18, 0.22, confidence=0.9, speaking_score=0.0)
+        speaker_silent = Face(0.65, 0.2, 0.14, 0.2, confidence=0.9, speaking_score=0.0)
+        speaker_speaking = Face(0.65, 0.2, 0.14, 0.2, confidence=0.9, speaking_score=0.65)
+        speaker_paused = Face(0.65, 0.2, 0.14, 0.2, confidence=0.9, speaking_score=0.15)
+        silent_listener = Face(0.1, 0.2, 0.18, 0.22, confidence=0.9, speaking_score=0.0)
+
+        # Início (calados)
+        framing.observe([listener, speaker_silent], 0)
+
+        # Falante fala aos 0.1s e 0.2s
+        framing.observe([silent_listener, speaker_speaking], 0.1)
+        framing.observe([silent_listener, speaker_speaking], 0.2)
+
+        # Pausa curta aos 0.3s (100ms de pausa entre sílabas)
+        framing.observe([silent_listener, speaker_paused], 0.3)
+
+        # Retoma aos 0.4s, 0.5s, 0.65s
+        framing.observe([silent_listener, speaker_speaking], 0.4)
+        framing.observe([silent_listener, speaker_speaking], 0.5)
+        framing.observe([silent_listener, speaker_speaking], 0.65)
+
+        # Deve ter completado a troca para o falante
+        self.assertEqual(framing.target.center, speaker_speaking.center)
+
 
 def words(text, step=0.3):
     return [{'texto': w, 'inicio': i * step, 'fim': (i + 1) * step} for i, w in enumerate(text.split())]

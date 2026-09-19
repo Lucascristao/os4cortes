@@ -29,7 +29,7 @@ class Face:
     @property
     def priority(self) -> float:
         """Prioridade baseada em tamanho, confiança e movimento labial de fala."""
-        return (self.area * self.confidence) * (1.0 + 0.6 * self.speaking_score)
+        return (self.area * self.confidence) * (1.0 + 2.5 * self.speaking_score)
 
 
 def same_face(a: Face, b: Face) -> bool:
@@ -50,7 +50,7 @@ class StableFraming:
         self,
         crop_fraction: float,
         lost_hold: float = 0.9,
-        switch_hold: float = 0.65,
+        switch_hold: float = 0.50,
     ):
         self.crop_fraction = min(1.0, max(0.05, float(crop_fraction)))
         self.lost_hold = float(lost_hold)
@@ -60,12 +60,15 @@ class StableFraming:
         self.last_seen = -math.inf
         self.candidate: Face | None = None
         self.candidate_since = 0.0
+        self.candidate_last_valid = 0.0
         self.last_time: float | None = None
         self.fresh_shot = True
 
     def reset_shot(self, snap: bool = True):
         self.target = None
         self.candidate = None
+        self.candidate_since = 0.0
+        self.candidate_last_valid = 0.0
         self.fresh_shot = snap
 
     def observe(self, faces: list[Face], timestamp: float):
@@ -82,7 +85,33 @@ class StableFraming:
                     matches, key=lambda f: abs(f.center - self.target.center)
                 )
                 self.last_seen = timestamp
-                self.candidate = None
+
+                # Se o target atual NÃO está falando ativamente, verificar se outro rosto está
+                others = [f for f in faces if not same_face(self.target, f)]
+                best_other = max(others, key=lambda f: f.speaking_score, default=None) if others else None
+                
+                is_other_speaking = (
+                    best_other is not None
+                    and best_other.speaking_score > 0.30
+                    and best_other.speaking_score > self.target.speaking_score + 0.15
+                )
+
+                if is_other_speaking:
+                    if self.candidate is not None and same_face(self.candidate, best_other):
+                        self.candidate = best_other
+                        self.candidate_last_valid = timestamp
+                        if timestamp - self.candidate_since >= self.switch_hold:
+                            self.target = best_other
+                            self.last_seen = timestamp
+                            self.candidate = None
+                    else:
+                        self.candidate = best_other
+                        self.candidate_since = timestamp
+                        self.candidate_last_valid = timestamp
+                else:
+                    # Tolerância para pausas naturais entre palavras/sílabas (até 0.30s de silêncio)
+                    if self.candidate is not None and (timestamp - self.candidate_last_valid > 0.30):
+                        self.candidate = None
                 return
 
             if timestamp - self.last_seen < self.lost_hold:
@@ -94,11 +123,13 @@ class StableFraming:
 
         best = max(faces, key=lambda f: f.priority)
 
-        if self.fresh_shot:
+        # Se não há target ativo, assume o melhor rosto imediatamente (elimina pausa no vazio)
+        if self.target is None:
             self.target = best
             self.last_seen = timestamp
-            self.center = self._clamp(best.center)
-            self.fresh_shot = False
+            if self.fresh_shot:
+                self.center = self._clamp(best.center)
+                self.fresh_shot = False
             return
 
         if self.candidate is None or not same_face(self.candidate, best):
@@ -128,11 +159,11 @@ class StableFraming:
         deadband = self.crop_fraction * 0.055
 
         if abs(error) > deadband:
-            # Frame-rate-independent easing with speed cap, avoiding tiny jitter
+            # Transição rápida e dinâmica sem paradas ou arrastos lentos
             movement = (error - math.copysign(deadband, error)) * (
-                1.0 - math.exp(-dt / 0.22)
+                1.0 - math.exp(-dt / 0.10)
             )
-            limit = 0.65 * dt
+            limit = 1.80 * dt
             self.center = self._clamp(
                 self.center + max(-limit, min(limit, movement))
             )
