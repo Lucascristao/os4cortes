@@ -180,9 +180,12 @@ class CaptionTests(unittest.TestCase):
         self.assertEqual(srt_tempo(59.9999),'00:01:00,000')
 
     def test_gerar_capa_composicao(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow não instalado no ambiente do teste")
         import tempfile
         from pathlib import Path
-        from PIL import Image
         from processor.captions import gerar_capa_frame0, DEFAULT_FONT_DIR
         with tempfile.TemporaryDirectory() as td:
             base_dir = Path(td)

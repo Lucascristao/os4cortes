@@ -33,6 +33,8 @@ jobs:
 
       - name: Validar Python
         run: |
+          pip install --upgrade pip
+          pip install Pillow numpy
           python -m compileall processor
           python -m unittest discover -s tests -p 'test_*.py' -v
 
