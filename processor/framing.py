@@ -50,7 +50,7 @@ class StableFraming:
         self,
         crop_fraction: float,
         lost_hold: float = 0.9,
-        switch_hold: float = 0.50,
+        switch_hold: float = 0.95,
     ):
         self.crop_fraction = min(1.0, max(0.05, float(crop_fraction)))
         self.lost_hold = float(lost_hold)
@@ -72,10 +72,15 @@ class StableFraming:
         self.fresh_shot = snap
 
     def observe(self, faces: list[Face], timestamp: float):
+        # Filtra detecções inválidas ou espúrias: fotos em quadros/jornais no cenário
+        # têm área/dimensões minúsculas comparadas a participantes reais de vídeo/podcast.
         faces = [
             f
             for f in faces
-            if f.width > 0 and f.height > 0 and f.confidence >= 0.70
+            if f.width >= 0.035
+            and f.height >= 0.05
+            and f.area >= 0.002
+            and f.confidence >= 0.70
         ]
 
         if self.target is not None:
@@ -90,9 +95,10 @@ class StableFraming:
                 others = [f for f in faces if not same_face(self.target, f)]
                 best_other = max(others, key=lambda f: f.speaking_score, default=None) if others else None
                 
+                # Exige evidência clara de fala ativa para justificar tirar o foco do orador atual
                 is_other_speaking = (
                     best_other is not None
-                    and best_other.speaking_score > 0.30
+                    and best_other.speaking_score > 0.35
                     and best_other.speaking_score > self.target.speaking_score + 0.15
                 )
 
@@ -100,6 +106,7 @@ class StableFraming:
                     if self.candidate is not None and same_face(self.candidate, best_other):
                         self.candidate = best_other
                         self.candidate_last_valid = timestamp
+                        # Só transfere a câmera se a fala for sustentada (impede desvio por 'hum'/'excelente')
                         if timestamp - self.candidate_since >= self.switch_hold:
                             self.target = best_other
                             self.last_seen = timestamp

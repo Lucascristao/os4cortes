@@ -108,6 +108,37 @@ class FramingTests(unittest.TestCase):
         # Deve ter completado a troca para o falante
         self.assertEqual(framing.target.center, speaker_speaking.center)
 
+    def test_tiny_background_faces_are_ignored(self):
+        framing = StableFraming(0.32)
+        # Face humana real do orador
+        speaker = Face(0.60, 0.25, 0.15, 0.22, confidence=0.92, speaking_score=0.7)
+        # Foto decorativa em jornal/quadro na parede (área minúscula)
+        tiny_photo = Face(0.22, 0.60, 0.015, 0.02, confidence=0.85, speaking_score=0.0)
+        framing.observe([speaker, tiny_photo], 0)
+        self.assertEqual(framing.target.center, speaker.center)
+
+    def test_brief_interjections_do_not_steal_focus_from_active_speaker(self):
+        # Default switch_hold é 0.95s
+        framing = StableFraming(0.32)
+        speaker = Face(0.25, 0.2, 0.15, 0.2, confidence=0.9, speaking_score=0.70)
+        listener = Face(0.75, 0.2, 0.15, 0.2, confidence=0.9, speaking_score=0.0)
+        
+        # Estabelece o falante
+        framing.observe([speaker, listener], 0)
+        self.assertEqual(framing.target.center, speaker.center)
+
+        # Ouvinte fala interjeição rápida ("hum", "excelente") por 0.5s (500ms)
+        for i in range(1, 6):
+            t = i * 0.1
+            speaking_listener = Face(0.75, 0.2, 0.15, 0.2, confidence=0.9, speaking_score=0.60)
+            paused_speaker = Face(0.25, 0.2, 0.15, 0.2, confidence=0.9, speaking_score=0.20)
+            framing.observe([paused_speaker, speaking_listener], t)
+            framing.position(t)
+
+        # Câmera DEVE permanecer no orador original e NÃO ter ido para o meio ou para o ouvinte
+        self.assertEqual(framing.target.center, speaker.center)
+        self.assertLess(framing.center, 0.35)
+
 
 def words(text, step=0.3):
     return [{'texto': w, 'inicio': i * step, 'fim': (i + 1) * step} for i, w in enumerate(text.split())]

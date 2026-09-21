@@ -60,6 +60,7 @@ def normalizar_cortes(raw: str) -> list[dict]:
                 "fim": fim,
                 "legenda_post": str(corte.get("legenda_post") or "").strip(),
                 "hashtags": hashtags,
+                "saida_suave": bool(corte.get("saida_suave", True)),
             }
         )
     return saida
@@ -122,6 +123,9 @@ def main() -> int:
                 palavras_globais, corte["inicio"], corte["fim"]
             )
 
+            # Ativa fade-out visual quando a IA sinaliza saída abrupta
+            usar_fade_visual = not corte.get("saida_suave", True)
+
             emit(
                 "tracking",
                 base_inicio,
@@ -135,6 +139,7 @@ def main() -> int:
                 corte["fim"],
                 video_corte,
                 work_dir=work,
+                fade_out_visual=usar_fade_visual,
             )
 
             emit(
@@ -151,6 +156,7 @@ def main() -> int:
                 corte["fim"],
                 titulo=corte["titulo"],
                 style=CaptionStyle(),
+                saida_suave=corte.get("saida_suave", True),
             )
             post_path = escrever_post(
                 out / f"{prefixo}_post.txt",

@@ -439,6 +439,7 @@ def criar_legendas_corte(
     style: CaptionStyle | None = None,
     color_grading: bool = True,
     gerar_capa: bool = True,
+    saida_suave: bool = True,
 ) -> tuple[Path, Path, Path | None]:
     style = style or CaptionStyle()
     pasta_fontes = Path(pasta_fontes).expanduser()
@@ -556,8 +557,10 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
     chain_base = ",".join(filtros_base)
 
     duracao = max(1.0, float(fim_corte) - float(inicio_corte))
-    st_fade = max(0.0, duracao - 0.4)
-    audio_filter = f"loudnorm=I=-14:TP=-1.5:LRA=11,acompressor=threshold=-18dB:ratio=3:attack=15:release=100,afade=t=out:st={st_fade:.2f}:d=0.4"
+    # Fade de áudio: 0.8s quando saída abrupta (sincronizado com fade visual), 0.4s no padrão
+    fade_audio_dur = 0.8 if not saida_suave else 0.4
+    st_fade = max(0.0, duracao - fade_audio_dur)
+    audio_filter = f"loudnorm=I=-14:TP=-1.5:LRA=11,acompressor=threshold=-18dB:ratio=3:attack=15:release=100,afade=t=out:st={st_fade:.2f}:d={fade_audio_dur:.1f}"
 
     def tem_audio(caminho: str | Path) -> bool:
         try:

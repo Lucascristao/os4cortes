@@ -1,6 +1,7 @@
 from __future__ import annotations
 import math
 import re
+import numpy as np
 import subprocess
 import urllib.request
 from pathlib import Path
@@ -95,6 +96,7 @@ def render_tracking_9x16(
     largura_saida: int = 1080,
     altura_saida: int = 1920,
     detectar_a_cada: int = 3,
+    fade_out_visual: bool = False,
 ) -> Path:
     video_origem = Path(video_origem)
     saida = Path(saida)
@@ -106,6 +108,7 @@ def render_tracking_9x16(
         raise ValueError("FIM precisa ser maior que INICIO.")
 
     duracao = fim - inicio
+    fade_duracao = 0.8 if fade_out_visual else 0.0
     stem = nome_seguro(saida.stem)
     segmento = work_dir / f"_segmento_{stem}.mp4"
     sem_audio = work_dir / f"_sem_audio_{stem}.mp4"
@@ -256,6 +259,13 @@ def render_tracking_9x16(
                 (largura_saida, altura_saida),
                 interpolation=cv2.INTER_LANCZOS4,
             )
+
+            # Fade-out visual condicional: escurecimento gradual nos últimos 0.8s
+            if fade_duracao > 0 and tempo_decorrido >= (duracao - fade_duracao):
+                progresso_fade = (tempo_decorrido - (duracao - fade_duracao)) / fade_duracao
+                progresso_fade = min(1.0, max(0.0, progresso_fade))
+                fator = 1.0 - progresso_fade  # 1.0 (normal) → 0.0 (preto)
+                vertical = (vertical.astype(np.float32) * fator).clip(0, 255).astype(np.uint8)
 
             if proc.stdin is None:
                 raise RuntimeError("Pipe de vídeo não disponível.")
