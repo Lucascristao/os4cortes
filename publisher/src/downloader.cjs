@@ -95,18 +95,59 @@ async function downloadGoogleDriveFileWithContext(ctx, fileId, destPath) {
 // Baixa um arquivo de texto (.txt de post) de forma autenticada via Playwright request
 async function downloadTextFileWithContext(ctx, fileId) {
   if (!fileId) return '';
-  try {
-    const directUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
-    const res = await ctx.request.get(directUrl);
-    if (res.ok()) {
-      const text = await res.text();
-      if (text && !text.includes('<!DOCTYPE html>') && !text.includes('<!doctype html>') && !text.includes('accounts.google.com')) {
-        return text.trim();
+  const directUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
+
+  // Tentativa 1: ctx.request com até 3 retentativas
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await ctx.request.get(directUrl, { timeout: 15000 });
+      if (res.ok()) {
+        const text = await res.text();
+        if (text && !text.includes('<!DOCTYPE html>') && !text.includes('<!doctype html>') && !text.includes('accounts.google.com')) {
+          return text.trim();
+        }
+
+        // Se o Google Drive devolveu página HTML com botão ou link de confirmação
+        const confirmMatch = text.match(/href="(\/uc\?export=download[^"]+confirm=[^"]+)"/) ||
+                             text.match(/href="([^"]+confirm=[^"&]+[^"]*)"/);
+        if (confirmMatch) {
+          const confirmUrl = confirmMatch[1].startsWith('http') ? confirmMatch[1] : `https://drive.google.com${confirmMatch[1]}`;
+          const resConfirm = await ctx.request.get(confirmUrl, { timeout: 15000 });
+          if (resConfirm.ok()) {
+            const confText = await resConfirm.text();
+            if (confText && !confText.includes('<!DOCTYPE html>') && !confText.includes('<!doctype html>')) {
+              return confText.trim();
+            }
+          }
+        }
       }
+    } catch (err) {
+      console.warn(`[Downloader] Tentativa ${attempt} de obter texto do post falhou: ${err.message}`);
+    }
+    await new Promise(r => setTimeout(r, 1200));
+  }
+
+  // Tentativa 2: Fallback abrindo página no navegador autenticado
+  try {
+    const page = await ctx.newPage();
+    try {
+      await page.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => null);
+      const preEl = page.locator('pre').first();
+      if (await preEl.isVisible({ timeout: 4000 }).catch(() => false)) {
+        const preText = await preEl.innerText();
+        if (preText && preText.trim()) return preText.trim();
+      }
+      const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
+      if (bodyText && !bodyText.includes('Google Drive') && !bodyText.includes('fazer download')) {
+        return bodyText.trim();
+      }
+    } finally {
+      await page.close().catch(() => {});
     }
   } catch (err) {
-    console.warn(`[Downloader] Falha ao obter texto autenticado do post: ${err.message}`);
+    console.warn(`[Downloader] Fallback via página falhou para texto: ${err.message}`);
   }
+
   return '';
 }
 

@@ -5,6 +5,34 @@ const EventEmitter = require('node:events');
 
 
 
+function buildYouTubeTitle(rawTitle, postText) {
+  let cleanTitle = (rawTitle || '').replace(/#shorts/gi, '').replace(/\s+/g, ' ').trim();
+  if (!cleanTitle && postText) {
+    cleanTitle = postText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#')) || '';
+  }
+  if (!cleanTitle) cleanTitle = 'Corte';
+
+  // Extrai hashtags contextuais do texto do post
+  const contextTags = [];
+  if (postText) {
+    const found = postText.match(/#[a-zA-Z0-9_À-ÿ]+/g) || [];
+    for (const tag of found) {
+      if (!tag.toLowerCase().includes('shorts') && !contextTags.some(t => t.toLowerCase() === tag.toLowerCase())) {
+        contextTags.push(tag);
+      }
+    }
+  }
+
+  let resultTitle = cleanTitle;
+  for (const tag of contextTags) {
+    if (`${resultTitle} ${tag}`.length <= 95) {
+      resultTitle = `${resultTitle} ${tag}`;
+    }
+  }
+
+  return resultTitle.slice(0, 95).trim();
+}
+
 class QueueExecutor extends EventEmitter {
   constructor(queueInstance) {
     super();
@@ -146,7 +174,10 @@ class QueueExecutor extends EventEmitter {
 
       if (p.postPath && fs.existsSync(p.postPath)) {
         try {
-          effectiveText = fs.readFileSync(p.postPath, 'utf8').trim();
+          const fileContent = fs.readFileSync(p.postPath, 'utf8').trim();
+          if (fileContent.length > effectiveText.length) {
+            effectiveText = fileContent;
+          }
           const firstLine = effectiveText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
           if (firstLine && firstLine.length > 3) {
             effectiveTitle = firstLine;
@@ -166,7 +197,7 @@ class QueueExecutor extends EventEmitter {
 
       if (net === 'youtube') {
         const { publishYouTubeShorts } = require('./adapters/youtube.cjs');
-        const ytTitle = (effectiveTitle.toLowerCase().includes('#shorts') ? effectiveTitle : `${effectiveTitle} #shorts`).slice(0, 95);
+        const ytTitle = buildYouTubeTitle(effectiveTitle, effectiveText);
         result = await runWithTimeout(
           publishYouTubeShorts({
             videoPath: p.videoPath,
