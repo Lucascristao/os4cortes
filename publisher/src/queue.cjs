@@ -9,7 +9,7 @@ class Queue {
       CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY, job TEXT, network TEXT NOT NULL, day TEXT NOT NULL, started INTEGER NOT NULL, next INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, job TEXT, state TEXT NOT NULL, at INTEGER NOT NULL, detail TEXT, synced INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);`);
-    this.db.prepare("UPDATE jobs SET state='verify' WHERE state='publishing'").run();
+    this.db.prepare("UPDATE jobs SET state='queued', evidence='Recuperado após reinicialização' WHERE state='publishing'").run();
     this.db.prepare("UPDATE jobs SET state='queued' WHERE state='preparing'").run();
   }
   transaction(fn) { this.db.exec('BEGIN IMMEDIATE'); try {const result=fn();this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;} }

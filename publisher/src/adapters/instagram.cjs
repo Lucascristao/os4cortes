@@ -25,14 +25,14 @@ async function publishInstagramReels({ videoPath, caption }) {
   try {
     console.log('[Instagram 1/6] Carregando Instagram...');
     await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3500);
+    await page.waitForTimeout(2000);
 
     // Fecha popup "Ativar notificações" se aparecer
     const agora = page.getByRole('button', { name: 'Agora não' });
     if (await agora.count() > 0 && await agora.isVisible().catch(() => false)) {
       await agora.click().catch(() => {});
       console.log('[Instagram] Popup "Agora não" fechado.');
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(400);
     }
     await page.keyboard.press('Escape').catch(() => {});
 
@@ -40,12 +40,12 @@ async function publishInstagramReels({ videoPath, caption }) {
     const plusIcon = page.locator('svg[aria-label="Novo post"], svg[aria-label="Nova publicação"], svg[aria-label="New post"]').first();
     await plusIcon.waitFor({ state: 'visible', timeout: 15000 });
     await plusIcon.click({ force: true });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(600);
 
     const postarLink = page.getByRole('link', { name: /Postar/i }).first();
     if (await postarLink.count() > 0 && await postarLink.isVisible().catch(() => false)) {
       await postarLink.click({ force: true });
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(600);
     }
 
     console.log('[Instagram 3/6] Anexando arquivo de vídeo...');
@@ -54,13 +54,13 @@ async function publishInstagramReels({ videoPath, caption }) {
     const tUpload = Date.now();
     await fileInput.setInputFiles(videoPath);
     console.log('[Instagram] Vídeo anexado! Aguardando o modal processar...');
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(2500);
 
     // Fecha aviso de formato Reels se aparecer
     const reelNotice = page.locator('button:has-text("OK"), button:has-text("Entendi")').first();
     if (await reelNotice.count() > 0 && await reelNotice.isVisible().catch(() => false)) {
       await reelNotice.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(400);
     }
 
     console.log('[Instagram 4/6] Definindo proporção 9:16 vertical...');
@@ -68,13 +68,13 @@ async function publishInstagramReels({ videoPath, caption }) {
       const cropBtn = page.locator('button:has(svg[aria-label*="corte" i]), button:has(svg[aria-label*="crop" i]), [aria-label*="Selecionar corte" i]').first();
       await cropBtn.waitFor({ state: 'visible', timeout: 12000 });
       await cropBtn.click();
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(600);
 
       const opt916 = page.locator('span:text-is("9:16"), div:text-is("9:16")').last();
       await opt916.waitFor({ state: 'visible', timeout: 8000 });
       await opt916.click({ force: true });
       console.log('[Instagram] ✅ Proporção 9:16 vertical confirmada!');
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(800);
     } catch (errCrop) {
       console.warn(`[Instagram] Aviso na seleção de proporção: ${errCrop.message}`);
     }
@@ -83,27 +83,56 @@ async function publishInstagramReels({ videoPath, caption }) {
     const nextBtn1 = page.locator('div[role="button"]:has-text("Avançar"), button:has-text("Avançar")').first();
     await nextBtn1.waitFor({ state: 'visible', timeout: 20000 });
     await nextBtn1.click();
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(1200);
 
     const nextBtn2 = page.locator('div[role="button"]:has-text("Avançar"), button:has-text("Avançar")').first();
     await nextBtn2.waitFor({ state: 'visible', timeout: 20000 });
     await nextBtn2.click();
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(1200);
 
     console.log('[Instagram] Preenchendo legenda e hashtags...');
     const captionEl = page.locator('div[aria-label*="legenda" i], div[aria-label*="caption" i], div[role="textbox"], div[contenteditable="true"]').first();
     await captionEl.waitFor({ state: 'visible', timeout: 20000 });
     await captionEl.click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(200);
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Delete');
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(150);
     await page.keyboard.insertText(caption);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(600);
 
     // Fecha dropdown de hashtags clicando no cabeçalho do modal
     await page.locator('[role="dialog"] header').click({ force: true }).catch(() => {});
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(400);
+
+    // Verifica se há toggle de 'Compartilhar no Facebook' visível na tela de postagem
+    try {
+      const fbSwitch = page.locator('[role="switch"][aria-label*="Facebook" i], input[type="checkbox"][aria-label*="Facebook" i], div:has-text("Compartilhar no Facebook") [role="switch"]').first();
+      if (await fbSwitch.isVisible({ timeout: 1200 }).catch(() => false)) {
+        const isChecked = await fbSwitch.getAttribute('aria-checked') === 'true' || await fbSwitch.isChecked().catch(() => false);
+        if (!isChecked) {
+          await fbSwitch.click();
+          console.log('[Instagram] ✅ Toggle "Compartilhar no Facebook" ativado na tela de postagem!');
+          await page.waitForTimeout(400);
+        }
+      } else {
+        const advBtn = page.locator('div[role="button"]:has-text("Configurações avançadas"), span:has-text("Configurações avançadas")').first();
+        if (await advBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await advBtn.click();
+          await page.waitForTimeout(400);
+          const advFb = page.locator('[role="switch"][aria-label*="Facebook" i], input[type="checkbox"][aria-label*="Facebook" i], div:has-text("Facebook") [role="switch"]').first();
+          if (await advFb.isVisible({ timeout: 1000 }).catch(() => false)) {
+            const isCheckedAdv = await advFb.getAttribute('aria-checked') === 'true' || await advFb.isChecked().catch(() => false);
+            if (!isCheckedAdv) {
+              await advFb.click();
+              console.log('[Instagram] ✅ Toggle "Compartilhar no Facebook" ativado em Configurações Avançadas!');
+            }
+          }
+        }
+      }
+    } catch (errFb) {
+      console.log(`[Instagram] Verificação de Facebook na tela de post: ${errFb.message}`);
+    }
 
     console.log('[Instagram 6/6] >>> CLICANDO EM COMPARTILHAR NO INSTAGRAM <<<');
     const shareBtn = page.locator('[role="dialog"]').getByRole('button', { name: 'Compartilhar', exact: true });
@@ -112,9 +141,9 @@ async function publishInstagramReels({ videoPath, caption }) {
     const box = await shareBtn.boundingBox();
     if (box) {
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.waitForTimeout(200);
-      await page.mouse.down();
       await page.waitForTimeout(150);
+      await page.mouse.down();
+      await page.waitForTimeout(100);
       await page.mouse.up();
     } else {
       await shareBtn.click({ force: true });
@@ -140,6 +169,45 @@ async function publishInstagramReels({ videoPath, caption }) {
       }
     }
 
+    // Fecha o modal de confirmação clicando em Concluir ou X
+    try {
+      const concluirBtn = page.locator('button:has-text("Concluir"), div[role="button"]:has-text("Concluir")').first();
+      if (await concluirBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await concluirBtn.click().catch(() => {});
+        await page.waitForTimeout(1000);
+      }
+    } catch (_) {}
+
+    // Verifica se há opção de crosspost para Facebook no Reel recém-criado
+    try {
+      console.log('[Instagram] Verificando se há opção de crosspost para Facebook no Reel recém-criado...');
+      const profileBtn = page.locator('a[href*="/os4.cortes/"], svg[aria-label="Perfil"]').first();
+      if (await profileBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+        await profileBtn.click();
+        await page.waitForTimeout(2000);
+        const firstPost = page.locator('article a[href*="/reel/"], article a[href*="/p/"], a[href*="/reel/"]').first();
+        if (await firstPost.isVisible({ timeout: 3000 }).catch(() => false)) {
+          await firstPost.click();
+          await page.waitForTimeout(1500);
+          const moreOpts = page.locator('button:has(svg[aria-label="Mais opções"]), svg[aria-label="Mais opções"]').first();
+          if (await moreOpts.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await moreOpts.click();
+            await page.waitForTimeout(1000);
+            const fbPostOpt = page.locator('button:has-text("Facebook"), button:has-text("Compartilhar no Facebook"), div[role="button"]:has-text("Facebook")').first();
+            if (await fbPostOpt.isVisible({ timeout: 1500 }).catch(() => false)) {
+              await fbPostOpt.click();
+              console.log('[Instagram] ✅ Ação "Compartilhar no Facebook" executada com sucesso via menu do post!');
+              await page.waitForTimeout(1500);
+            } else {
+              console.log('[Instagram] Opção "Compartilhar no Facebook" não disponibilizada pela Meta na interface Web desktop (exclusivo do app móvel).');
+            }
+          }
+        }
+      }
+    } catch (errPostFb) {
+      console.log(`[Instagram] Verificação pós-post para Facebook: ${errPostFb.message}`);
+    }
+
     const totalSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
     const screenshotPath = path.join(dataDir, `insta-published-${Date.now()}.png`);
     await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
@@ -153,7 +221,7 @@ async function publishInstagramReels({ videoPath, caption }) {
       screenshot: screenshotPath
     };
   } finally {
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(2000);
     await ctx.close();
   }
 }

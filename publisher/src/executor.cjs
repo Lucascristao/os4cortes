@@ -154,26 +154,48 @@ class QueueExecutor extends EventEmitter {
         } catch (_) {}
       }
 
+      const runWithTimeout = (promise, ms, desc) => {
+        let timer;
+        const timeoutPromise = new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`Timeout de segurança (${Math.round(ms / 1000)}s) excedido na postagem (${desc})`));
+          }, ms);
+        });
+        return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+      };
+
       if (net === 'youtube') {
         const { publishYouTubeShorts } = require('./adapters/youtube.cjs');
         const ytTitle = (effectiveTitle.toLowerCase().includes('#shorts') ? effectiveTitle : `${effectiveTitle} #shorts`).slice(0, 95);
-        result = await publishYouTubeShorts({
-          videoPath: p.videoPath,
-          title: ytTitle,
-          description: effectiveText || effectiveTitle
-        });
+        result = await runWithTimeout(
+          publishYouTubeShorts({
+            videoPath: p.videoPath,
+            title: ytTitle,
+            description: effectiveText || effectiveTitle
+          }),
+          300000,
+          `YouTube Corte ${p.cutIndex}`
+        );
       } else if (net === 'tiktok') {
         const { publishTikTok } = require('./adapters/tiktok.cjs');
-        result = await publishTikTok({
-          videoPath: p.videoPath,
-          caption: effectiveText || effectiveTitle
-        });
+        result = await runWithTimeout(
+          publishTikTok({
+            videoPath: p.videoPath,
+            caption: effectiveText || effectiveTitle
+          }),
+          300000,
+          `TikTok Corte ${p.cutIndex}`
+        );
       } else if (net === 'instagram') {
         const { publishInstagramReels } = require('./adapters/instagram.cjs');
-        result = await publishInstagramReels({
-          videoPath: p.videoPath,
-          caption: effectiveText || effectiveTitle
-        });
+        result = await runWithTimeout(
+          publishInstagramReels({
+            videoPath: p.videoPath,
+            caption: effectiveText || effectiveTitle
+          }),
+          300000,
+          `Instagram Corte ${p.cutIndex}`
+        );
       } else {
         throw new Error(`Rede desconhecida: ${net}`);
       }

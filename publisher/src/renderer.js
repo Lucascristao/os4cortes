@@ -277,7 +277,15 @@ function renderQueue(status) {
   const failedCount = status.counts?.failed || 0;
   statQueued.textContent = status.counts?.queued || 0;
   statPub.textContent = status.counts?.publishing || 0;
-  statDone.textContent = status.counts?.completedToday !== undefined ? status.counts.completedToday : (status.counts?.completed || 0);
+  const completedToday = status.counts?.completedToday !== undefined ? status.counts.completedToday : 0;
+  const completedTotal = status.counts?.completed || 0;
+  statDone.textContent = completedToday;
+  const doneLabel = document.getElementById('stat-done-label');
+  if (doneLabel) {
+    doneLabel.textContent = completedTotal > completedToday
+      ? `Concluídos Hoje (${completedTotal} no total)`
+      : 'Concluídos Hoje';
+  }
   statFail.textContent = failedCount;
   if (tabFailedCount) tabFailedCount.textContent = failedCount;
 

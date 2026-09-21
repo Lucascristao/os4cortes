@@ -100,8 +100,7 @@ class LocalBridgeServer {
     try {
       await downloadBatch(batch, (downloadedCut) => {
         // Assim que o corte é baixado, enfileira no SQLite
-        this.onLog(`Download concluído: Corte ${downloadedCut.cutIndex} (${downloadedCut.sizeMb} MB em ${downloadedCut.durationSec}s). Enfileirando postagem...`);
-        this.executor.enqueueCorte({
+        const addedIds = this.executor.enqueueCorte({
           cutIndex: downloadedCut.cutIndex,
           titulo: downloadedCut.titulo,
           videoPath: downloadedCut.videoPath,
@@ -110,6 +109,11 @@ class LocalBridgeServer {
           requestId: batch.requestId,
           folderId: batch.folderId
         });
+        if (addedIds && addedIds.length > 0) {
+          this.onLog(`Download concluído: Corte ${downloadedCut.cutIndex} (${downloadedCut.sizeMb} MB em ${downloadedCut.durationSec}s). Enfileirado para publicação.`);
+        } else {
+          this.onLog(`Corte ${downloadedCut.cutIndex}: Arquivos locais prontos (já constava na fila ou concluído).`);
+        }
       });
       this.onLog(`Todos os downloads da sessão ${batch.requestId} foram concluídos! Fila em execução.`);
     } catch (err) {

@@ -120,6 +120,23 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
     console.log('[YouTube] Visibilidade definida como: Público');
     await page.waitForTimeout(1500);
 
+    // Garante que a transmissão do arquivo de vídeo foi 100% concluída antes de publicar
+    console.log('[YouTube] Aguardando confirmação de envio dos dados do vídeo...');
+    const uploadDoneSelector = 'text=/envio conclu[ií]do/i, text=/upload complete/i, text=/processando/i, text=/processing/i, text=/verificações concluídas/i, text=/checks complete/i';
+    let uploadConfirmed = false;
+    for (let u = 1; u <= 60; u++) {
+      const isDone = await page.locator(uploadDoneSelector).first().isVisible({ timeout: 1000 }).catch(() => false);
+      if (isDone) {
+        uploadConfirmed = true;
+        console.log(`[YouTube] ✅ Envio dos bytes do vídeo 100% concluído em ${u * 2}s!`);
+        break;
+      }
+      if (u % 5 === 0) {
+        console.log(`[YouTube] Transmitindo arquivo para os servidores do YouTube (${u * 2}s)...`);
+      }
+      await page.waitForTimeout(2000);
+    }
+
     // Clica em Publicar
     console.log('[YouTube] >>> CLICANDO EM PUBLICAR <<<');
     const doneBtn = page.locator('ytcp-button#done-button, button:has-text("Publicar"), button:has-text("Salvar")').first();
@@ -156,10 +173,14 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
 
       if (isSuccess) {
         confirmed = true;
-        console.log('[YouTube] >>> CONFIRMADO: VÍDEO PUBLICADO NO YOUTUBE! <<<');
+        console.log('[YouTube] >>> VÍDEO CONFIRMADO PELO YOUTUBE! <<<');
+        console.log('[YouTube] Mantendo navegador conectado por 15 segundos para estabilização de processamento e handshake...');
+        await page.waitForTimeout(15000);
+
         const closeBtn = page.locator('ytcp-button#close-button, ytcp-button:has-text("Fechar"), button:has-text("Fechar")').first();
         if (await closeBtn.isVisible().catch(() => false)) {
           await closeBtn.click().catch(() => {});
+          await page.waitForTimeout(2000);
         }
         break;
       }
@@ -182,16 +203,16 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
       uploadSeconds,
       screenshot: screenshotPath
     };
-  } catch (err) {
-    const errScreenshot = path.join(dataDir, `yt-error-${Date.now()}.png`);
-    await page.screenshot({ path: errScreenshot, fullPage: true }).catch(() => {});
-    console.error(`[YouTube] Erro durante o fluxo: ${err.message} (screenshot salva em ${errScreenshot})`);
-    throw err;
-  } finally {
-    await page.waitForTimeout(3000);
-    await ctx.close();
-  }
-  });
+    } catch (err) {
+      const errScreenshot = path.join(dataDir, `yt-error-${Date.now()}.png`);
+      if (page) await page.screenshot({ path: errScreenshot, fullPage: true }).catch(() => {});
+      console.error(`[YouTube] Erro durante o fluxo: ${err.message} (screenshot salva em ${errScreenshot})`);
+      throw err;
+    } finally {
+      if (page) await page.waitForTimeout(1500).catch(() => {});
+      if (ctx) await ctx.close().catch(() => {});
+    }
+  }, `publish_youtube_${(title || '').slice(0, 20)}`, 240000);
 }
 
 module.exports = { publishYouTubeShorts };

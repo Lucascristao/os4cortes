@@ -188,7 +188,7 @@ function restaurarSessao() {
     if (rawResults && !localStorage.getItem(STORAGE_JOB)) {
       const result = JSON.parse(rawResults);
       if (result?.cuts?.length) {
-        mostrarResultados(result);
+        mostrarResultados(result, false);
       }
     }
   } catch {
@@ -1011,7 +1011,7 @@ function resultLink(texto, url, primary = false) {
   return a;
 }
 
-function mostrarResultados(result) {
+function mostrarResultados(result, autoSend = true) {
   if (!result?.cuts) return;
   resultsList.innerHTML = "";
   resultsDriveLink.href = driveAccountUrl(result.driveFolderUrl || `https://drive.google.com/drive/folders/${result.folderId}`);
@@ -1048,8 +1048,10 @@ function mostrarResultados(result) {
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
   setStatus("cortes", `${result.cuts.length} concluídos`, "ok");
 
-  // Envia automaticamente para o OS4 Publicador se ele estiver aberto no PC
-  enviarParaPublicadorLocal(result, false);
+  // Envia automaticamente para o OS4 Publicador somente após conclusão de renderização fresca
+  if (autoSend) {
+    enviarParaPublicadorLocal(result, false);
+  }
 }
 
 async function enviarParaPublicadorLocal(result, manual = false) {

@@ -186,7 +186,7 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, reques
     } finally {
       await ctx.close().catch(() => {});
     }
-  });
+  }, `download_corte_${cutIndex}`, 240000);
 
   const durationSec = Number(((Date.now() - t0) / 1000).toFixed(1));
   const stats = fs.statSync(videoDestPath);
@@ -369,7 +369,7 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
     } finally {
       await ctx.close().catch(() => {});
     }
-  });
+  }, 'scan_drive_folder', 240000);
 
   const files = Array.from(allFound.entries()).map(([id, name]) => ({ id, name }));
   const cutsMap = new Map();
