@@ -48,13 +48,29 @@ class QueueExecutor extends EventEmitter {
     };
   }
 
-  // Enfileira um corte pronto para as 3 redes
+  // Enfileira um corte pronto para as redes pendentes
   enqueueCorte({ cutIndex, titulo, videoPath, postPath = null, postText, requestId = 'sessao', folderId = null, driveFileId = null }) {
     console.log(`[Executor] Enfileirando Corte ${cutIndex} para publicação...`);
     const networks = ['youtube', 'tiktok', 'instagram'];
     const jobIds = [];
 
+    // Proteção contra duplicação: não enfileira redes que já foram concluídas com sucesso para este corte nesta pasta
+    const allJobs = this.q.list();
+    const alreadyCompletedNets = allJobs.filter(j => {
+      if (j.state !== 'completed' || !j.payload) return false;
+      const sameCut = j.payload.cutIndex === cutIndex;
+      const sameFolder = (folderId && j.payload.folderId === folderId) ||
+                         (requestId && j.payload.requestId === requestId) ||
+                         (driveFileId && j.payload.driveFileId === driveFileId);
+      return sameCut && sameFolder;
+    }).map(j => j.payload.network);
+
     for (const net of networks) {
+      if (alreadyCompletedNets.includes(net)) {
+        console.log(`[Executor] Corte ${cutIndex} já foi concluído anteriormente no ${net}. Pulando rede.`);
+        continue;
+      }
+
       const jobId = `${requestId}_cut${cutIndex}_${net}`;
       const payload = {
         id: jobId,

@@ -169,44 +169,14 @@ async function publishInstagramReels({ videoPath, caption }) {
       }
     }
 
-    // Fecha o modal de confirmação clicando em Concluir ou X
+    // Fecha o modal de confirmação clicando em Concluir ou X se estiver presente
     try {
-      const concluirBtn = page.locator('button:has-text("Concluir"), div[role="button"]:has-text("Concluir")').first();
-      if (await concluirBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await concluirBtn.click().catch(() => {});
+      const fecharBtn = page.locator('button:has-text("Concluir"), div[role="button"]:has-text("Concluir"), svg[aria-label="Fechar"]').first();
+      if (await fecharBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await fecharBtn.click({ timeout: 2000, force: true }).catch(() => {});
         await page.waitForTimeout(1000);
       }
     } catch (_) {}
-
-    // Verifica se há opção de crosspost para Facebook no Reel recém-criado
-    try {
-      console.log('[Instagram] Verificando se há opção de crosspost para Facebook no Reel recém-criado...');
-      const profileBtn = page.locator('a[href*="/os4.cortes/"], svg[aria-label="Perfil"]').first();
-      if (await profileBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
-        await profileBtn.click();
-        await page.waitForTimeout(2000);
-        const firstPost = page.locator('article a[href*="/reel/"], article a[href*="/p/"], a[href*="/reel/"]').first();
-        if (await firstPost.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await firstPost.click();
-          await page.waitForTimeout(1500);
-          const moreOpts = page.locator('button:has(svg[aria-label="Mais opções"]), svg[aria-label="Mais opções"]').first();
-          if (await moreOpts.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await moreOpts.click();
-            await page.waitForTimeout(1000);
-            const fbPostOpt = page.locator('button:has-text("Facebook"), button:has-text("Compartilhar no Facebook"), div[role="button"]:has-text("Facebook")').first();
-            if (await fbPostOpt.isVisible({ timeout: 1500 }).catch(() => false)) {
-              await fbPostOpt.click();
-              console.log('[Instagram] ✅ Ação "Compartilhar no Facebook" executada com sucesso via menu do post!');
-              await page.waitForTimeout(1500);
-            } else {
-              console.log('[Instagram] Opção "Compartilhar no Facebook" não disponibilizada pela Meta na interface Web desktop (exclusivo do app móvel).');
-            }
-          }
-        }
-      }
-    } catch (errPostFb) {
-      console.log(`[Instagram] Verificação pós-post para Facebook: ${errPostFb.message}`);
-    }
 
     const totalSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
     const screenshotPath = path.join(dataDir, `insta-published-${Date.now()}.png`);

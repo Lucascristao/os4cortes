@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { chromium, request } = require('playwright');
 const path = require('node:path');
 const fs = require('node:fs');
 const https = require('node:https');
@@ -9,8 +9,157 @@ const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
 const downloadsBaseDir = path.join(dataDir, 'downloads');
 const chromePath = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
 const googleProfileDir = path.join(dataDir, 'profiles', 'youtube');
+const storageStateFile = path.join(dataDir, 'google_auth_state.json');
 
-// Função auxiliar para download direto HTTP se o arquivo for público
+// Garante que o arquivo de cookies/sessão do Google esteja exportado e atualizado
+async function ensureGoogleAuthState() {
+  if (fs.existsSync(storageStateFile)) {
+    try {
+      const stats = fs.statSync(storageStateFile);
+      const ageHours = (Date.now() - stats.mtimeMs) / (1000 * 3600);
+      if (stats.size > 200 && ageHours < 72) {
+        return true;
+      }
+    } catch (_) {}
+  }
+
+  if (!fs.existsSync(googleProfileDir)) {
+    return false;
+  }
+
+  console.log('[Downloader] Sincronizando sessão do Google para downloads de alta velocidade...');
+  try {
+    await withGoogleLock(async () => {
+      const ctx = await chromium.launchPersistentContext(googleProfileDir, {
+        executablePath: chromePath,
+        headless: true,
+        viewport: { width: 800, height: 600 },
+        ignoreDefaultArgs: ['--enable-automation'],
+        args: ['--disable-blink-features=AutomationControlled']
+      });
+      try {
+        await ctx.storageState({ path: storageStateFile });
+        console.log('[Downloader] Sessão do Google exportada com sucesso para downloads desacoplados.');
+      } finally {
+        await ctx.close().catch(() => {});
+      }
+    }, 'export_google_storage_state', 90000);
+    return fs.existsSync(storageStateFile);
+  } catch (err) {
+    console.warn(`[Downloader] Não foi possível exportar storageState: ${err.message}`);
+    return false;
+  }
+}
+
+// Download autenticado de alta velocidade via request HTTP do Playwright (SEM abrir navegador e SEM travar YouTube)
+async function downloadGoogleDriveFileDirect(fileId, destPath) {
+  await ensureGoogleAuthState();
+  if (!fs.existsSync(storageStateFile)) {
+    throw new Error('Estado de autenticação do Google não disponível no momento.');
+  }
+
+  const downloadUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
+  console.log(`[Downloader] Acessando link do Drive (modo desacoplado): ${downloadUrl}`);
+
+  const reqCtx = await request.newContext({
+    storageState: storageStateFile,
+    timeout: 600000 // 10 minutos
+  });
+
+  try {
+    const res = await reqCtx.get(downloadUrl, { maxRedirects: 10, timeout: 600000 });
+    const cType = res.headers()['content-type'] || '';
+    if (res.ok() && (cType.includes('video') || cType.includes('octet-stream'))) {
+      const buf = await res.body();
+      if (buf && buf.length > 500000 && !buf.slice(0, 100).toString().toLowerCase().includes('<html')) {
+        fs.writeFileSync(destPath, buf);
+        console.log(`[Downloader] Download direto concluído: ${(buf.length / (1024 * 1024)).toFixed(1)} MB.`);
+        return true;
+      }
+    }
+
+    // Se retornou página HTML de confirmação de arquivo grande (>100MB)
+    const text = await res.text().catch(() => '');
+    let confirmUrl = null;
+
+    const formMatch = text.match(/<form[^>]*action="([^"]+)"[^>]*>([\s\S]*?)<\/form>/i);
+    if (formMatch) {
+      const actionUrl = formMatch[1];
+      const formContent = formMatch[2];
+      const params = new URLSearchParams();
+      const inputMatches = [...formContent.matchAll(/<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"/gi)];
+      for (const m of inputMatches) params.set(m[1], m[2]);
+      const inputMatchesRev = [...formContent.matchAll(/<input[^>]+value="([^"]*)"[^>]+name="([^"]+)"/gi)];
+      for (const m of inputMatchesRev) params.set(m[2], m[1]);
+      confirmUrl = `${actionUrl}?${params.toString()}`;
+    } else {
+      const linkMatch = text.match(/href="([^"]+confirm=[^"]+)"/);
+      if (linkMatch) {
+        confirmUrl = linkMatch[1].replace(/&amp;/g, '&');
+        if (confirmUrl.startsWith('/')) confirmUrl = `https://drive.google.com${confirmUrl}`;
+      }
+    }
+
+    if (confirmUrl) {
+      console.log(`[Downloader] Confirmando download de arquivo grande: ${confirmUrl}`);
+      const resConfirm = await reqCtx.get(confirmUrl, { maxRedirects: 10, timeout: 600000 });
+      if (resConfirm.ok()) {
+        const buf = await resConfirm.body();
+        if (buf && buf.length > 500000 && !buf.slice(0, 100).toString().toLowerCase().includes('<html')) {
+          fs.writeFileSync(destPath, buf);
+          console.log(`[Downloader] Download grande concluído: ${(buf.length / (1024 * 1024)).toFixed(1)} MB.`);
+          return true;
+        }
+      }
+    }
+    throw new Error('Conteúdo retornado pelo Drive não é um vídeo válido.');
+  } finally {
+    await reqCtx.dispose().catch(() => {});
+  }
+}
+
+// Download de texto (.txt de post) via request desacoplado (sem abrir navegador)
+async function downloadTextFileDirect(fileId) {
+  if (!fileId) return '';
+  await ensureGoogleAuthState();
+  if (!fs.existsSync(storageStateFile)) return '';
+
+  const directUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
+  const reqCtx = await request.newContext({
+    storageState: storageStateFile,
+    timeout: 30000
+  });
+
+  try {
+    const res = await reqCtx.get(directUrl, { maxRedirects: 10, timeout: 30000 });
+    if (res.ok()) {
+      const text = await res.text();
+      if (text && !text.includes('<!DOCTYPE html>') && !text.includes('<!doctype html>') && !text.includes('accounts.google.com')) {
+        return text.trim();
+      }
+      const confirmMatch = text.match(/href="(\/uc\?export=download[^"]+confirm=[^"]+)"/) ||
+                           text.match(/href="([^"]+confirm=[^"&]+[^"]*)"/);
+      if (confirmMatch) {
+        const confirmUrl = confirmMatch[1].startsWith('http') ? confirmMatch[1] : `https://drive.google.com${confirmMatch[1]}`;
+        const resConfirm = await reqCtx.get(confirmUrl, { timeout: 30000 });
+        if (resConfirm.ok()) {
+          const confText = await resConfirm.text();
+          if (confText && !confText.includes('<!DOCTYPE html>') && !confText.includes('<!doctype html>')) {
+            return confText.trim();
+          }
+        }
+      }
+    }
+    return '';
+  } catch (err) {
+    console.warn(`[Downloader] Falha ao obter texto desacoplado: ${err.message}`);
+    return '';
+  } finally {
+    await reqCtx.dispose().catch(() => {});
+  }
+}
+
+// Fallback: Função auxiliar para download direto HTTP se o arquivo for público
 async function downloadDirectHttp(url, destPath) {
   return new Promise((resolve, reject) => {
     const proto = url.startsWith('https') ? https : http;
@@ -25,44 +174,52 @@ async function downloadDirectHttp(url, destPath) {
       res.pipe(fileStream);
       fileStream.on('finish', () => {
         fileStream.close();
+        try {
+          const stats = fs.statSync(destPath);
+          if (stats.size < 500000) {
+            const head = fs.readFileSync(destPath, 'utf8').slice(0, 100).toLowerCase();
+            if (head.includes('<html') || head.includes('<!doc')) {
+              try { fs.unlinkSync(destPath); } catch (_) {}
+              return reject(new Error('Download retornou página HTML em vez do arquivo de vídeo.'));
+            }
+          }
+        } catch (_) {}
         resolve(true);
       });
       fileStream.on('error', reject);
     });
     req.on('error', reject);
-    req.setTimeout(60000, () => {
+    req.setTimeout(600000, () => {
       req.destroy();
       reject(new Error('Timeout no download direto'));
     });
   });
 }
 
-// Download autenticado pelo Google Drive usando a sessão Google já conectada
+// Fallback: Download autenticado pelo Google Drive usando contexto persistente do navegador
 async function downloadGoogleDriveFileWithContext(ctx, fileId, destPath) {
   const downloadUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
-  console.log(`[Downloader] Acessando link do Drive: ${downloadUrl}`);
+  console.log(`[Downloader] Acessando link do Drive via navegador: ${downloadUrl}`);
 
-  // Método 1: Download direto via request autenticado (super rápido e silencioso)
   try {
-    const res = await ctx.request.get(downloadUrl, { maxRedirects: 10, timeout: 300000 });
+    const res = await ctx.request.get(downloadUrl, { maxRedirects: 10, timeout: 600000 });
     const cType = res.headers()['content-type'] || '';
     if (res.ok() && (cType.includes('video') || cType.includes('octet-stream'))) {
       const buffer = await res.body();
-      if (buffer && buffer.length > 500000) { // Maior que 500KB (garante que não é página de erro)
+      if (buffer && buffer.length > 500000) {
         fs.writeFileSync(destPath, buffer);
-        console.log(`[Downloader] Download direto concluído: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB.`);
+        console.log(`[Downloader] Download direto via browser concluído: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB.`);
         return true;
       }
     }
     
-    // Se recebeu HTML, pode ser a página de aviso de vírus para arquivos muito grandes
     const bodyText = await res.text().catch(() => '');
     const confirmMatch = bodyText.match(/href="([^"]+confirm=[^"]+)"/) || bodyText.match(/action="([^"]+)"/);
     if (confirmMatch && confirmMatch[1]) {
       let confirmUrl = confirmMatch[1].replace(/&amp;/g, '&');
       if (confirmUrl.startsWith('/')) confirmUrl = `https://drive.google.com${confirmUrl}`;
-      console.log(`[Downloader] Confirmando download de arquivo grande: ${confirmUrl}`);
-      const resConfirm = await ctx.request.get(confirmUrl, { maxRedirects: 10, timeout: 300000 });
+      console.log(`[Downloader] Confirmando download via browser: ${confirmUrl}`);
+      const resConfirm = await ctx.request.get(confirmUrl, { maxRedirects: 10, timeout: 600000 });
       if (resConfirm.ok()) {
         const buf = await resConfirm.body();
         fs.writeFileSync(destPath, buf);
@@ -70,18 +227,17 @@ async function downloadGoogleDriveFileWithContext(ctx, fileId, destPath) {
       }
     }
   } catch (errReq) {
-    console.warn(`[Downloader] Tentativa de streaming direto gerou aviso: ${errReq.message}. Tentando via browser...`);
+    console.warn(`[Downloader] Request via browser gerou aviso: ${errReq.message}. Tentando clique na página...`);
   }
 
-  // Método 2: Fallback via navegação no navegador se necessário
   const page = await ctx.newPage();
-  page.setDefaultTimeout(120000);
+  page.setDefaultTimeout(180000);
   try {
     await page.goto(downloadUrl, { waitUntil: 'domcontentloaded' }).catch(() => null);
     const confirmBtn = page.locator('#uc-download-link, a:has-text("Fazer download mesmo assim"), button:has-text("Fazer download mesmo assim"), a[href*="confirm="]').first();
     if (await confirmBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
       console.log('[Downloader] Clicando em "Fazer download mesmo assim"...');
-      const dlPromise = page.waitForEvent('download', { timeout: 120000 });
+      const dlPromise = page.waitForEvent('download', { timeout: 300000 });
       await confirmBtn.click();
       const dl = await dlPromise;
       await dl.saveAs(destPath);
@@ -92,27 +248,25 @@ async function downloadGoogleDriveFileWithContext(ctx, fileId, destPath) {
   }
 }
 
-// Baixa um arquivo de texto (.txt de post) de forma autenticada via Playwright request
+// Fallback: Baixa texto via navegador autenticado
 async function downloadTextFileWithContext(ctx, fileId) {
   if (!fileId) return '';
   const directUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
 
-  // Tentativa 1: ctx.request com até 3 retentativas
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const res = await ctx.request.get(directUrl, { timeout: 15000 });
+      const res = await ctx.request.get(directUrl, { timeout: 20000 });
       if (res.ok()) {
         const text = await res.text();
         if (text && !text.includes('<!DOCTYPE html>') && !text.includes('<!doctype html>') && !text.includes('accounts.google.com')) {
           return text.trim();
         }
 
-        // Se o Google Drive devolveu página HTML com botão ou link de confirmação
         const confirmMatch = text.match(/href="(\/uc\?export=download[^"]+confirm=[^"]+)"/) ||
                              text.match(/href="([^"]+confirm=[^"&]+[^"]*)"/);
         if (confirmMatch) {
           const confirmUrl = confirmMatch[1].startsWith('http') ? confirmMatch[1] : `https://drive.google.com${confirmMatch[1]}`;
-          const resConfirm = await ctx.request.get(confirmUrl, { timeout: 15000 });
+          const resConfirm = await ctx.request.get(confirmUrl, { timeout: 20000 });
           if (resConfirm.ok()) {
             const confText = await resConfirm.text();
             if (confText && !confText.includes('<!DOCTYPE html>') && !confText.includes('<!doctype html>')) {
@@ -124,14 +278,13 @@ async function downloadTextFileWithContext(ctx, fileId) {
     } catch (err) {
       console.warn(`[Downloader] Tentativa ${attempt} de obter texto do post falhou: ${err.message}`);
     }
-    await new Promise(r => setTimeout(r, 1200));
+    await new Promise(r => setTimeout(r, 1000));
   }
 
-  // Tentativa 2: Fallback abrindo página no navegador autenticado
   try {
     const page = await ctx.newPage();
     try {
-      await page.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => null);
+      await page.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => null);
       const preEl = page.locator('pre').first();
       if (await preEl.isVisible({ timeout: 4000 }).catch(() => false)) {
         const preText = await preEl.innerText();
@@ -151,18 +304,35 @@ async function downloadTextFileWithContext(ctx, fileId) {
   return '';
 }
 
+// Sanitiza o título do corte extraído da interface ou nomes de arquivos
+function sanitizeCutTitle(rawTitle) {
+  if (!rawTitle) return '';
+  let s = String(rawTitle);
+  // Remove prefixos como "Imagem", "Text", "corte_03", etc.
+  s = s.replace(/^(?:Imagem|Text)?\s*corte[_\s-]*\d+[_\s-]*/i, '');
+  // Remove artefatos e botões da interface do Google Drive
+  s = s.replace(/(?:Compartilhar|Mais ações|Renomear|Adicionar|Com estrela|Ctrl\+Alt\+[A-Z]).*$/gi, '');
+  s = s.replace(/\s+eu\s*\d+:\d+.*$/gi, '');
+  s = s.replace(/\s+\d+(?:,\d+)?\s*(?:KB|MB|GB|bytes).*$/gi, '');
+  // Remove extensões e sufixos de arquivo
+  s = s.replace(/(?:_|\s|-)*(?:capa|legenda|post)?\.(?:mp4|mov|mkv|txt|srt|json|jpg|jpeg|png).*$/gi, '');
+  s = s.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  return s;
+}
+
 // Função principal: baixa um corte completo (.mp4 + .txt) e mede tempo e velocidade
 async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, requestId = 'default', onProgress = () => {} }) {
   const destDir = path.join(downloadsBaseDir, requestId);
   fs.mkdirSync(destDir, { recursive: true });
 
-  const safeTitle = (titulo || `corte_${cutIndex}`).replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 50);
+  const cleanInitialTitle = sanitizeCutTitle(titulo) || `Corte ${cutIndex}`;
+  const safeTitle = cleanInitialTitle.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 50);
   const videoFileName = `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_legenda.mp4`;
   const postFileName = `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_post.txt`;
   const videoDestPath = path.join(destDir, videoFileName);
   const postDestPath = path.join(destDir, postFileName);
 
-  onProgress({ status: 'starting', cutIndex, titulo });
+  onProgress({ status: 'starting', cutIndex, titulo: cleanInitialTitle });
 
   let postText = '';
   if (fs.existsSync(postDestPath)) {
@@ -176,7 +346,7 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, reques
     const stats = fs.statSync(videoDestPath);
     const sizeMb = Number((stats.size / (1024 * 1024)).toFixed(1));
     console.log(`[Downloader] Corte ${cutIndex} já existe localmente em ${videoDestPath} (${sizeMb} MB). Reutilizando.`);
-    let cleanTitle = titulo;
+    let cleanTitle = cleanInitialTitle;
     const firstLine = postText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
     if (firstLine && firstLine.length > 3) cleanTitle = firstLine;
 
@@ -196,38 +366,63 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, reques
 
   console.log(`[Downloader] Iniciando sessão para o Corte ${cutIndex}...`);
   const t0 = Date.now();
+  let downloadSuccess = false;
 
-  await withGoogleLock(async () => {
-    const ctx = await chromium.launchPersistentContext(googleProfileDir, {
-      executablePath: chromePath,
-      headless: true,
-      viewport: { width: 1280, height: 800 },
-      ignoreDefaultArgs: ['--enable-automation'],
-      args: ['--disable-blink-features=AutomationControlled']
-    });
-
-    try {
-      // 1. Download do Texto de Post
-      if (postFileId) {
-        console.log(`[Downloader] Baixando texto do post para o Corte ${cutIndex}...`);
-        postText = await downloadTextFileWithContext(ctx, postFileId);
-        if (postText) {
-          fs.writeFileSync(postDestPath, postText, 'utf8');
-          console.log(`[Downloader] Texto do post salvo (${postText.length} caracteres).`);
-        }
+  // TENTATIVA 1: Modo direto desacoplado (Rápido, sem abrir navegador, sem travar YouTube)
+  try {
+    if (postFileId && !postText) {
+      console.log(`[Downloader] Baixando texto do post para o Corte ${cutIndex} (modo desacoplado)...`);
+      postText = await downloadTextFileDirect(postFileId);
+      if (postText) {
+        fs.writeFileSync(postDestPath, postText, 'utf8');
+        console.log(`[Downloader] Texto do post salvo (${postText.length} caracteres).`);
       }
-
-      // 2. Download do Vídeo com cronometragem
-      console.log(`[Downloader] Iniciando download do vídeo do Corte ${cutIndex} (ID: ${videoFileId})...`);
-      await downloadGoogleDriveFileWithContext(ctx, videoFileId, videoDestPath);
-    } catch (errAuth) {
-      console.warn(`[Downloader] Tentativa autenticada falhou (${errAuth.message}), tentando download direto...`);
-      const directUrl = `https://drive.google.com/uc?id=${videoFileId}&export=download`;
-      await downloadDirectHttp(directUrl, videoDestPath);
-    } finally {
-      await ctx.close().catch(() => {});
     }
-  }, `download_corte_${cutIndex}`, 240000);
+
+    console.log(`[Downloader] Baixando vídeo do Corte ${cutIndex} (modo desacoplado, ID: ${videoFileId})...`);
+    await downloadGoogleDriveFileDirect(videoFileId, videoDestPath);
+    downloadSuccess = true;
+  } catch (errDirect) {
+    console.warn(`[Downloader] Modo desacoplado falhou (${errDirect.message}). Tentando fallback com navegador...`);
+  }
+
+  // TENTATIVA 2: Fallback com navegador e trava do Google (timeout de 10 min)
+  if (!downloadSuccess) {
+    await withGoogleLock(async () => {
+      const ctx = await chromium.launchPersistentContext(googleProfileDir, {
+        executablePath: chromePath,
+        headless: true,
+        viewport: { width: 1280, height: 800 },
+        ignoreDefaultArgs: ['--enable-automation'],
+        args: ['--disable-blink-features=AutomationControlled']
+      });
+
+      try {
+        if (postFileId && !postText) {
+          postText = await downloadTextFileWithContext(ctx, postFileId);
+          if (postText) {
+            fs.writeFileSync(postDestPath, postText, 'utf8');
+            console.log(`[Downloader] Texto do post salvo (${postText.length} caracteres).`);
+          }
+        }
+
+        console.log(`[Downloader] Iniciando download do vídeo do Corte ${cutIndex} via browser (ID: ${videoFileId})...`);
+        await downloadGoogleDriveFileWithContext(ctx, videoFileId, videoDestPath);
+        downloadSuccess = true;
+      } catch (errAuth) {
+        console.warn(`[Downloader] Tentativa via browser falhou (${errAuth.message}), tentando download direto...`);
+        const directUrl = `https://drive.google.com/uc?id=${videoFileId}&export=download`;
+        await downloadDirectHttp(directUrl, videoDestPath);
+        downloadSuccess = true;
+      } finally {
+        await ctx.close().catch(() => {});
+      }
+    }, `download_corte_${cutIndex}`, 600000);
+  }
+
+  if (!fs.existsSync(videoDestPath) || fs.statSync(videoDestPath).size < 10000) {
+    throw new Error(`Arquivo de vídeo do Corte ${cutIndex} não foi baixado corretamente.`);
+  }
 
   const durationSec = Number(((Date.now() - t0) / 1000).toFixed(1));
   const stats = fs.statSync(videoDestPath);
@@ -242,7 +437,7 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, reques
   console.log(`Salvo em: ${videoDestPath}`);
   console.log('====================================================');
 
-  let cleanTitle = titulo;
+  let cleanTitle = cleanInitialTitle;
   if (postText) {
     const firstLine = postText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
     if (firstLine && firstLine.length > 3) {
@@ -333,7 +528,10 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
     const page = await ctx.newPage();
 
     try {
-      await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      // Atualiza o storageState durante o scan para mantê-lo fresco
+      await ctx.storageState({ path: storageStateFile }).catch(() => {});
+
+      await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForTimeout(3000);
 
       // Foca na área de arquivos
@@ -358,8 +556,8 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
 
             let matchedName = null;
             for (const src of sources) {
-              // 1. Procura nome de corte com extensão
-              const m1 = src.match(/(corte[_\s-]*\d+[^"\n\r\t*?<>]+?\.(?:mp4|txt|srt|json))/i);
+              // 1. Procura nome de corte com extensão de mídia/texto
+              const m1 = src.match(/(corte[_\s-]*\d+[^"\n\r\t*?<>]+?\.(?:mp4|txt|srt|json|jpg|jpeg|png))/i);
               if (m1) {
                 matchedName = m1[1].trim();
                 break;
@@ -391,7 +589,7 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
           }
         }
 
-        // Rola tanto o container interno do Drive quanto o teclado
+        // Rola o container interno do Drive
         await page.evaluate(() => {
           const scrollable = document.querySelector('[role="main"]') ||
                              document.querySelector('[aria-label="Arquivos"]') ||
@@ -410,7 +608,7 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
     } finally {
       await ctx.close().catch(() => {});
     }
-  }, 'scan_drive_folder', 240000);
+  }, 'scan_drive_folder', 600000);
 
   const files = Array.from(allFound.entries()).map(([id, name]) => ({ id, name }));
   const cutsMap = new Map();
@@ -442,13 +640,12 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
       cut.rawVideo = { id: f.id, name: f.name };
     }
 
-    if (!cut.titulo) {
-      const clean = f.name
-        .replace(/^(?:Text)?corte[_\s-]*\d+[_\s-]*/i, '')
-        .replace(/(?:_|\s|-)?(?:legenda\.mp4|post\.txt|\.mp4|\.srt|\.json)$/i, '')
-        .replace(/_/g, ' ')
-        .trim();
-      if (clean) cut.titulo = clean;
+    // Limpa o título do corte ignorando arquivos de capa ou textos de botões
+    if (!cut.titulo || cut.titulo.includes('capa') || cut.titulo.length > 60) {
+      const clean = sanitizeCutTitle(f.name);
+      if (clean && (!cut.titulo || !cut.titulo.includes('capa') || clean.length < cut.titulo.length)) {
+        cut.titulo = clean;
+      }
     }
   }
 
@@ -457,6 +654,9 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
       // Se tiver vídeo com legenda, usa ele. Se não tiver mas tiver vídeo cru, usa como fallback
       if (!c.videoLegenda && c.rawVideo) {
         c.videoLegenda = c.rawVideo;
+      }
+      if (!c.titulo || c.titulo.includes('capa')) {
+        c.titulo = sanitizeCutTitle(c.rawName) || `Corte ${c.cutIndex}`;
       }
       return c;
     })
@@ -484,7 +684,7 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
   let skippedCount = 0;
 
   for (const cut of cuts) {
-    // Escopo estrito: verifica se este corte DESTA PASTA já foi publicado ou está na fila
+    // Verifica se este corte DESTA PASTA já foi publicado ou está na fila
     const cutJobs = existingJobs.filter(j => {
       if (!j.payload) return false;
       const sameFolder = (j.id && j.id.startsWith(requestId)) || 
@@ -495,7 +695,12 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
     });
 
     const completedJobs = cutJobs.filter(j => j.state === 'completed');
-    if (completedJobs.length >= 3) {
+    const completedNetworks = new Set(completedJobs.map(j => j.payload?.network).filter(Boolean));
+    const isFullyCompleted = completedJobs.length >= 3 || 
+      (completedNetworks.has('youtube') && completedNetworks.has('tiktok') && completedNetworks.has('instagram')) ||
+      (cut.cutIndex <= 3 && completedNetworks.size >= 2); // Reconhece os 3 primeiros já publicados
+
+    if (isFullyCompleted) {
       onLog(`[Drive Import] ⏭️ Corte ${cut.cutIndex} ("${cut.titulo || 'Corte ' + cut.cutIndex}") já foi publicado nas 3 redes nesta pasta. Pulando.`);
       skippedCount++;
       continue;
@@ -548,8 +753,9 @@ module.exports = {
   downloadCorte,
   downloadBatch,
   downloadGoogleDriveFileWithContext,
+  downloadGoogleDriveFileDirect,
   extractDriveFolderId,
   scanDriveFolder,
-  importAndEnqueueDriveFolder
+  importAndEnqueueDriveFolder,
+  ensureGoogleAuthState
 };
-

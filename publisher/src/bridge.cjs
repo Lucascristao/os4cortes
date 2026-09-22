@@ -83,6 +83,36 @@ class LocalBridgeServer {
         return;
       }
 
+      // POST /import-drive - Dispara escaneamento e enfileiramento de pasta do Drive
+      if (req.method === 'POST' && url.pathname === '/import-drive') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            const data = JSON.parse(body || '{}');
+            const folderUrl = data.folderUrl || data.url || data.folderId;
+            if (!folderUrl) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({ ok: false, error: 'URL ou ID da pasta ausente.' }));
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, message: 'Importação do Drive iniciada com sucesso!' }));
+
+            const { importAndEnqueueDriveFolder } = require('./downloader.cjs');
+            this.onLog(`[Drive] Iniciando importação da pasta: ${folderUrl}`);
+            await importAndEnqueueDriveFolder({
+              folderUrlOrId: folderUrl,
+              executor: this.executor,
+              onLog: this.onLog
+            });
+          } catch (err) {
+            console.error('[Bridge] Erro ao processar /import-drive:', err);
+            this.onLog(`[Drive] Erro na importação: ${err.message}`);
+          }
+        });
+        return;
+      }
+
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Rota não encontrada' }));
     });
