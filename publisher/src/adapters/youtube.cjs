@@ -64,23 +64,46 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
     await page.waitForTimeout(5000);
 
     console.log('[YouTube 4/5] Preenchendo metadados...');
-    const titleBox = page.locator('#title-textarea #textbox, #textbox[aria-label*="título" i], #textbox[aria-label*="title" i]').first();
+    const safeTitle = (title || 'Corte').slice(0, 95);
+    const titleBox = page.locator('ytcp-video-metadata-editor #title-textarea #textbox, #title-textarea #textbox, #textbox[aria-label*="título" i]').first();
     if (await titleBox.isVisible({ timeout: 15000 }).catch(() => false)) {
       await titleBox.click({ force: true });
       await page.keyboard.press('Control+A');
-      await page.keyboard.press('Delete');
-      await page.keyboard.insertText(title);
-      console.log('[YouTube] Título definido com sucesso!');
+      await page.keyboard.press('Backspace');
+      await page.waitForTimeout(200);
+      await page.keyboard.insertText(safeTitle);
+      console.log('[YouTube] Título definido com sucesso:', safeTitle);
     }
 
-    const descBox = page.locator('#description-textarea #textbox, #textbox[aria-label*="descrição" i], #textbox[aria-label*="description" i]').first();
+    // Preenche descrição com seletor estrito do container de descrição
+    const descBox = page.locator('ytcp-video-metadata-editor #description-textarea #textbox, #description-container #textbox, ytcp-social-suggestions-textbox#description-textarea div#textbox').first();
     if (description && await descBox.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await descBox.click({ force: true });
-      await page.keyboard.press('Control+A');
-      await page.keyboard.press('Delete');
-      await page.keyboard.insertText(description);
-      console.log('[YouTube] Descrição preenchida com sucesso!');
+      try {
+        await descBox.scrollIntoViewIfNeeded().catch(() => {});
+        await descBox.click({ force: true });
+        await page.waitForTimeout(300);
+        await page.keyboard.press('Control+A');
+        await page.keyboard.press('Backspace');
+        await page.waitForTimeout(200);
+        await page.keyboard.insertText(description);
+        console.log('[YouTube] Descrição preenchida com sucesso!');
+      } catch (errDesc) {
+        console.warn('[YouTube] Aviso ao preencher descrição:', errDesc.message);
+      }
     }
+
+    // Validação estrita de segurança do título (máximo 100 caracteres exigido pelo YouTube)
+    try {
+      const currentTitle = (await titleBox.innerText().catch(() => '')) || '';
+      if (currentTitle.length > 100 || currentTitle.includes('\n')) {
+        console.warn(`[YouTube] Título excedeu 100 chars (${currentTitle.length} chars). Restaurando título seguro de ${safeTitle.length} chars...`);
+        await titleBox.click({ force: true });
+        await page.keyboard.press('Control+A');
+        await page.keyboard.press('Backspace');
+        await page.waitForTimeout(200);
+        await page.keyboard.insertText(safeTitle);
+      }
+    } catch (_) {}
 
     // Verifica se atingiu o limite diário de envios do canal
     const limitNotice = page.locator('text=/limite di[aá]rio de envio/i, text=/daily upload limit/i, text=/limite de envio atingido/i, :has-text("limite de envio")').first();
@@ -132,12 +155,19 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
         await page.waitForTimeout(1000);
       }
 
-      const nextBtn = page.locator('ytcp-button#next-button, button:has-text("Próximo")').first();
+      const nextBtn = page.locator('ytcp-button#next-button, button:has-text("Avançar"), button:has-text("Próximo"), #next-button').first();
       await nextBtn.waitFor({ state: 'visible', timeout: 15000 });
       await nextBtn.scrollIntoViewIfNeeded().catch(() => {});
       await nextBtn.click({ force: true });
-      console.log(`[YouTube] Avançou etapa ${step}`);
+      console.log(`[YouTube] Clicou no botão Avançar (etapa ${step})`);
       await page.waitForTimeout(2000);
+    }
+
+    // Se ainda não estiver na tela de Visibilidade, clica diretamente na aba de Visibilidade
+    const visibilityTab = page.locator('ytcp-stepper-step:has-text("Visibilidade"), [test-id="VISIBILITY_STEP"], #step-title-3, ytcp-badge:has-text("Visibilidade")').first();
+    if (await visibilityTab.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await visibilityTab.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(1000);
     }
     await page.waitForTimeout(2000);
 
