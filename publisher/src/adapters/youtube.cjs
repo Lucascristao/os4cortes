@@ -90,30 +90,54 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
     }
 
     // Seleciona "Não é conteúdo para crianças"
-    const notForKids = page.locator('tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"], [name="VIDEO_MADE_FOR_KIDS_NOT_MFK"], #radioLabel:has-text("Não é conteúdo para crianças"), [aria-label*="Não é conteúdo para crianças" i]').first();
-    try {
-      await notForKids.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
-      await notForKids.click({ force: true, timeout: 8000 });
-      console.log('[YouTube] Selecionado: Não é conteúdo para crianças');
-    } catch (_) {
-      // Fallback: tenta clicar diretamente pelo texto
-      const textRadio = page.locator('text="Não é conteúdo para crianças"').first();
-      await textRadio.scrollIntoViewIfNeeded().catch(() => {});
-      await textRadio.click({ force: true }).catch(() => {});
+    console.log('[YouTube] Selecionando audiência ("Não é conteúdo para crianças")...');
+    const notForKidsSelectors = [
+      'tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]',
+      '#radioLabel:has-text("Não é conteúdo para crianças")',
+      '[aria-label*="Não é conteúdo para crianças" i]',
+      'text="Não é conteúdo para crianças"'
+    ];
+
+    let selectedKids = false;
+    for (const sel of notForKidsSelectors) {
+      const loc = page.locator(sel).first();
+      if (await loc.count() > 0) {
+        try {
+          await loc.scrollIntoViewIfNeeded({ timeout: 4000 }).catch(() => {});
+          await loc.click({ force: true, timeout: 6000 });
+          selectedKids = true;
+          console.log(`[YouTube] Selecionado audiência via seletor: ${sel}`);
+          break;
+        } catch (_) {}
+      }
     }
+    if (!selectedKids) {
+      console.warn('[YouTube] Atenção: Tentando clique forçado no texto de audiência...');
+      await page.locator('text=/Não.*conteúdo.*crianças/i').first().click({ force: true }).catch(() => {});
+    }
+    await page.waitForTimeout(1500);
 
     // Avança telas até Visibilidade (Próximo -> Próximo -> Próximo)
     console.log('[YouTube 5/5] Avançando telas até Visibilidade...');
-    const nextBtn = page.locator('ytcp-button#next-button, button:has-text("Próximo")').first();
     for (let step = 1; step <= 3; step++) {
-      await page.waitForTimeout(2000);
       if (await limitNotice.isVisible({ timeout: 500 }).catch(() => false)) {
         throw new Error('Limite diário do YouTube atingido nesta conta (cota máxima de ~10 envios por 24h).');
       }
-      if (await nextBtn.isVisible().catch(() => false)) {
-        await nextBtn.click();
-        console.log(`[YouTube] Avançou etapa ${step}`);
+
+      // Se ainda estiver bloqueado com erro de audiência, tenta clicar novamente
+      const errorMsg = page.locator('text="Você precisa responder a esta pergunta"').first();
+      if (await errorMsg.isVisible({ timeout: 500 }).catch(() => false)) {
+        console.log('[YouTube] Erro de audiência detectado. Clicando novamente no botão Não é conteúdo para crianças...');
+        await page.locator('tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"], text="Não é conteúdo para crianças"').first().click({ force: true }).catch(() => {});
+        await page.waitForTimeout(1000);
       }
+
+      const nextBtn = page.locator('ytcp-button#next-button, button:has-text("Próximo")').first();
+      await nextBtn.waitFor({ state: 'visible', timeout: 15000 });
+      await nextBtn.scrollIntoViewIfNeeded().catch(() => {});
+      await nextBtn.click({ force: true });
+      console.log(`[YouTube] Avançou etapa ${step}`);
+      await page.waitForTimeout(2000);
     }
     await page.waitForTimeout(2000);
 
