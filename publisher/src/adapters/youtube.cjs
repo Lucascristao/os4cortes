@@ -90,10 +90,16 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
     }
 
     // Seleciona "Não é conteúdo para crianças"
-    const notForKids = page.locator('tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"], [name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]').first();
-    if (await notForKids.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await notForKids.click({ force: true });
+    const notForKids = page.locator('tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"], [name="VIDEO_MADE_FOR_KIDS_NOT_MFK"], #radioLabel:has-text("Não é conteúdo para crianças"), [aria-label*="Não é conteúdo para crianças" i]').first();
+    try {
+      await notForKids.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
+      await notForKids.click({ force: true, timeout: 8000 });
       console.log('[YouTube] Selecionado: Não é conteúdo para crianças');
+    } catch (_) {
+      // Fallback: tenta clicar diretamente pelo texto
+      const textRadio = page.locator('text="Não é conteúdo para crianças"').first();
+      await textRadio.scrollIntoViewIfNeeded().catch(() => {});
+      await textRadio.click({ force: true }).catch(() => {});
     }
 
     // Avança telas até Visibilidade (Próximo -> Próximo -> Próximo)
