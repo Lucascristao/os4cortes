@@ -234,6 +234,15 @@ button:disabled { opacity: .55; cursor: progress; }
 .mini-button:hover { background: #323232; border-color: #4a4a4a; }
 .btn-delete-cut { background: #221212; border: 1px solid #4a2121; color: #ff7b7b; display: inline-flex; align-items: center; gap: 5px; }
 .btn-delete-cut:hover { background: rgba(255, 82, 82, 0.22); border-color: #ff5252; color: #fff; }
+.cut-card.has-error { border-color: #ff4d4f !important; box-shadow: 0 0 16px rgba(255, 77, 79, 0.4); animation: shakeCard .35s ease-in-out; }
+.cut-field.has-error input { border-color: #ff4d4f !important; background: rgba(255, 77, 79, 0.12) !important; color: #fff !important; }
+@keyframes shakeCard {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
 
 .results-list { display: grid; gap: 10px; margin-top: 16px; }
 .result-card { border: 1px solid #303030; background: #101010; border-radius: 14px; padding: 14px; }

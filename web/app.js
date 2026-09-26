@@ -686,7 +686,7 @@ Portanto, NUNCA utilize no "titulo", na "legenda_post" ou nas "hashtags":
 - Promessas financeiras ilusórias ou jogos de azar (ex: "dinheiro fácil", "ganhe dormindo", "robô do pix", "pirâmide", "tigrinho", "cassino", "aposta garantida").
 - Termos explícitos de cunho sexual ou plataformas adultas.
 Mantenha os títulos magnéticos, chamativos e com alto CTR, mas 100% limpos e protegidos contra filtros algorítmicos.
-12. Responda ESTRITAMENTE em JSON válido, sem Markdown nem texto explicativo. Use o formato abaixo, compatível com a importação do OS4 Cortes. Se não houver nenhum candidato completo, retorne [] em vez de inventar um corte.
+12. Responda ESTRITAMENTE em JSON válido, sem Markdown nem texto explicativo. Use o formato HH:MM:SS (ex: "00:15:30" para 15 minutos; se o vídeo passar de 1 hora, use "01:05:20" e NUNCA "00:65:20"). Use o formato abaixo, compatível com a importação do OS4 Cortes. Se não houver nenhum candidato completo, retorne [] em vez de inventar um corte.
 13. Unificação de Blocos Narrativos: Se um raciocínio ou demonstração é composto de duas partes contínuas na transcrição separadas apenas por uma pausa breve (até ~30 segundos de intervalo), UNIFIQUE em um único corte, com duração total de até 175 segundos. Identifique quando a segunda parte é continuação ou desfecho direto da primeira — o "setup" (preparação, gancho, construção) e o "payoff" (resposta, resultado, conclusão) devem ficar JUNTOS no mesmo corte. Nunca separe uma construção + conclusão em dois cortes que sozinhos ficam incompletos. Só unifique se o raciocínio mantiver coerência fluida sem quebra desconexa de assunto.
 14. Qualidade da Saída (Campo "saida_suave"): Após selecionar o ponto final de cada corte, avalie se a saída é limpa (ideia completa, frase fechada, momento de respiração natural) ou potencialmente abrupta (o falante começa a introduzir um novo assunto, faz uma pergunta que não será respondida, ou a frase fica no ar). Se a saída for abrupta e não for possível ajustar o timestamp para um ponto melhor, adicione "saida_suave": false no JSON — isso ativará um fade-out visual suave no vídeo. Se a saída for limpa, omita o campo ou use "saida_suave": true. IMPORTANTE: antes de marcar como abrupta, TENTE PRIMEIRO recuar o timestamp de fim para um ponto onde a ideia anterior termina naturalmente. Só use false como último recurso quando o conteúdo anterior ao novo assunto é imperdível.
 
@@ -758,6 +758,33 @@ function limparFences(texto) {
   return higienizarJsonPacote(texto);
 }
 
+function converterTempoSegundos(valor) {
+  const text = String(valor ?? "").trim().replace(/\s*:\s*/g, ":").replace(",", ".");
+  if (!/^\d+(?::\d+){0,2}(?:\.\d+)?$/.test(text)) return NaN;
+  const parts = text.split(":").map(Number);
+  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return NaN;
+  if (parts.length > 1 && parts[parts.length - 1] >= 60) return NaN;
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return NaN;
+}
+
+function formatarSegundosParaTimestamp(totalSegundos) {
+  if (!Number.isFinite(totalSegundos) || totalSegundos < 0) return "";
+  const sTotal = Math.round(totalSegundos);
+  const h = Math.floor(sTotal / 3600);
+  const m = Math.floor((sTotal % 3600) / 60);
+  const s = sTotal % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function normalizarTimestamp(valor) {
+  const seg = converterTempoSegundos(valor);
+  if (!Number.isFinite(seg)) return String(valor ?? "").trim();
+  return formatarSegundosParaTimestamp(seg);
+}
+
 function normalizarPacote(data) {
   const lista = Array.isArray(data) ? data : data?.cortes;
   if (!Array.isArray(lista) || !lista.length) throw new Error("Nenhum corte encontrado no JSON.");
@@ -765,8 +792,8 @@ function normalizarPacote(data) {
 
   return lista.map((c, i) => ({
     titulo: String(c?.titulo || `Corte ${i + 1}`).trim(),
-    inicio: String(c?.inicio ?? "").trim(),
-    fim: String(c?.fim ?? "").trim(),
+    inicio: normalizarTimestamp(c?.inicio),
+    fim: normalizarTimestamp(c?.fim),
     legenda_post: String(c?.legenda_post || "").trim(),
     hashtags: Array.isArray(c?.hashtags) ? c.hashtags.join(" ") : String(c?.hashtags || "").trim(),
   }));
@@ -830,6 +857,15 @@ function renderizarEditor(cortes) {
     inicio.campo.dataset.field = "inicio";
     const fim = criarCampo("Fim", corte.fim);
     fim.campo.dataset.field = "fim";
+
+    const limparErro = () => {
+      card.classList.remove("has-error");
+      inicio.wrap.classList.remove("has-error");
+      fim.wrap.classList.remove("has-error");
+    };
+    inicio.campo.addEventListener("input", limparErro);
+    fim.campo.addEventListener("input", limparErro);
+
     tempos.append(inicio.wrap, fim.wrap);
     const legenda = criarCampo("Legenda da postagem", corte.legenda_post, "textarea");
     legenda.campo.dataset.field = "legenda_post";
@@ -926,11 +962,53 @@ btnGerarCortes?.addEventListener("click", async () => {
     return;
   }
 
-  const cuts = lerCortesEditor();
-  if (!cuts.length) {
+  // Limpa estados de erro anteriores
+  cutsEditor.querySelectorAll(".cut-card.has-error").forEach((el) => el.classList.remove("has-error"));
+  cutsEditor.querySelectorAll(".cut-field.has-error").forEach((el) => el.classList.remove("has-error"));
+
+  const cards = [...cutsEditor.querySelectorAll(".cut-card")];
+  if (!cards.length) {
     alert("Importe pelo menos um corte.");
     return;
   }
+
+  // Validação prévia de todos os cortes no frontend
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+    const campoInicio = card.querySelector('[data-field="inicio"]');
+    const campoFim = card.querySelector('[data-field="fim"]');
+    const secInicio = converterTempoSegundos(campoInicio?.value);
+    const secFim = converterTempoSegundos(campoFim?.value);
+
+    let erroMsg = "";
+    let campoFoco = null;
+
+    if (!Number.isFinite(secInicio) && !Number.isFinite(secFim)) {
+      erroMsg = `Corte ${i + 1}: informe início e fim válidos (ex: 00:15:30 ou 15:30).`;
+      campoFoco = campoInicio;
+    } else if (!Number.isFinite(secInicio)) {
+      erroMsg = `Corte ${i + 1}: horário de início inválido. Use formato MM:SS ou HH:MM:SS.`;
+      campoFoco = campoInicio;
+    } else if (!Number.isFinite(secFim)) {
+      erroMsg = `Corte ${i + 1}: horário de fim inválido. Use formato MM:SS ou HH:MM:SS.`;
+      campoFoco = campoFim;
+    } else if (secFim <= secInicio) {
+      erroMsg = `Corte ${i + 1}: o horário final deve ser maior que o inicial.`;
+      campoFoco = campoFim;
+    }
+
+    if (erroMsg) {
+      card.classList.add("has-error");
+      campoFoco?.closest(".cut-field")?.classList.add("has-error");
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      campoFoco?.focus();
+      setStatus("cortes", "Erro nos tempos", "error");
+      atualizarProgresso({ percent: 0, title: "Não foi possível iniciar os cortes", detail: erroMsg });
+      return;
+    }
+  }
+
+  const cuts = lerCortesEditor();
 
   btnGerarCortes.disabled = true;
   btnGerarCortes.textContent = "Iniciando...";
@@ -958,6 +1036,18 @@ btnGerarCortes?.addEventListener("click", async () => {
     btnGerarCortes.textContent = "Gerar todos os cortes";
     setStatus("cortes", "Erro", "error");
     atualizarProgresso({ percent: 0, title: "Não foi possível iniciar os cortes", detail: erro.message });
+
+    const match = erro.message?.match(/Corte\s+(\d+)/i);
+    if (match) {
+      const idx = parseInt(match[1], 10) - 1;
+      const allCards = [...cutsEditor.querySelectorAll(".cut-card")];
+      if (allCards[idx]) {
+        allCards[idx].classList.add("has-error");
+        allCards[idx].scrollIntoView({ behavior: "smooth", block: "center" });
+        const fimInput = allCards[idx].querySelector('[data-field="fim"]');
+        fimInput?.focus();
+      }
+    }
   }
 });
 

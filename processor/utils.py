@@ -13,7 +13,8 @@ def tempo_para_segundos(valor) -> float:
     if isinstance(valor, (int, float)):
         return float(valor)
 
-    partes = str(valor).strip().split(":")
+    texto = str(valor).strip().replace(",", ".")
+    partes = texto.split(":")
     if len(partes) == 1:
         return float(partes[0])
     if len(partes) == 2:
