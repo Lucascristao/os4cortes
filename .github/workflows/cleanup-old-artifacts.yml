@@ -1,0 +1,139 @@
+name: Limpar artifacts antigos
+
+on:
+  push:
+    paths:
+      - ".github/workflows/cleanup-old-artifacts.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Listar e limpar versões antigas
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh api --paginate --slurp "/repos/$REPOSITORY/actions/artifacts?per_page=100" > /tmp/artifact-pages.json
+
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from collections import defaultdict
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          repo = os.environ["REPOSITORY"]
+          with open("/tmp/artifact-pages.json", "r", encoding="utf-8") as fh:
+              pages = json.load(fh)
+
+          artifacts = []
+          for page in pages:
+              artifacts.extend(page.get("artifacts", []))
+
+          by_name = defaultdict(list)
+          for artifact in artifacts:
+              by_name[artifact["name"]].append(artifact)
+
+          keep = []
+          delete = []
+
+          for name, items in by_name.items():
+              ordered = sorted(
+                  items,
+                  key=lambda item: item.get("created_at") or "",
+                  reverse=True,
+              )
+              keep.append(ordered[0])
+              delete.extend(ordered[1:])
+
+          deleted = []
+          failed = []
+
+          for artifact in delete:
+              artifact_id = artifact["id"]
+              try:
+                  subprocess.run(
+                      [
+                          "gh",
+                          "api",
+                          "--method",
+                          "DELETE",
+                          f"/repos/{repo}/actions/artifacts/{artifact_id}",
+                      ],
+                      check=True,
+                  )
+                  deleted.append(artifact)
+              except subprocess.CalledProcessError:
+                  failed.append(artifact)
+
+          def mb(value):
+              return value / 1024 / 1024
+
+          freed = sum(item.get("size_in_bytes", 0) for item in deleted)
+          now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+          lines = [
+              "# Relatório de limpeza de GitHub Actions Artifacts",
+              "",
+              f"Repositório: `{repo}`",
+              f"Executado em: {now}",
+              "",
+              f"Artifacts encontrados: **{len(artifacts)}**",
+              f"Últimas versões preservadas: **{len(keep)}**",
+              f"Versões antigas apagadas: **{len(deleted)}**",
+              f"Espaço removido nesta execução: **{mb(freed):.2f} MB**",
+              "",
+              "## Preservados",
+              "",
+          ]
+
+          if keep:
+              for item in sorted(keep, key=lambda x: x["name"].lower()):
+                  lines.append(
+                      f"- {item['name']} | {mb(item.get('size_in_bytes', 0)):.2f} MB | "
+                      f"{item.get('created_at', 'sem data')}"
+                  )
+          else:
+              lines.append("- Nenhum artifact existente.")
+
+          lines += ["", "## Apagados", ""]
+
+          if deleted:
+              for item in deleted:
+                  lines.append(
+                      f"- {item['name']} | {mb(item.get('size_in_bytes', 0)):.2f} MB | "
+                      f"{item.get('created_at', 'sem data')}"
+                  )
+          else:
+              lines.append("- Nenhuma versão antiga para apagar.")
+
+          if failed:
+              lines += ["", "## Falhas", ""]
+              for item in failed:
+                  lines.append(f"- Não foi possível apagar {item['name']} (id {item['id']}).")
+
+          report = Path("artifact-cleanup-report.md")
+          report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Registrar relatório
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifact-cleanup-report.md
+          if git diff --cached --quiet; then
+            echo "Relatório sem alterações."
+          else
+            git commit -m "chore: report artifact cleanup"
+            git push
+          fi
