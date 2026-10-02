@@ -6,7 +6,10 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 
 from .framing import Face, StableFraming
 

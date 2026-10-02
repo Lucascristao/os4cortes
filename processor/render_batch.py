@@ -16,7 +16,11 @@ from .captions import (
 )
 from .drive import uploader_por_env
 from .progress import completed, emit, failed
-from .tracking import render_cinematic_16x9, render_tracking_9x16
+try:
+    from .tracking import render_cinematic_16x9, render_tracking_9x16
+except ImportError:
+    render_cinematic_16x9 = None
+    render_tracking_9x16 = None
 from .utils import nome_seguro, tempo_para_segundos
 
 
