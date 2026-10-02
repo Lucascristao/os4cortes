@@ -321,16 +321,21 @@ function sanitizeCutTitle(rawTitle) {
 }
 
 // Função principal: baixa um corte completo (.mp4 + .txt) e mede tempo e velocidade
-async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, requestId = 'default', onProgress = () => {} }) {
+async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFileId = null, formato = null, requestId = 'default', onProgress = () => {} }) {
   const destDir = path.join(downloadsBaseDir, requestId);
   fs.mkdirSync(destDir, { recursive: true });
 
   const cleanInitialTitle = sanitizeCutTitle(titulo) || `Corte ${cutIndex}`;
   const safeTitle = cleanInitialTitle.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 50);
-  const videoFileName = `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_legenda.mp4`;
+  const is16x9 = (formato === '16:9') || /_16x9/i.test(titulo) || (typeof videoFileId === 'string' && /_16x9/i.test(videoFileId));
+  const videoFileName = is16x9
+    ? `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_16x9.mp4`
+    : `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_legenda.mp4`;
   const postFileName = `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_post.txt`;
+  const capaFileName = `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_capa.jpg`;
   const videoDestPath = path.join(destDir, videoFileName);
   const postDestPath = path.join(destDir, postFileName);
+  const capaDestPath = path.join(destDir, capaFileName);
 
   onProgress({ status: 'starting', cutIndex, titulo: cleanInitialTitle });
 
@@ -355,7 +360,9 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, reques
       titulo: cleanTitle,
       videoPath: videoDestPath,
       postPath: postDestPath,
+      capaPath: fs.existsSync(capaDestPath) ? capaDestPath : null,
       postText,
+      formato: is16x9 ? '16:9' : '9:16',
       sizeMb,
       durationSec: 0,
       speedMbPerSec: 0
@@ -445,12 +452,21 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, reques
     }
   }
 
+  if (capaFileId && !fs.existsSync(capaDestPath)) {
+    try {
+      console.log(`[Downloader] Baixando miniatura da capa para Corte ${cutIndex}...`);
+      await downloadGoogleDriveFileDirect(capaFileId, capaDestPath);
+    } catch (_) {}
+  }
+
   const result = {
     cutIndex,
     titulo: cleanTitle,
     videoPath: videoDestPath,
     postPath: postDestPath,
+    capaPath: fs.existsSync(capaDestPath) ? capaDestPath : null,
     postText,
+    formato: is16x9 ? '16:9' : '9:16',
     sizeMb,
     durationSec,
     speedMbPerSec
@@ -469,6 +485,8 @@ async function downloadBatch(batch, onCutDownloaded = () => {}) {
   for (const c of cuts) {
     const videoFileId = c.files?.videoLegenda?.id || c.files?.video?.id;
     const postFileId = c.files?.post?.id;
+    const capaFileId = c.files?.capa?.id;
+    const formato = c.formato || (c.destino === 'youtube' ? '16:9' : '9:16');
 
     if (!videoFileId) {
       console.warn(`[Downloader] Corte ${c.index || c.numero} sem ID de arquivo de vídeo, pulando...`);
@@ -481,6 +499,8 @@ async function downloadBatch(batch, onCutDownloaded = () => {}) {
         titulo: c.titulo,
         videoFileId,
         postFileId,
+        capaFileId,
+        formato,
         requestId: requestId || 'sessao_recente',
         onProgress: (p) => {
           console.log(`[Downloader Progress] Corte ${c.index}: ${p.status}`);
@@ -623,19 +643,29 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
     }
     const cut = cutsMap.get(cutNum);
 
+    const is16x9 = /_16x9\.(?:mp4|mov|mkv)$/i.test(f.name) || f.name.toLowerCase().includes('_16x9');
     const isLegenda = /(?:_|\s|-)?legenda\.(?:mp4|mov|mkv)$/i.test(f.name) ||
                       (f.name.toLowerCase().includes('legenda') && f.name.toLowerCase().endsWith('.mp4'));
     const isPost = /(?:_|\s|-)?post\.txt$/i.test(f.name) ||
                    (f.name.toLowerCase().includes('post') && f.name.toLowerCase().endsWith('.txt'));
     const isSrt = /\.srt$/i.test(f.name);
-    const isRawVideo = /\.mp4$/i.test(f.name) && !isLegenda;
+    const isCapa = /(?:_|\s|-)?capa\.(?:jpg|jpeg|png)$/i.test(f.name) ||
+                   (f.name.toLowerCase().includes('capa') && f.name.toLowerCase().endsWith('.jpg'));
+    const isRawVideo = /\.mp4$/i.test(f.name) && !isLegenda && !is16x9;
 
-    if (isLegenda) {
+    if (is16x9) {
+      cut.video16x9 = { id: f.id, name: f.name };
       cut.videoLegenda = { id: f.id, name: f.name };
+      cut.formato = '16:9';
+    } else if (isLegenda) {
+      cut.videoLegenda = { id: f.id, name: f.name };
+      cut.formato = '9:16';
     } else if (isPost) {
       cut.post = { id: f.id, name: f.name };
     } else if (isSrt) {
       cut.srt = { id: f.id, name: f.name };
+    } else if (isCapa) {
+      cut.capa = { id: f.id, name: f.name };
     } else if (isRawVideo) {
       cut.rawVideo = { id: f.id, name: f.name };
     }
@@ -696,12 +726,12 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
 
     const completedJobs = cutJobs.filter(j => j.state === 'completed');
     const completedNetworks = new Set(completedJobs.map(j => j.payload?.network).filter(Boolean));
-    const isFullyCompleted = completedJobs.length >= 3 || 
-      (completedNetworks.has('youtube') && completedNetworks.has('tiktok') && completedNetworks.has('instagram')) ||
-      (cut.cutIndex <= 3 && completedNetworks.size >= 2); // Reconhece os 3 primeiros já publicados
+    const is16x9Cut = cut.formato === '16:9' || (cut.videoLegenda?.name && /_16x9/i.test(cut.videoLegenda.name));
+    const targetNetworks = is16x9Cut ? ['youtube'] : ['tiktok', 'instagram'];
+    const isFullyCompleted = targetNetworks.every(n => completedNetworks.has(n));
 
     if (isFullyCompleted) {
-      onLog(`[Drive Import] ⏭️ Corte ${cut.cutIndex} ("${cut.titulo || 'Corte ' + cut.cutIndex}") já foi publicado nas 3 redes nesta pasta. Pulando.`);
+      onLog(`[Drive Import] ⏭️ Corte ${cut.cutIndex} ("${cut.titulo || 'Corte ' + cut.cutIndex}") já foi publicado em suas redes-alvo (${targetNetworks.join(', ')}). Pulando.`);
       skippedCount++;
       continue;
     }
@@ -713,7 +743,7 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
       continue;
     }
 
-    onLog(`[Drive Import] ⬇️ Preparando Corte ${cut.cutIndex}: "${cut.titulo}" (apenas _legenda.mp4 e _post.txt)...`);
+    onLog(`[Drive Import] ⬇️ Preparando Corte ${cut.cutIndex}: "${cut.titulo}" (${is16x9Cut ? 'YouTube 16:9' : 'Vertical 9:16'})...`);
     
     try {
       const downloaded = await downloadCorte({
@@ -721,6 +751,8 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
         titulo: cut.titulo,
         videoFileId: cut.videoLegenda.id,
         postFileId: cut.post?.id,
+        capaFileId: cut.capa?.id,
+        formato: is16x9Cut ? '16:9' : '9:16',
         requestId,
         onProgress: (p) => {
           onProgress({ cutIndex: cut.cutIndex, status: p.status });
@@ -733,13 +765,15 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
         videoPath: downloaded.videoPath,
         postPath: downloaded.postPath,
         postText: downloaded.postText,
+        capaPath: downloaded.capaPath,
+        formato: downloaded.formato || (is16x9Cut ? '16:9' : '9:16'),
         requestId,
         folderId,
         driveFileId: cut.videoLegenda.id
       });
 
       enqueuedCount++;
-      onLog(`[Drive Import] ✅ Corte ${cut.cutIndex} adicionado à fila de postagens (${jobIds.length} tarefas criadas).`);
+      onLog(`[Drive Import] ✅ Corte ${cut.cutIndex} adicionado à fila (${jobIds.length} tarefas criadas: ${targetNetworks.join(', ')}).`);
     } catch (err) {
       onLog(`[Drive Import] ❌ Erro ao baixar Corte ${cut.cutIndex}: ${err.message}`);
     }

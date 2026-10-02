@@ -259,6 +259,27 @@ button:disabled { opacity: .55; cursor: progress; }
 .cuts-live-track { height: 9px; border-radius: 999px; background: #0b0b0b; border: 1px solid #303030; overflow: hidden; }
 .cuts-live-bar { height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #b98a00, #ffc928); transition: width .35s ease; }
 
+.network-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 750;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+  margin-left: 8px;
+}
+.network-badge.yt-badge {
+  background: rgba(255, 0, 0, 0.16);
+  color: #ff5555;
+  border: 1px solid rgba(255, 0, 0, 0.4);
+}
+.network-badge.vertical-badge {
+  background: rgba(225, 48, 108, 0.16);
+  color: #ff77bb;
+  border: 1px solid rgba(225, 48, 108, 0.4);
+}
+
 @media (max-width: 680px) {
   .app-shell { padding-left: 13px; padding-right: 13px; }
   .topbar { align-items: stretch; flex-direction: column; }

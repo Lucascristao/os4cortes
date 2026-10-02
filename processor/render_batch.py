@@ -5,10 +5,18 @@ import json
 import shutil
 from pathlib import Path
 
-from .captions import CaptionStyle, carregar_palavras, criar_legendas_corte, escrever_post
+from .captions import (
+    CaptionStyle,
+    carregar_palavras,
+    criar_legendas_corte,
+    criar_srt_limpo,
+    escrever_post,
+    escrever_post_youtube,
+    gerar_capa_16x9,
+)
 from .drive import uploader_por_env
 from .progress import completed, emit, failed
-from .tracking import render_tracking_9x16
+from .tracking import render_cinematic_16x9, render_tracking_9x16
 from .utils import nome_seguro, tempo_para_segundos
 
 
@@ -47,19 +55,36 @@ def normalizar_cortes(raw: str) -> list[dict]:
         if fim <= inicio:
             raise ValueError(f"Corte {idx}: fim precisa ser maior que início.")
 
-        hashtags = corte.get("hashtags", "")
-        if isinstance(hashtags, list):
-            hashtags = " ".join(str(x).strip() for x in hashtags if str(x).strip())
+        duracao = fim - inicio
+        formato = str(corte.get("formato") or "").strip().lower()
+        destino = str(corte.get("destino") or corte.get("plataforma") or "").strip().lower()
+
+        # Roteamento automático de formato
+        if destino == "youtube" or formato == "16:9" or (duracao >= 180 and formato != "9:16"):
+            formato = "16:9"
+            destino = "youtube"
         else:
-            hashtags = str(hashtags or "").strip()
+            formato = "9:16"
+            destino = "reels_tiktok"
+
+        descricao = str(corte.get("descricao") or corte.get("descricao_completa") or corte.get("legenda_post") or "").strip()
+        tags = corte.get("tags") or corte.get("hashtags") or ""
+        if isinstance(tags, list):
+            tags_formatadas = " ".join(str(x).strip() for x in tags if str(x).strip())
+        else:
+            tags_formatadas = str(tags or "").strip()
 
         saida.append(
             {
                 "titulo": titulo,
                 "inicio": inicio,
                 "fim": fim,
-                "legenda_post": str(corte.get("legenda_post") or "").strip(),
-                "hashtags": hashtags,
+                "formato": formato,
+                "destino": destino,
+                "descricao": descricao,
+                "legenda_post": str(corte.get("legenda_post") or descricao).strip(),
+                "hashtags": tags_formatadas,
+                "tags": tags,
                 "saida_suave": bool(corte.get("saida_suave", True)),
             }
         )
@@ -115,55 +140,124 @@ def main() -> int:
         for i, corte in enumerate(cortes, start=1):
             base_inicio = 10.0 + (i - 1) * faixa
             titulo_arquivo = nome_seguro(corte["titulo"])
-            prefixo = f"corte_{i:02d}_{titulo_arquivo}"
-            video_corte = out / f"{prefixo}.mp4"
+            formato = corte.get("formato", "9:16")
+            destino = corte.get("destino", "reels_tiktok")
 
             # Ajuste dinâmico para o som coincidir rigorosamente com os primeiros ~100ms do corte
             inicio_efetivo = ajustar_inicio_sem_silencio(
                 palavras_globais, corte["inicio"], corte["fim"]
             )
-
-            # Ativa fade-out visual quando a IA sinaliza saída abrupta
             usar_fade_visual = not corte.get("saida_suave", True)
 
-            emit(
-                "tracking",
-                base_inicio,
-                f"Gerando corte {i}/{total}: {corte['titulo']}",
-                cut=i,
-                total_cuts=total,
-            )
-            render_tracking_9x16(
-                video,
-                inicio_efetivo,
-                corte["fim"],
-                video_corte,
-                work_dir=work,
-                fade_out_visual=usar_fade_visual,
-            )
+            limpar_arquivos = []
 
-            emit(
-                "legendas",
-                base_inicio + faixa * 0.48,
-                f"Aplicando legendas no corte {i}/{total}",
-                cut=i,
-                total_cuts=total,
-            )
-            srt_path, video_legenda, capa_path = criar_legendas_corte(
-                transcricao_json,
-                video_corte,
-                inicio_efetivo,
-                corte["fim"],
-                titulo=corte["titulo"],
-                style=CaptionStyle(),
-                saida_suave=corte.get("saida_suave", True),
-            )
-            post_path = escrever_post(
-                out / f"{prefixo}_post.txt",
-                corte["titulo"],
-                corte["legenda_post"],
-                corte["hashtags"],
-            )
+            if formato == "16:9":
+                prefixo = f"corte_{i:02d}_{titulo_arquivo}_16x9"
+                video_16x9 = out / f"{prefixo}.mp4"
+
+                emit(
+                    "tracking",
+                    base_inicio,
+                    f"Gerando corte YouTube 16:9 {i}/{total}: {corte['titulo']}",
+                    cut=i,
+                    total_cuts=total,
+                )
+                render_cinematic_16x9(
+                    video,
+                    inicio_efetivo,
+                    corte["fim"],
+                    video_16x9,
+                    work_dir=work,
+                    fade_out_visual=usar_fade_visual,
+                )
+
+                emit(
+                    "legendas",
+                    base_inicio + faixa * 0.48,
+                    f"Preparando metadados YouTube do corte {i}/{total}",
+                    cut=i,
+                    total_cuts=total,
+                )
+                srt_path = criar_srt_limpo(
+                    transcricao_json,
+                    out / f"{prefixo}.srt",
+                    inicio_efetivo,
+                    corte["fim"],
+                )
+                capa_path = gerar_capa_16x9(
+                    video_16x9,
+                    out / f"{prefixo}_capa.jpg",
+                )
+                post_path = escrever_post_youtube(
+                    out / f"{prefixo}_post.txt",
+                    corte["titulo"],
+                    corte["descricao"],
+                    corte["tags"],
+                )
+
+                arquivos = [
+                    ("video", video_16x9),
+                    ("videoLegenda", video_16x9),
+                    ("srt", srt_path),
+                    ("post", post_path),
+                ]
+                if capa_path and capa_path.exists():
+                    arquivos.append(("capa", capa_path))
+
+                limpar_arquivos = [video_16x9, srt_path, post_path, capa_path]
+            else:
+                prefixo = f"corte_{i:02d}_{titulo_arquivo}"
+                video_corte = out / f"{prefixo}.mp4"
+
+                emit(
+                    "tracking",
+                    base_inicio,
+                    f"Gerando corte vertical {i}/{total}: {corte['titulo']}",
+                    cut=i,
+                    total_cuts=total,
+                )
+                render_tracking_9x16(
+                    video,
+                    inicio_efetivo,
+                    corte["fim"],
+                    video_corte,
+                    work_dir=work,
+                    fade_out_visual=usar_fade_visual,
+                )
+
+                emit(
+                    "legendas",
+                    base_inicio + faixa * 0.48,
+                    f"Aplicando legendas no corte {i}/{total}",
+                    cut=i,
+                    total_cuts=total,
+                )
+                srt_path, video_legenda, capa_path = criar_legendas_corte(
+                    transcricao_json,
+                    video_corte,
+                    inicio_efetivo,
+                    corte["fim"],
+                    titulo=corte["titulo"],
+                    style=CaptionStyle(),
+                    saida_suave=corte.get("saida_suave", True),
+                )
+                post_path = escrever_post(
+                    out / f"{prefixo}_post.txt",
+                    corte["titulo"],
+                    corte["legenda_post"],
+                    corte["hashtags"],
+                )
+
+                arquivos = [
+                    ("video", video_corte),
+                    ("videoLegenda", video_legenda),
+                    ("srt", srt_path),
+                    ("post", post_path),
+                ]
+                if capa_path and capa_path.exists():
+                    arquivos.append(("capa", capa_path))
+
+                limpar_arquivos = [video_corte, video_legenda, srt_path, post_path, capa_path]
 
             emit(
                 "drive",
@@ -172,15 +266,6 @@ def main() -> int:
                 cut=i,
                 total_cuts=total,
             )
-
-            arquivos = [
-                ("video", video_corte),
-                ("videoLegenda", video_legenda),
-                ("srt", srt_path),
-                ("post", post_path),
-            ]
-            if capa_path and capa_path.exists():
-                arquivos.append(("capa", capa_path))
 
             ids: dict[str, str] = {}
 
@@ -225,15 +310,18 @@ def main() -> int:
                     "titulo": corte["titulo"],
                     "inicio": corte["inicio"],
                     "fim": corte["fim"],
+                    "formato": formato,
+                    "destino": destino,
                     "files": files_dict,
                 }
             )
 
-            for arquivo in (video_corte, video_legenda, srt_path, post_path):
-                try:
-                    arquivo.unlink(missing_ok=True)
-                except Exception:
-                    pass
+            for arquivo in limpar_arquivos:
+                if arquivo:
+                    try:
+                        arquivo.unlink(missing_ok=True)
+                    except Exception:
+                        pass
 
             emit(
                 "cortes",

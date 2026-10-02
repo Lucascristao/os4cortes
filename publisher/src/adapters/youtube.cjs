@@ -3,16 +3,17 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { withGoogleLock } = require('../google-lock.cjs');
 
-async function publishYouTubeShorts({ videoPath, title, description = '' }) {
+async function publishYouTubeVideo({ videoPath, title, description = '', thumbnailPath = null }) {
   return withGoogleLock(async () => {
     const startTime = Date.now();
     const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
     const profileDir = path.join(dataDir, 'profiles', 'youtube');
     const chromePath = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
 
-    console.log('[YouTube] Iniciando publicação de Shorts...');
+    console.log('[YouTube] Iniciando publicação de vídeo...');
     console.log('[YouTube] Vídeo:', videoPath);
     console.log('[YouTube] Título:', title);
+    if (thumbnailPath) console.log('[YouTube] Miniatura/Capa 16:9:', thumbnailPath);
 
     const ctx = await chromium.launchPersistentContext(profileDir, {
       executablePath: chromePath,
@@ -105,6 +106,21 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
       }
     } catch (_) {}
 
+    // Upload opcional de miniatura personalizada (Thumbnail / Capa 16:9)
+    if (thumbnailPath && fs.existsSync(thumbnailPath)) {
+      try {
+        console.log('[YouTube] Tentando upload de miniatura personalizada (thumbnail/capa 16:9)...');
+        const thumbInput = page.locator('input#file-loader, ytcp-thumbnails-compact input[type="file"], input[type="file"][accept*="image"]').first();
+        if (await thumbInput.count() > 0) {
+          await thumbInput.setInputFiles(thumbnailPath);
+          console.log('[YouTube] Miniatura 16:9 enviada com sucesso:', thumbnailPath);
+          await page.waitForTimeout(2000);
+        }
+      } catch (errThumb) {
+        console.warn('[YouTube] Aviso ao enviar miniatura (recurso opcional ou requer canal verificado):', errThumb.message);
+      }
+    }
+
     // Verifica se atingiu o limite diário de envios do canal
     const limitNotice = page.locator('text=/limite di[aá]rio de envio/i, text=/daily upload limit/i, text=/limite de envio atingido/i, :has-text("limite de envio")').first();
     if (await limitNotice.isVisible({ timeout: 2000 }).catch(() => false)) {
@@ -142,9 +158,15 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
 
     // Avança telas até Visibilidade (Próximo -> Próximo -> Próximo)
     console.log('[YouTube 5/5] Avançando telas até Visibilidade...');
-    for (let step = 1; step <= 3; step++) {
+    for (let step = 1; step <= 4; step++) {
       if (await limitNotice.isVisible({ timeout: 500 }).catch(() => false)) {
-        throw new Error('Limite diário do YouTube atingido nesta conta (cota máxima de ~10 envios por 24h).');
+        throw new Error('Limite diário do YouTube atingido nesta conta (cota máxima de envios por 24h).');
+      }
+
+      // Se já alcançou a tela de visibilidade, para o avanço
+      const isVisibilityVisible = await page.locator('tp-yt-paper-radio-button[name="PUBLIC"], #radioLabel:has-text("Público")').first().isVisible({ timeout: 500 }).catch(() => false);
+      if (isVisibilityVisible) {
+        break;
       }
 
       // Se ainda estiver bloqueado com erro de audiência, tenta clicar novamente
@@ -156,11 +178,12 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
       }
 
       const nextBtn = page.locator('ytcp-button#next-button, button:has-text("Avançar"), button:has-text("Próximo"), #next-button').first();
-      await nextBtn.waitFor({ state: 'visible', timeout: 15000 });
-      await nextBtn.scrollIntoViewIfNeeded().catch(() => {});
-      await nextBtn.click({ force: true });
-      console.log(`[YouTube] Clicou no botão Avançar (etapa ${step})`);
-      await page.waitForTimeout(2000);
+      if (await nextBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
+        await nextBtn.scrollIntoViewIfNeeded().catch(() => {});
+        await nextBtn.click({ force: true });
+        console.log(`[YouTube] Clicou no botão Avançar (etapa ${step})`);
+        await page.waitForTimeout(2000);
+      }
     }
 
     // Se ainda não estiver na tela de Visibilidade, clica diretamente na aba de Visibilidade
@@ -184,14 +207,14 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
     console.log('[YouTube] Aguardando confirmação de envio dos dados do vídeo...');
     const uploadDoneSelector = 'text=/envio conclu[ií]do/i, text=/upload complete/i, text=/processando/i, text=/processing/i, text=/verificações concluídas/i, text=/checks complete/i';
     let uploadConfirmed = false;
-    for (let u = 1; u <= 60; u++) {
+    for (let u = 1; u <= 180; u++) {
       const isDone = await page.locator(uploadDoneSelector).first().isVisible({ timeout: 1000 }).catch(() => false);
       if (isDone) {
         uploadConfirmed = true;
         console.log(`[YouTube] ✅ Envio dos bytes do vídeo 100% concluído em ${u * 2}s!`);
         break;
       }
-      if (u % 5 === 0) {
+      if (u % 10 === 0) {
         console.log(`[YouTube] Transmitindo arquivo para os servidores do YouTube (${u * 2}s)...`);
       }
       await page.waitForTimeout(2000);
@@ -221,7 +244,7 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
       'ytcp-button#close-button'
     ];
 
-    for (let w = 1; w <= 30; w++) {
+    for (let w = 1; w <= 45; w++) {
       await page.waitForTimeout(1500);
       let isSuccess = false;
       for (const sel of successSelectors) {
@@ -272,7 +295,10 @@ async function publishYouTubeShorts({ videoPath, title, description = '' }) {
       if (page) await page.waitForTimeout(1500).catch(() => {});
       if (ctx) await ctx.close().catch(() => {});
     }
-  }, `publish_youtube_${(title || '').slice(0, 20)}`, 240000);
+  }, `publish_youtube_${(title || '').slice(0, 20)}`, 600000);
 }
 
-module.exports = { publishYouTubeShorts };
+module.exports = {
+  publishYouTubeVideo,
+  publishYouTubeShorts: publishYouTubeVideo
+};

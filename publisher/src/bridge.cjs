@@ -136,6 +136,8 @@ class LocalBridgeServer {
           videoPath: downloadedCut.videoPath,
           postPath: downloadedCut.postPath,
           postText: downloadedCut.postText,
+          capaPath: downloadedCut.capaPath,
+          formato: downloadedCut.formato,
           requestId: batch.requestId,
           folderId: batch.folderId
         });

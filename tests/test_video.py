@@ -203,5 +203,52 @@ class CaptionTests(unittest.TestCase):
             with Image.open(capa) as img:
                 self.assertEqual(img.size, (1080, 1920))
 
+    def test_escrever_post_youtube(self):
+        import tempfile
+        from pathlib import Path
+        from processor.captions import escrever_post_youtube
+        with tempfile.TemporaryDirectory() as td:
+            post_file = Path(td) / "corte_yt_post.txt"
+            escrever_post_youtube(
+                destino=post_file,
+                titulo="COMO ELE FATUROU 1 MILHAO #shorts",
+                descricao="Neste corte, discutimos os desafios de empreender.\n\n🎬 Episodio completo: Link Oficial",
+                tags=["negocios", "empreendedorismo"]
+            )
+            content = post_file.read_text(encoding="utf-8")
+            # Verifica que tirou a hashtag #shorts do título
+            self.assertTrue(content.startswith("COMO ELE FATUROU 1 MILHAO"))
+            self.assertNotIn("#shorts", content.splitlines()[0])
+            self.assertIn("Neste corte, discutimos", content)
+            self.assertIn("Tags / Palavras-chave: negocios, empreendedorismo", content)
+
+    def test_normalizar_cortes_16x9_e_9x16(self):
+        import json
+        from processor.render_batch import normalizar_cortes
+        pacote = [
+            {
+                "titulo": "Corte Reels",
+                "inicio": "00:00:10",
+                "fim": "00:01:20",
+                "formato": "9:16",
+                "legenda_post": "Dica rapida de gestao"
+            },
+            {
+                "titulo": "Corte Longo YouTube",
+                "inicio": "00:05:00",
+                "fim": "00:15:30",
+                "formato": "16:9",
+                "descricao": "Discussao aprofundada sobre escala"
+            }
+        ]
+        norm = normalizar_cortes(json.dumps(pacote))
+        self.assertEqual(len(norm), 2)
+        self.assertEqual(norm[0]["formato"], "9:16")
+        self.assertEqual(norm[0]["destino"], "reels_tiktok")
+        self.assertEqual(norm[1]["formato"], "16:9")
+        self.assertEqual(norm[1]["destino"], "youtube")
+        self.assertEqual(norm[1]["descricao"], "Discussao aprofundada sobre escala")
+
 if __name__=='__main__': unittest.main()
+
 

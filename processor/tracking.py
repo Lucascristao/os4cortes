@@ -310,3 +310,289 @@ def render_tracking_9x16(
             pass
 
     return saida
+
+
+def render_cinematic_16x9(
+    video_origem: str | Path,
+    inicio: float,
+    fim: float,
+    saida: str | Path,
+    work_dir: str | Path,
+    largura_saida: int = 1920,
+    altura_saida: int = 1080,
+    detectar_a_cada: int = 4,
+    fade_out_visual: bool = False,
+) -> Path:
+    """
+    Renderiza corte horizontal 16:9 dinâmico (estilo Multi-Cam de estúdio) para YouTube.
+    - Alterna com cadência televisiva entre Plano Geral (1.0x) e Close-Up do orador ativo (1.20x).
+    - Zoom punch inicial (1.08x) nos primeiros 2.5s para retenção no gancho.
+    - Sem marcas d'água e sem legendas na tela (vídeo 100% limpo em 1080p).
+    - Áudio masterizado no padrão YouTube (-14 LUFS) com compressor vocal e fade out suave.
+    """
+    video_origem = Path(video_origem)
+    saida = Path(saida)
+    work_dir = Path(work_dir)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    saida.parent.mkdir(parents=True, exist_ok=True)
+
+    if fim <= inicio:
+        raise ValueError("FIM precisa ser maior que INICIO.")
+
+    duracao = fim - inicio
+    fade_duracao = 0.8 if fade_out_visual else 0.0
+    stem = nome_seguro(saida.stem)
+    segmento = work_dir / f"_segmento_16x9_{stem}.mp4"
+    sem_audio = work_dir / f"_sem_audio_16x9_{stem}.mp4"
+
+    # Extrai o segmento de corte na resolução nativa
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-ss", str(inicio),
+            "-t", str(duracao),
+            "-i", str(video_origem),
+            "-an",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            str(segmento),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    cap = cv2.VideoCapture(str(segmento))
+    if not cap.isOpened():
+        raise RuntimeError("OpenCV não conseguiu abrir o segmento de vídeo 16:9.")
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    if w <= 0 or h <= 0:
+        cap.release()
+        raise RuntimeError("Dimensões inválidas no segmento de vídeo.")
+
+    yunet = garantir_yunet(work_dir)
+    det_w = min(1280, w)
+    det_h = int(round(h * det_w / w))
+
+    detector = cv2.FaceDetectorYN.create(
+        str(yunet),
+        "",
+        (det_w, det_h),
+        score_threshold=0.70,
+        nms_threshold=0.30,
+        top_k=5000,
+    )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "rawvideo",
+        "-pix_fmt", "bgr24",
+        "-s", f"{largura_saida}x{altura_saida}",
+        "-r", f"{fps:.6f}",
+        "-i", "-",
+        "-an",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        str(sem_audio),
+    ]
+
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    frame_idx = 0
+    previous_scene = None
+    previous_mouths: list[tuple[float, float, any, float]] = []
+
+    # Estados da Câmera Multi-Cam
+    current_mode = "wide"
+    shot_start_t = 0.0
+    min_shot_duration = 6.0
+
+    cur_cx = float(w) / 2.0
+    cur_cy = float(h) / 2.0
+    target_cx = float(w) / 2.0
+    target_cy = float(h) / 2.0
+    speaker_streak = 0.0
+
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+
+            scene = cv2.resize(
+                cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (64, 36)
+            )
+            mudou, corte_seco = mudou_plano(previous_scene, scene)
+            previous_scene = scene
+
+            tempo_decorrido = frame_idx / fps
+
+            if mudou:
+                current_mode = "wide"
+                shot_start_t = tempo_decorrido
+                speaker_streak = 0.0
+                previous_mouths = []
+                target_cx = float(w) / 2.0
+                target_cy = float(h) / 2.0
+
+            if mudou or frame_idx % detectar_a_cada == 0:
+                det_frame = (
+                    cv2.resize(frame, (det_w, det_h))
+                    if (det_w != w or det_h != h)
+                    else frame
+                )
+                detector.setInputSize((det_w, det_h))
+                _, faces = detector.detect(det_frame)
+
+                current_mouths: list[tuple[float, float, any, float]] = []
+                detected_speakers = []
+
+                if faces is not None:
+                    scale_x = float(w) / det_w
+                    scale_y = float(h) / det_h
+
+                    for f in faces:
+                        score_fala, mouth_data = calcular_movimento_labial(
+                            det_frame, f, previous_mouths, det_w, det_h
+                        )
+                        if mouth_data:
+                            current_mouths.append(mouth_data)
+
+                        if score_fala >= 0.35:
+                            fx, fy, fw, fh = f[0] * scale_x, f[1] * scale_y, f[2] * scale_x, f[3] * scale_y
+                            detected_speakers.append((score_fala, fx + fw / 2.0, fy + fh * 0.40))
+
+                    previous_mouths = current_mouths
+
+                time_in_shot = tempo_decorrido - shot_start_t
+
+                if len(detected_speakers) == 1:
+                    speaker = detected_speakers[0]
+                    speaker_streak += (detectar_a_cada / fps)
+                    target_cx = speaker[1]
+                    target_cy = speaker[2]
+
+                    if speaker_streak >= 1.5 and time_in_shot >= min_shot_duration:
+                        if current_mode != "speaker":
+                            current_mode = "speaker"
+                            shot_start_t = tempo_decorrido
+                elif len(detected_speakers) > 1:
+                    speaker_streak = 0.0
+                    if current_mode == "speaker" and time_in_shot >= min_shot_duration:
+                        current_mode = "wide"
+                        shot_start_t = tempo_decorrido
+                        target_cx = float(w) / 2.0
+                        target_cy = float(h) / 2.0
+                else:
+                    speaker_streak = max(0.0, speaker_streak - (detectar_a_cada / fps))
+                    if speaker_streak <= 0.0 and current_mode == "speaker" and time_in_shot >= (min_shot_duration + 2.0):
+                        current_mode = "wide"
+                        shot_start_t = tempo_decorrido
+                        target_cx = float(w) / 2.0
+                        target_cy = float(h) / 2.0
+
+            cur_cx = 0.88 * cur_cx + 0.12 * target_cx
+            cur_cy = 0.88 * cur_cy + 0.12 * target_cy
+
+            if tempo_decorrido < 2.5:
+                zoom = 1.08
+            elif current_mode == "speaker":
+                zoom = 1.20
+            else:
+                zoom = 1.0
+
+            cur_crop_w = int(round(w / zoom))
+            cur_crop_h = int(round(h / zoom))
+
+            if zoom <= 1.001:
+                x0 = 0
+                y0 = 0
+            else:
+                x0 = int(round(cur_cx - cur_crop_w / 2.0))
+                y0 = int(round(cur_cy - cur_crop_h / 2.0))
+                x0 = max(0, min(w - cur_crop_w, x0))
+                y0 = max(0, min(h - cur_crop_h, y0))
+
+            crop = frame[y0:y0 + cur_crop_h, x0:x0 + cur_crop_w]
+
+            if (cur_crop_w != largura_saida or cur_crop_h != altura_saida):
+                frame_16x9 = cv2.resize(
+                    crop,
+                    (largura_saida, altura_saida),
+                    interpolation=cv2.INTER_LANCZOS4,
+                )
+            else:
+                frame_16x9 = crop
+
+            if fade_duracao > 0 and tempo_decorrido >= (duracao - fade_duracao):
+                progresso_fade = (tempo_decorrido - (duracao - fade_duracao)) / fade_duracao
+                progresso_fade = min(1.0, max(0.0, progresso_fade))
+                fator = 1.0 - progresso_fade
+                frame_16x9 = (frame_16x9.astype(np.float32) * fator).clip(0, 255).astype(np.uint8)
+
+            if proc.stdin is None:
+                raise RuntimeError("Pipe de vídeo não disponível.")
+
+            proc.stdin.write(frame_16x9.tobytes())
+            frame_idx += 1
+
+    finally:
+        cap.release()
+        if proc.stdin:
+            proc.stdin.close()
+        proc.wait()
+
+    if proc.returncode != 0 or not sem_audio.exists():
+        raise RuntimeError("Falha ao gerar vídeo 16:9 sem áudio.")
+
+    fade_audio_dur = 0.8 if fade_out_visual else 0.4
+    st_fade = max(0.0, duracao - fade_audio_dur)
+    audio_filter = (
+        f"loudnorm=I=-14:TP=-1.5:LRA=11,"
+        f"acompressor=threshold=-18dB:ratio=3:attack=15:release=100,"
+        f"afade=t=out:st={st_fade:.2f}:d={fade_audio_dur:.1f}"
+    )
+
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-i", str(sem_audio),
+            "-ss", str(inicio),
+            "-t", str(duracao),
+            "-i", str(video_origem),
+            "-map", "0:v:0",
+            "-map", "1:a:0?",
+            "-c:v", "copy",
+            "-af", audio_filter,
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+            "-movflags", "+faststart",
+            str(saida),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    for temporario in (segmento, sem_audio):
+        try:
+            temporario.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    return saida

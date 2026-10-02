@@ -5,9 +5,16 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+try:
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+except ImportError:
+    Credentials = None
+    build = None
+    MediaFileUpload = None
+    MediaIoBaseDownload = None
+
 
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]

@@ -12,25 +12,8 @@ function buildYouTubeTitle(rawTitle, postText) {
   }
   if (!cleanTitle) cleanTitle = 'Corte';
 
-  // Extrai hashtags contextuais do texto do post
-  const contextTags = [];
-  if (postText) {
-    const found = postText.match(/#[a-zA-Z0-9_À-ÿ]+/g) || [];
-    for (const tag of found) {
-      if (!tag.toLowerCase().includes('shorts') && !contextTags.some(t => t.toLowerCase() === tag.toLowerCase())) {
-        contextTags.push(tag);
-      }
-    }
-  }
-
-  let resultTitle = cleanTitle;
-  for (const tag of contextTags) {
-    if (`${resultTitle} ${tag}`.length <= 95) {
-      resultTitle = `${resultTitle} ${tag}`;
-    }
-  }
-
-  return resultTitle.slice(0, 95).trim();
+  // Em vídeos normais de YouTube, mantemos o título completo magnético (até 100 caracteres) sem anexar hashtags ao final
+  return cleanTitle.slice(0, 100).trim();
 }
 
 class QueueExecutor extends EventEmitter {
@@ -49,9 +32,10 @@ class QueueExecutor extends EventEmitter {
   }
 
   // Enfileira um corte pronto para as redes pendentes
-  enqueueCorte({ cutIndex, titulo, videoPath, postPath = null, postText, requestId = 'sessao', folderId = null, driveFileId = null }) {
+  enqueueCorte({ cutIndex, titulo, videoPath, postPath = null, postText, requestId = 'sessao', folderId = null, driveFileId = null, capaPath = null, formato = null }) {
     console.log(`[Executor] Enfileirando Corte ${cutIndex} para publicação...`);
-    const networks = ['youtube', 'tiktok', 'instagram'];
+    const is16x9 = (formato === '16:9') || (videoPath && /_16x9/i.test(videoPath));
+    const networks = is16x9 ? ['youtube'] : ['tiktok', 'instagram'];
     const jobIds = [];
 
     // Proteção contra duplicação: não enfileira redes que já foram concluídas com sucesso para este corte nesta pasta
@@ -85,6 +69,8 @@ class QueueExecutor extends EventEmitter {
         videoPath,
         postPath: postPath || null,
         postText: postText || titulo || '',
+        capaPath: capaPath || null,
+        formato: is16x9 ? '16:9' : '9:16',
         enqueuedAt: Date.now()
       };
 
@@ -92,7 +78,7 @@ class QueueExecutor extends EventEmitter {
         const added = this.q.add(payload);
         if (added) {
           jobIds.push(jobId);
-          console.log(`[Executor] Job ${jobId} adicionado à fila.`);
+          console.log(`[Executor] Job ${jobId} adicionado à fila (${is16x9 ? 'YouTube 16:9' : 'Vertical 9:16'}).`);
         }
       } catch (err) {
         console.warn(`[Executor] Não foi possível adicionar job ${jobId}: ${err.message}`);
@@ -212,15 +198,25 @@ class QueueExecutor extends EventEmitter {
       };
 
       if (net === 'youtube') {
-        const { publishYouTubeShorts } = require('./adapters/youtube.cjs');
+        const { publishYouTubeVideo } = require('./adapters/youtube.cjs');
         const ytTitle = buildYouTubeTitle(effectiveTitle, effectiveText);
+        // Tenta resolver capaPath caso não tenha vindo explicitamente mas exista arquivo _capa.jpg
+        let ytThumbnail = p.capaPath || null;
+        if (!ytThumbnail && p.videoPath) {
+          const possibleThumb = p.videoPath.replace(/(\.mp4|_16x9\.mp4|_legenda\.mp4)$/i, '_capa.jpg');
+          if (fs.existsSync(possibleThumb)) {
+            ytThumbnail = possibleThumb;
+          }
+        }
+
         result = await runWithTimeout(
-          publishYouTubeShorts({
+          publishYouTubeVideo({
             videoPath: p.videoPath,
             title: ytTitle,
-            description: effectiveText || effectiveTitle
+            description: effectiveText || effectiveTitle,
+            thumbnailPath: ytThumbnail
           }),
-          300000,
+          600000,
           `YouTube Corte ${p.cutIndex}`
         );
       } else if (net === 'tiktok') {
@@ -266,7 +262,7 @@ class QueueExecutor extends EventEmitter {
       this.emit('job-completed', { job, result, nextInSeconds: delaySec, status: this.getStatus() });
       console.log(`[Executor] ✅ Job ${job.id} CONCLUÍDO! Pausa de ${delaySec}s aplicada na rede ${net} (ciclo total: ${Math.round(elapsedSec + delaySec)}s).`);
 
-      // Auto-exclusão segura (Opção 1): após 2 minutos da conclusão nas 3 redes
+      // Auto-exclusão segura (Opção 1): após 2 minutos da conclusão de todas as tarefas deste corte
       try {
         const allJobs = this.q.list();
         const cutJobs = allJobs.filter(j => {
@@ -275,10 +271,10 @@ class QueueExecutor extends EventEmitter {
                              (j.payload.requestId && j.payload.requestId === p.requestId);
           return sameFolder && j.payload.cutIndex === p.cutIndex;
         });
-        const allThreeDone = cutJobs.length >= 3 && cutJobs.every(j => j.state === 'completed');
+        const allCutDone = cutJobs.length > 0 && cutJobs.every(j => j.state === 'completed');
 
-        if (allThreeDone) {
-          console.log(`[Auto-Cleanup] 🎯 Corte ${p.cutIndex} concluído com sucesso nas 3 redes!`);
+        if (allCutDone) {
+          console.log(`[Auto-Cleanup] 🎯 Corte ${p.cutIndex} concluído com sucesso em todas as suas redes (${cutJobs.length} rede(s))!`);
           console.log(`[Auto-Cleanup] Agendando exclusão segura dos arquivos do PC em 2 minutos (120s)...`);
 
           setTimeout(() => {
@@ -290,6 +286,10 @@ class QueueExecutor extends EventEmitter {
               if (p.postPath && fs.existsSync(p.postPath)) {
                 fs.unlinkSync(p.postPath);
                 console.log(`[Auto-Cleanup] Post do Corte ${p.cutIndex} excluído do PC: ${p.postPath}`);
+              }
+              if (p.capaPath && fs.existsSync(p.capaPath)) {
+                fs.unlinkSync(p.capaPath);
+                console.log(`[Auto-Cleanup] Capa do Corte ${p.cutIndex} excluída do PC: ${p.capaPath}`);
               }
               console.log(`[Auto-Cleanup] ✅ Corte ${p.cutIndex}: espaço em disco liberado! (Originais mantidos no Drive)`);
             } catch (errDel) {

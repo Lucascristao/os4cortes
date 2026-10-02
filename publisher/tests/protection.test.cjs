@@ -71,3 +71,42 @@ test('Intervalo de proteção ativa desconta tempo de upload e garante pausa mí
   const delay3 = simulateDelay(200, 240);
   assert.equal(delay3, 30);
 });
+
+test('enqueueCorte roteia 16:9 exclusivamente para YouTube e 9:16 para TikTok e Instagram', () => {
+  const q = new Queue(':memory:');
+  const executor = new QueueExecutor(q);
+  executor.ensureWorkerRunning = () => {};
+
+  // Corte 1: 16:9 longo para YouTube
+  const ytJobIds = executor.enqueueCorte({
+    cutIndex: 1,
+    titulo: 'Revelações Inéditas de Bastidores',
+    videoPath: 'C:\\Videos\\corte_01_revelacoes_16x9.mp4',
+    capaPath: 'C:\\Videos\\corte_01_revelacoes_capa.jpg',
+    formato: '16:9',
+    requestId: 'sessao1'
+  });
+
+  assert.equal(ytJobIds.length, 1);
+  const ytJob = q.list().find(j => j.id === ytJobIds[0]);
+  assert.equal(ytJob.payload.network, 'youtube');
+  assert.equal(ytJob.payload.formato, '16:9');
+  assert.equal(ytJob.payload.capaPath, 'C:\\Videos\\corte_01_revelacoes_capa.jpg');
+
+  // Corte 2: 9:16 vertical para Reels e TikTok
+  const verticalJobIds = executor.enqueueCorte({
+    cutIndex: 2,
+    titulo: 'Momento de Tensão no Estúdio',
+    videoPath: 'C:\\Videos\\corte_02_tensao_legenda.mp4',
+    formato: '9:16',
+    requestId: 'sessao1'
+  });
+
+  assert.equal(verticalJobIds.length, 2);
+  const verticalNets = verticalJobIds.map(id => q.list().find(j => j.id === id).payload.network);
+  assert.deepEqual(verticalNets.sort(), ['instagram', 'tiktok'].sort());
+
+  executor.stop();
+  q.close();
+});
+

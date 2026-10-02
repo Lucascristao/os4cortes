@@ -659,3 +659,134 @@ def escrever_post(
 
     destino.write_text(texto.strip() + "\n", encoding="utf-8")
     return destino
+
+
+def escrever_post_youtube(
+    destino: str | Path,
+    titulo: str,
+    descricao: str = "",
+    tags: str | list[str] = "",
+) -> Path:
+    destino = Path(destino)
+    # Linha 1: Título oficial de alto CTR para YouTube (sem hashtag #shorts)
+    clean_title = re.sub(r"#shorts\b", "", str(titulo or "Corte"), flags=re.IGNORECASE).strip()
+    texto = clean_title
+
+    if descricao.strip():
+        texto += "\n\n" + descricao.strip()
+
+    if tags:
+        if isinstance(tags, list):
+            tags_str = ", ".join(str(t).strip().lstrip("#") for t in tags if str(t).strip())
+        else:
+            tags_str = str(tags).strip()
+        if tags_str:
+            texto += "\n\n---\nTags / Palavras-chave: " + tags_str
+
+    destino.write_text(texto.strip() + "\n", encoding="utf-8")
+    return destino
+
+
+def criar_srt_limpo(
+    transcricao_path: str | Path,
+    srt_path: str | Path,
+    inicio_corte: float,
+    fim_corte: float,
+) -> Path:
+    srt_path = Path(srt_path)
+    palavras_globais = carregar_palavras(transcricao_path)
+    palavras = palavras_do_corte(palavras_globais, float(inicio_corte), float(fim_corte))
+    if not palavras:
+        srt_path.write_text("", encoding="utf-8")
+        return srt_path
+
+    style = CaptionStyle(line_chars=40)
+    grupos = agrupar_palavras(palavras, style)
+    srt_linhas: list[str] = []
+    for idx, grupo in enumerate(grupos, start=1):
+        inicio = grupo[0]["inicio"]
+        fim = grupo[-1]["fim"]
+        srt_linhas.extend([
+            str(idx),
+            f"{srt_tempo(inicio)} --> {srt_tempo(fim)}",
+            texto_srt_grupo(grupo, 40),
+            "",
+        ])
+    srt_path.write_text("\n".join(srt_linhas), encoding="utf-8")
+    return srt_path
+
+
+def gerar_capa_16x9(
+    arquivo_video: str | Path,
+    destino_capa: str | Path,
+    tempo_frame: float = 2.0,
+) -> Path:
+    arquivo_video = Path(arquivo_video)
+    destino_capa = Path(destino_capa)
+    destino_capa.parent.mkdir(parents=True, exist_ok=True)
+
+    candidatos_t = [
+        max(0.5, float(tempo_frame)),
+        max(0.5, float(tempo_frame) + 1.5),
+        max(0.5, float(tempo_frame) + 3.0),
+        max(0.5, float(tempo_frame) + 5.0),
+    ]
+    melhor_score = -1.0
+    melhor_frame = None
+
+    for idx, t_cand in enumerate(candidatos_t):
+        cand_path = destino_capa.with_suffix(f".cand169_{idx}.jpg")
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-ss", f"{t_cand:.2f}",
+                    "-i", str(arquivo_video),
+                    "-vframes", "1",
+                    "-q:v", "2",
+                    str(cand_path),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+        if cand_path.exists() and cand_path.stat().st_size > 1000:
+            score = 10.0
+            try:
+                import cv2
+                img_cv = cv2.imread(str(cand_path), cv2.IMREAD_GRAYSCALE)
+                if img_cv is not None:
+                    score = float(cv2.Laplacian(img_cv, cv2.CV_64F).var())
+            except Exception:
+                pass
+
+            if score > melhor_score or melhor_frame is None:
+                if melhor_frame and melhor_frame.exists():
+                    melhor_frame.unlink(missing_ok=True)
+                melhor_score = score
+                melhor_frame = cand_path
+            else:
+                cand_path.unlink(missing_ok=True)
+
+    if melhor_frame and melhor_frame.exists():
+        shutil.move(str(melhor_frame), str(destino_capa))
+    else:
+        # Fallback de frame 0
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-ss", "00:00:01",
+                "-i", str(arquivo_video),
+                "-vframes", "1",
+                "-q:v", "2",
+                str(destino_capa),
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    return destino_capa
