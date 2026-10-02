@@ -170,20 +170,28 @@ async function downloadDirectHttp(url, destPath) {
       if (res.statusCode !== 200) {
         return reject(new Error(`HTTP Status ${res.statusCode}`));
       }
+      const cType = res.headers['content-type'] || '';
+      if (cType.includes('text/html')) {
+        return reject(new Error('Download retornou página HTML em vez de arquivo de vídeo.'));
+      }
       const fileStream = fs.createWriteStream(destPath);
       res.pipe(fileStream);
       fileStream.on('finish', () => {
         fileStream.close();
         try {
           const stats = fs.statSync(destPath);
-          if (stats.size < 500000) {
-            const head = fs.readFileSync(destPath, 'utf8').slice(0, 100).toLowerCase();
-            if (head.includes('<html') || head.includes('<!doc')) {
-              try { fs.unlinkSync(destPath); } catch (_) {}
-              return reject(new Error('Download retornou página HTML em vez do arquivo de vídeo.'));
-            }
+          const head = fs.readFileSync(destPath).slice(0, 300).toString('utf8').toLowerCase();
+          if (head.includes('<html') || head.includes('<!doc') || head.includes('accounts.google.com')) {
+            try { fs.unlinkSync(destPath); } catch (_) {}
+            return reject(new Error('Download retornou página HTML em vez do arquivo de vídeo.'));
           }
-        } catch (_) {}
+          if (stats.size < 1000000) {
+            try { fs.unlinkSync(destPath); } catch (_) {}
+            return reject(new Error(`Download incompleto (${stats.size} bytes).`));
+          }
+        } catch (e) {
+          return reject(e);
+        }
         resolve(true);
       });
       fileStream.on('error', reject);
@@ -199,50 +207,73 @@ async function downloadDirectHttp(url, destPath) {
 // Fallback: Download autenticado pelo Google Drive usando contexto persistente do navegador
 async function downloadGoogleDriveFileWithContext(ctx, fileId, destPath) {
   const downloadUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
-  console.log(`[Downloader] Acessando link do Drive via navegador: ${downloadUrl}`);
+  console.log(`[Downloader] Acessando link do Drive via navegador autenticado: ${downloadUrl}`);
 
   try {
     const res = await ctx.request.get(downloadUrl, { maxRedirects: 10, timeout: 600000 });
     const cType = res.headers()['content-type'] || '';
     if (res.ok() && (cType.includes('video') || cType.includes('octet-stream'))) {
       const buffer = await res.body();
-      if (buffer && buffer.length > 500000) {
+      if (buffer && buffer.length > 1000000 && !buffer.slice(0, 200).toString().toLowerCase().includes('<html')) {
         fs.writeFileSync(destPath, buffer);
         console.log(`[Downloader] Download direto via browser concluído: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB.`);
         return true;
       }
     }
-    
-    const bodyText = await res.text().catch(() => '');
-    const confirmMatch = bodyText.match(/href="([^"]+confirm=[^"]+)"/) || bodyText.match(/action="([^"]+)"/);
-    if (confirmMatch && confirmMatch[1]) {
-      let confirmUrl = confirmMatch[1].replace(/&amp;/g, '&');
-      if (confirmUrl.startsWith('/')) confirmUrl = `https://drive.google.com${confirmUrl}`;
-      console.log(`[Downloader] Confirmando download via browser: ${confirmUrl}`);
-      const resConfirm = await ctx.request.get(confirmUrl, { maxRedirects: 10, timeout: 600000 });
-      if (resConfirm.ok()) {
-        const buf = await resConfirm.body();
-        fs.writeFileSync(destPath, buf);
-        return true;
-      }
-    }
   } catch (errReq) {
-    console.warn(`[Downloader] Request via browser gerou aviso: ${errReq.message}. Tentando clique na página...`);
+    console.warn(`[Downloader] Request via browser gerou aviso: ${errReq.message}. Tentando página com form de confirmação...`);
   }
 
   const page = await ctx.newPage();
   page.setDefaultTimeout(180000);
   try {
-    await page.goto(downloadUrl, { waitUntil: 'domcontentloaded' }).catch(() => null);
+    await page.goto(downloadUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
+    await page.waitForTimeout(2000);
+
+    // Extrai a URL completa do formulário de confirmação (#download-form) com todos os parâmetros (id, export, authuser, confirm, uuid, at)
+    const formConfirmUrl = await page.evaluate(() => {
+      const f = document.querySelector('form#download-form') || document.querySelector('form[action*="download"]');
+      if (f) {
+        const params = new URLSearchParams();
+        for (const inp of f.querySelectorAll('input[name]')) {
+          if (inp.name) params.set(inp.name, inp.value);
+        }
+        return `${f.action}?${params.toString()}`;
+      }
+      const link = document.querySelector('#uc-download-link, a[href*="confirm="]');
+      if (link && link.href) return link.href;
+      return null;
+    });
+
+    if (formConfirmUrl) {
+      console.log(`[Downloader] URL de confirmação obtida com sucesso. Baixando stream...`);
+      const resConfirm = await ctx.request.get(formConfirmUrl, { maxRedirects: 10, timeout: 600000 });
+      if (resConfirm.ok()) {
+        const buf = await resConfirm.body();
+        if (buf && buf.length > 1000000 && !buf.slice(0, 200).toString().toLowerCase().includes('<html')) {
+          fs.writeFileSync(destPath, buf);
+          console.log(`[Downloader] Download de arquivo grande concluído: ${(buf.length / (1024 * 1024)).toFixed(1)} MB.`);
+          return true;
+        }
+      }
+    }
+
     const confirmBtn = page.locator('#uc-download-link, a:has-text("Fazer download mesmo assim"), button:has-text("Fazer download mesmo assim"), a[href*="confirm="]').first();
     if (await confirmBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
       console.log('[Downloader] Clicando em "Fazer download mesmo assim"...');
-      const dlPromise = page.waitForEvent('download', { timeout: 300000 });
-      await confirmBtn.click();
-      const dl = await dlPromise;
+      const [ dl ] = await Promise.all([
+        page.waitForEvent('download', { timeout: 300000 }),
+        confirmBtn.click()
+      ]);
       await dl.saveAs(destPath);
-      return true;
+      const st = fs.statSync(destPath);
+      if (st.size > 1000000) {
+        console.log(`[Downloader] Download via evento concluído: ${(st.size / (1024 * 1024)).toFixed(1)} MB.`);
+        return true;
+      }
     }
+
+    throw new Error('Não foi possível obter o link de download direto do Google Drive.');
   } finally {
     await page.close().catch(() => {});
   }
@@ -320,6 +351,26 @@ function sanitizeCutTitle(rawTitle) {
   return s;
 }
 
+function isRealMp4File(filePath) {
+  if (!fs.existsSync(filePath)) return false;
+  try {
+    const stats = fs.statSync(filePath);
+    if (stats.size < 1000000) return false;
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(200);
+    fs.readSync(fd, buf, 0, 200, 0);
+    fs.closeSync(fd);
+    const head = buf.toString('utf8');
+    if (head.includes('<html') || head.includes('<!doc') || head.includes('accounts.google.com')) {
+      return false;
+    }
+    const tag = buf.slice(4, 8).toString('ascii');
+    return tag === 'ftyp' || tag === 'moov' || tag === 'wide';
+  } catch (_) {
+    return false;
+  }
+}
+
 // Função principal: baixa um corte completo (.mp4 + .txt) e mede tempo e velocidade
 async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFileId = null, formato = null, requestId = 'default', onProgress = () => {} }) {
   const destDir = path.join(downloadsBaseDir, requestId);
@@ -347,7 +398,7 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFi
   }
 
   // Se o vídeo e o texto já existem no disco, não gasta banda nem tempo
-  if (fs.existsSync(videoDestPath) && fs.statSync(videoDestPath).size > 500000 && postText) {
+  if (isRealMp4File(videoDestPath) && postText) {
     const stats = fs.statSync(videoDestPath);
     const sizeMb = Number((stats.size / (1024 * 1024)).toFixed(1));
     console.log(`[Downloader] Corte ${cutIndex} já existe localmente em ${videoDestPath} (${sizeMb} MB). Reutilizando.`);
@@ -369,6 +420,9 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFi
     };
     onProgress({ status: 'completed', ...result });
     return result;
+  } else if (fs.existsSync(videoDestPath) && !isRealMp4File(videoDestPath)) {
+    console.warn(`[Downloader] Arquivo existente em ${videoDestPath} não é um vídeo MP4 válido (${fs.statSync(videoDestPath).size} bytes). Removendo para download limpo...`);
+    try { fs.unlinkSync(videoDestPath); } catch (_) {}
   }
 
   console.log(`[Downloader] Iniciando sessão para o Corte ${cutIndex}...`);
@@ -388,7 +442,7 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFi
 
     console.log(`[Downloader] Baixando vídeo do Corte ${cutIndex} (modo desacoplado, ID: ${videoFileId})...`);
     await downloadGoogleDriveFileDirect(videoFileId, videoDestPath);
-    downloadSuccess = true;
+    downloadSuccess = isRealMp4File(videoDestPath);
   } catch (errDirect) {
     console.warn(`[Downloader] Modo desacoplado falhou (${errDirect.message}). Tentando fallback com navegador...`);
   }
@@ -401,7 +455,8 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFi
         headless: true,
         viewport: { width: 1280, height: 800 },
         ignoreDefaultArgs: ['--enable-automation'],
-        args: ['--disable-blink-features=AutomationControlled']
+        args: ['--disable-blink-features=AutomationControlled'],
+        acceptDownloads: true
       });
 
       try {
@@ -415,20 +470,25 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFi
 
         console.log(`[Downloader] Iniciando download do vídeo do Corte ${cutIndex} via browser (ID: ${videoFileId})...`);
         await downloadGoogleDriveFileWithContext(ctx, videoFileId, videoDestPath);
-        downloadSuccess = true;
+        downloadSuccess = isRealMp4File(videoDestPath);
       } catch (errAuth) {
         console.warn(`[Downloader] Tentativa via browser falhou (${errAuth.message}), tentando download direto...`);
-        const directUrl = `https://drive.google.com/uc?id=${videoFileId}&export=download`;
-        await downloadDirectHttp(directUrl, videoDestPath);
-        downloadSuccess = true;
+        try {
+          const directUrl = `https://drive.google.com/uc?id=${videoFileId}&export=download`;
+          await downloadDirectHttp(directUrl, videoDestPath);
+          downloadSuccess = isRealMp4File(videoDestPath);
+        } catch (e) {
+          console.warn(`[Downloader] Fallback HTTP direto falhou: ${e.message}`);
+        }
       } finally {
         await ctx.close().catch(() => {});
       }
     }, `download_corte_${cutIndex}`, 600000);
   }
 
-  if (!fs.existsSync(videoDestPath) || fs.statSync(videoDestPath).size < 10000) {
-    throw new Error(`Arquivo de vídeo do Corte ${cutIndex} não foi baixado corretamente.`);
+  if (!isRealMp4File(videoDestPath)) {
+    try { if (fs.existsSync(videoDestPath)) fs.unlinkSync(videoDestPath); } catch (_) {}
+    throw new Error(`Arquivo de vídeo do Corte ${cutIndex} não foi baixado corretamente (não é um MP4 válido).`);
   }
 
   const durationSec = Number(((Date.now() - t0) / 1000).toFixed(1));

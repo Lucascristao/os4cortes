@@ -15,6 +15,22 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
     console.log('[YouTube] Título:', title);
     if (thumbnailPath) console.log('[YouTube] Miniatura/Capa 16:9:', thumbnailPath);
 
+    if (!fs.existsSync(videoPath)) {
+      throw new Error(`Arquivo de vídeo não encontrado em: ${videoPath}`);
+    }
+    const videoStat = fs.statSync(videoPath);
+    if (videoStat.size < 1000000) {
+      throw new Error(`Arquivo de vídeo corrompido ou incompleto (${videoStat.size} bytes): ${videoPath}`);
+    }
+    const fd = fs.openSync(videoPath, 'r');
+    const headBuf = Buffer.alloc(200);
+    fs.readSync(fd, headBuf, 0, 200, 0);
+    fs.closeSync(fd);
+    const headStr = headBuf.toString('utf8');
+    if (headStr.includes('<html') || headStr.includes('<!DOCTYPE') || headStr.includes('accounts.google.com')) {
+      throw new Error(`Arquivo de vídeo corrompido (contém página HTML do Google em vez de vídeo): ${videoPath}`);
+    }
+
     const ctx = await chromium.launchPersistentContext(profileDir, {
       executablePath: chromePath,
       headless: false,
@@ -198,16 +214,27 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
     console.log('[YouTube] Definindo visibilidade como "Público"...');
     const publicOption = page.locator('tp-yt-paper-radio-button[name="PUBLIC"], #radioLabel:has-text("Público"), [name="PUBLIC"]').first();
     await publicOption.waitFor({ state: 'visible', timeout: 20000 });
-    await publicOption.scrollIntoViewIfNeeded();
-    await publicOption.click();
+    await publicOption.scrollIntoViewIfNeeded().catch(() => {});
+    await publicOption.click({ force: true });
     console.log('[YouTube] Visibilidade definida como: Público');
     await page.waitForTimeout(1500);
+
+    // Verifica se houve falha ou erro de processamento do YouTube
+    const processingErrorSelector = 'text=/processamento interrompido/i, text=/não foi possível processar o vídeo/i, text=/processing abandoned/i, text=/could not process video/i';
+    if (await page.locator(processingErrorSelector).first().isVisible({ timeout: 1000 }).catch(() => false)) {
+      const errTxt = await page.locator(processingErrorSelector).first().innerText().catch(() => 'Processamento interrompido');
+      throw new Error(`Processamento interrompido pelo YouTube: ${errTxt.trim()}`);
+    }
 
     // Garante que a transmissão do arquivo de vídeo foi 100% concluída antes de publicar
     console.log('[YouTube] Aguardando confirmação de envio dos dados do vídeo...');
     const uploadDoneSelector = 'text=/envio conclu[ií]do/i, text=/upload complete/i, text=/processando/i, text=/processing/i, text=/verificações concluídas/i, text=/checks complete/i';
     let uploadConfirmed = false;
     for (let u = 1; u <= 180; u++) {
+      if (await page.locator(processingErrorSelector).first().isVisible({ timeout: 500 }).catch(() => false)) {
+        const errTxt = await page.locator(processingErrorSelector).first().innerText().catch(() => 'Processamento interrompido');
+        throw new Error(`Processamento interrompido pelo YouTube: ${errTxt.trim()}`);
+      }
       const isDone = await page.locator(uploadDoneSelector).first().isVisible({ timeout: 1000 }).catch(() => false);
       if (isDone) {
         uploadConfirmed = true;
@@ -223,8 +250,8 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
     // Clica em Publicar
     console.log('[YouTube] >>> CLICANDO EM PUBLICAR <<<');
     const doneBtn = page.locator('ytcp-button#done-button, button:has-text("Publicar"), button:has-text("Salvar")').first();
-    await doneBtn.waitFor({ state: 'visible', timeout: 15000 });
-    await doneBtn.click();
+    await doneBtn.waitFor({ state: 'visible', timeout: 25000 });
+    await doneBtn.click({ force: true });
 
     // Aguarda confirmação
     console.log('[YouTube] Aguardando confirmação do YouTube...');
