@@ -324,30 +324,40 @@ async function downloadDirectHttp(url, destPath) {
   // Fallback: Download autenticado pelo Google Drive usando contexto persistente do navegador
 async function downloadGoogleDriveFileWithContext(ctx, fileId, destPath) {
   const downloadUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
-  console.log(`[Downloader] Acessando link do Drive via navegador autenticado: ${downloadUrl}`);
-
-  try {
-    const res = await ctx.request.get(downloadUrl, { maxRedirects: 10, timeout: 600000 });
-    const cType = res.headers()['content-type'] || '';
-    if (res.ok() && (cType.includes('video') || cType.includes('octet-stream'))) {
-      const buffer = await res.body();
-      if (buffer && buffer.length > 1000000 && !buffer.slice(0, 200).toString().toLowerCase().includes('<html')) {
-        fs.writeFileSync(destPath, buffer);
-        console.log(`[Downloader] Download direto via browser concluído: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB.`);
-        return true;
-      }
-    }
-  } catch (errReq) {
-    console.warn(`[Downloader] Request via browser gerou aviso: ${errReq.message}. Tentando página com form de confirmação...`);
-  }
+  console.log(`[Downloader] Baixando arquivo do Drive com Chrome autenticado: ${downloadUrl}`);
 
   const page = await ctx.newPage();
-  page.setDefaultTimeout(180000);
+  page.setDefaultTimeout(300000);
+
   try {
-    await page.goto(downloadUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
+    // 1. Tenta captura nativa do download pelo navegador
+    const [ download ] = await Promise.all([
+      page.waitForEvent('download', { timeout: 20000 }).catch(() => null),
+      page.goto(downloadUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null)
+    ]);
+
+    if (download) {
+      console.log('[Downloader] Evento de download nativo disparado pelo redirecionamento.');
+      await download.saveAs(destPath);
+      return true;
+    }
+
     await page.waitForTimeout(2000);
 
-    // Extrai a URL completa do formulário de confirmação (#download-form) com todos os parâmetros (id, export, authuser, confirm, uuid, at)
+    // 2. Se caiu na página de confirmação de vírus de arquivos grandes (>100MB)
+    const downloadBtn = page.locator('#uc-download-link, input[type="submit"], a[href*="confirm="], button:has-text("Fazer o download mesmo assim"), #download-button').first();
+    if (await downloadBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
+      console.log('[Downloader] Clicando em "Fazer o download mesmo assim" com captura nativa do Chrome...');
+      const [ virusDownload ] = await Promise.all([
+        page.waitForEvent('download', { timeout: 300000 }),
+        downloadBtn.click({ force: true })
+      ]);
+      await virusDownload.saveAs(destPath);
+      console.log(`[Downloader] Download nativo concluído e salvo em: ${destPath}`);
+      return true;
+    }
+
+    // 3. Fallback: extrai URL do form e usa stream com resume
     const formConfirmUrl = await page.evaluate(() => {
       const f = document.querySelector('form#download-form') || document.querySelector('form[action*="download"]');
       if (f) {
@@ -363,40 +373,17 @@ async function downloadGoogleDriveFileWithContext(ctx, fileId, destPath) {
     });
 
     if (formConfirmUrl) {
-      console.log(`[Downloader] URL de confirmação obtida com sucesso. Baixando stream...`);
-      const resConfirm = await ctx.request.get(formConfirmUrl, { maxRedirects: 10, timeout: 600000 });
-      if (resConfirm.ok()) {
-        const buf = await resConfirm.body();
-        if (buf && buf.length > 1000000 && !buf.slice(0, 200).toString().toLowerCase().includes('<html')) {
-          fs.writeFileSync(destPath, buf);
-          console.log(`[Downloader] Download de arquivo grande concluído: ${(buf.length / (1024 * 1024)).toFixed(1)} MB.`);
-          return true;
-        }
-      }
+      console.log('[Downloader] Baixando via URL de confirmação com suporte a resume...');
+      await downloadDirectHttp(formConfirmUrl, destPath);
+      return true;
     }
 
-    const confirmBtn = page.locator('#uc-download-link, a:has-text("Fazer download mesmo assim"), button:has-text("Fazer download mesmo assim"), a[href*="confirm="]').first();
-    if (await confirmBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      console.log('[Downloader] Clicando em "Fazer download mesmo assim"...');
-      const [ dl ] = await Promise.all([
-        page.waitForEvent('download', { timeout: 300000 }),
-        confirmBtn.click()
-      ]);
-      await dl.saveAs(destPath);
-      const st = fs.statSync(destPath);
-      if (st.size > 1000000) {
-        console.log(`[Downloader] Download via evento concluído: ${(st.size / (1024 * 1024)).toFixed(1)} MB.`);
-        return true;
-      }
-    }
-
-    throw new Error('Não foi possível obter o link de download direto do Google Drive.');
+    throw new Error('Nenhum link ou botão de download encontrado na página do Google Drive.');
   } finally {
     await page.close().catch(() => {});
   }
 }
 
-// Fallback: Baixa texto via navegador autenticado
 async function downloadTextFileWithContext(ctx, fileId) {
   if (!fileId) return '';
   const directUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
