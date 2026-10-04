@@ -170,6 +170,93 @@ async function downloadTextFileDirect(fileId) {
 }
 
 // Download direto e resiliente HTTP com suporte nativo a streaming de arquivos grandes (>100MB) do Google Drive
+async function downloadHttpStreamWithResume(downloadUrl, destPath) {
+  let expectedLength = 0;
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    let currentSize = 0;
+    if (fs.existsSync(destPath)) {
+      currentSize = fs.statSync(destPath).size;
+    }
+
+    if (expectedLength > 0 && currentSize >= expectedLength) {
+      console.log(`[Downloader] Arquivo 100% baixado: ${(currentSize / (1024 * 1024)).toFixed(1)} MB`);
+      return true;
+    }
+
+    const headers = {};
+    if (currentSize > 0) {
+      headers['Range'] = `bytes=${currentSize}-`;
+      console.log(`[Downloader] Retomando download de ${(currentSize / (1024 * 1024)).toFixed(1)} MB... (tentativa ${attempt})`);
+    } else {
+      console.log(`[Downloader] Iniciando stream HTTP direto (tentativa ${attempt})...`);
+    }
+
+    try {
+      await new Promise((resolve, reject) => {
+        const proto = downloadUrl.startsWith('https') ? https : http;
+        const req = proto.get(downloadUrl, { headers }, (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            let redirectUrl = res.headers.location;
+            if (redirectUrl.startsWith('/')) {
+              const u = new URL(downloadUrl);
+              redirectUrl = `${u.origin}${redirectUrl}`;
+            }
+            return downloadHttpStreamWithResume(redirectUrl, destPath).then(resolve).catch(reject);
+          }
+
+          if (res.statusCode !== 200 && res.statusCode !== 206) {
+            return reject(new Error(`HTTP Status ${res.statusCode}`));
+          }
+
+          const cType = res.headers['content-type'] || '';
+          if (cType.includes('text/html')) {
+            return reject(new Error('HTML recebido em vez de fluxo de vídeo.'));
+          }
+
+          if (res.headers['content-range']) {
+            const m = res.headers['content-range'].match(/\/(\d+)/);
+            if (m) expectedLength = parseInt(m[1], 10);
+          } else if (res.headers['content-length'] && currentSize === 0) {
+            expectedLength = parseInt(res.headers['content-length'], 10);
+          }
+
+          console.log(`[Downloader] Status ${res.statusCode}, tamanho total esperado: ${expectedLength > 0 ? (expectedLength / (1024 * 1024)).toFixed(1) + ' MB' : 'desconhecido'}`);
+
+          const outStream = fs.createWriteStream(destPath, { flags: currentSize > 0 ? 'a' : 'w' });
+          res.pipe(outStream);
+
+          outStream.on('finish', () => {
+            outStream.close();
+            try {
+              const stats = fs.statSync(destPath);
+              if (expectedLength > 0 && stats.size < expectedLength) {
+                return reject(new Error(`Download truncado: ${stats.size} de ${expectedLength} bytes`));
+              }
+              resolve(true);
+            } catch (e) {
+              reject(e);
+            }
+          });
+          outStream.on('error', reject);
+        });
+
+        req.on('error', reject);
+        req.setTimeout(300000, () => {
+          req.destroy();
+          reject(new Error('Timeout de socket no stream'));
+        });
+      });
+
+      return true;
+    } catch (err) {
+      console.warn(`[Downloader] Tentativa ${attempt} falhou: ${err.message}`);
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+
+  throw new Error(`Falha ao completar download após 10 tentativas.`);
+}
+
 async function downloadDirectHttp(url, destPath) {
   return new Promise((resolve, reject) => {
     const proto = url.startsWith('https') ? https : http;
@@ -216,36 +303,16 @@ async function downloadDirectHttp(url, destPath) {
           }
 
           if (confirmUrl) {
-            console.log(`[Downloader] Seguindo confirmação de arquivo grande: ${confirmUrl}`);
-            return downloadDirectHttp(confirmUrl, destPath).then(resolve).catch(reject);
+            console.log(`[Downloader] Seguindo confirmação de arquivo grande com resume: ${confirmUrl}`);
+            return downloadHttpStreamWithResume(confirmUrl, destPath).then(resolve).catch(reject);
           }
           return reject(new Error('Download retornou página HTML de login ou erro em vez do arquivo de vídeo.'));
         });
         return;
       }
 
-      // Stream direto de vídeo para o disco (sem estourar buffer de memória)
-      const fileStream = fs.createWriteStream(destPath);
-      res.pipe(fileStream);
-      fileStream.on('finish', () => {
-        fileStream.close();
-        try {
-          const stats = fs.statSync(destPath);
-          const head = fs.readFileSync(destPath).slice(0, 300).toString('utf8').toLowerCase();
-          if (head.includes('<html') || head.includes('<!doc') || head.includes('accounts.google.com')) {
-            try { fs.unlinkSync(destPath); } catch (_) {}
-            return reject(new Error('Download retornou página HTML em vez do arquivo de vídeo.'));
-          }
-          if (stats.size < 1000000) {
-            try { fs.unlinkSync(destPath); } catch (_) {}
-            return reject(new Error(`Download incompleto (${stats.size} bytes).`));
-          }
-        } catch (e) {
-          return reject(e);
-        }
-        resolve(true);
-      });
-      fileStream.on('error', reject);
+      // Se já veio o stream direto do arquivo
+      downloadHttpStreamWithResume(url, destPath).then(resolve).catch(reject);
     });
     req.on('error', reject);
     req.setTimeout(600000, () => {
@@ -254,8 +321,7 @@ async function downloadDirectHttp(url, destPath) {
     });
   });
 }
-
-// Fallback: Download autenticado pelo Google Drive usando contexto persistente do navegador
+  // Fallback: Download autenticado pelo Google Drive usando contexto persistente do navegador
 async function downloadGoogleDriveFileWithContext(ctx, fileId, destPath) {
   const downloadUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
   console.log(`[Downloader] Acessando link do Drive via navegador autenticado: ${downloadUrl}`);

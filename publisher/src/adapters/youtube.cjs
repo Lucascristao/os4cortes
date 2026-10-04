@@ -78,7 +78,12 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
     const tUpload = Date.now();
     await fileInput.setInputFiles(videoPath);
     console.log('[YouTube] Arquivo enviado! Aguardando processamento inicial...');
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(3000);
+
+    const unreadableError = page.locator('text=/arquivo ileg[ií]vel/i, text=/n[aã]o foi poss[ií]vel encontrar ou ler o arquivo/i, text=/could not find or read/i').first();
+    if (await unreadableError.isVisible({ timeout: 2500 }).catch(() => false)) {
+      throw new Error('O arquivo de vídeo foi considerado ilegível pelo YouTube Studio (download truncado ou incompleto).');
+    }
 
     console.log('[YouTube 4/5] Preenchendo metadados...');
     const safeTitle = (title || 'Corte').slice(0, 95);
