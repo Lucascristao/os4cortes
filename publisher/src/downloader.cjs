@@ -101,14 +101,24 @@ async function downloadGoogleDriveFileDirect(fileId, destPath) {
     }
 
     if (confirmUrl) {
-      console.log(`[Downloader] Confirmando download de arquivo grande: ${confirmUrl}`);
-      const resConfirm = await reqCtx.get(confirmUrl, { maxRedirects: 10, timeout: 600000 });
-      if (resConfirm.ok()) {
-        const buf = await resConfirm.body();
-        if (buf && buf.length > 500000 && !buf.slice(0, 100).toString().toLowerCase().includes('<html')) {
-          fs.writeFileSync(destPath, buf);
-          console.log(`[Downloader] Download grande concluído: ${(buf.length / (1024 * 1024)).toFixed(1)} MB.`);
+      console.log(`[Downloader] Confirmando download de arquivo grande via stream: ${confirmUrl}`);
+      try {
+        await downloadDirectHttp(confirmUrl, destPath);
+        if (isRealMp4File(destPath)) {
+          const stats = fs.statSync(destPath);
+          console.log(`[Downloader] Download de arquivo grande concluído: ${(stats.size / (1024 * 1024)).toFixed(1)} MB.`);
           return true;
+        }
+      } catch (errStream) {
+        console.warn(`[Downloader] Stream direto falhou: ${errStream.message}, tentando via request buffer...`);
+        const resConfirm = await reqCtx.get(confirmUrl, { maxRedirects: 10, timeout: 600000 });
+        if (resConfirm.ok()) {
+          const buf = await resConfirm.body();
+          if (buf && buf.length > 500000 && !buf.slice(0, 100).toString().toLowerCase().includes('<html')) {
+            fs.writeFileSync(destPath, buf);
+            console.log(`[Downloader] Download grande concluído: ${(buf.length / (1024 * 1024)).toFixed(1)} MB.`);
+            return true;
+          }
         }
       }
     }
@@ -159,21 +169,62 @@ async function downloadTextFileDirect(fileId) {
   }
 }
 
-// Fallback: Função auxiliar para download direto HTTP se o arquivo for público
+// Download direto e resiliente HTTP com suporte nativo a streaming de arquivos grandes (>100MB) do Google Drive
 async function downloadDirectHttp(url, destPath) {
   return new Promise((resolve, reject) => {
     const proto = url.startsWith('https') ? https : http;
     const req = proto.get(url, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return downloadDirectHttp(res.headers.location, destPath).then(resolve).catch(reject);
+        let redirectUrl = res.headers.location;
+        if (redirectUrl.startsWith('/')) {
+          const u = new URL(url);
+          redirectUrl = `${u.origin}${redirectUrl}`;
+        }
+        return downloadDirectHttp(redirectUrl, destPath).then(resolve).catch(reject);
       }
       if (res.statusCode !== 200) {
         return reject(new Error(`HTTP Status ${res.statusCode}`));
       }
+
       const cType = res.headers['content-type'] || '';
+      // Se for página HTML de confirmação de arquivo grande (>100MB) do Google Drive
       if (cType.includes('text/html')) {
-        return reject(new Error('Download retornou página HTML em vez de arquivo de vídeo.'));
+        let htmlBody = '';
+        res.on('data', chunk => { htmlBody += chunk; });
+        res.on('end', () => {
+          const formMatch = htmlBody.match(/<form[^>]*action="([^"]+)"[^>]*>([\s\S]*?)<\/form>/i);
+          let confirmUrl = null;
+          if (formMatch) {
+            const actionUrl = formMatch[1];
+            const formContent = formMatch[2];
+            const params = new URLSearchParams();
+            const inputMatches = [...formContent.matchAll(/<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"/gi)];
+            for (const m of inputMatches) params.set(m[1], m[2]);
+            confirmUrl = `${actionUrl}?${params.toString()}`;
+          } else {
+            const linkMatch = htmlBody.match(/href="([^"]+confirm=[^"]+)"/);
+            if (linkMatch) {
+              confirmUrl = linkMatch[1].replace(/&amp;/g, '&');
+              if (confirmUrl.startsWith('/')) confirmUrl = `https://drive.google.com${confirmUrl}`;
+            } else {
+              const uuidMatch = htmlBody.match(/name="uuid"\s+value="([^"]+)"/) || htmlBody.match(/uuid=([a-f0-9-]+)/);
+              const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+              if (idMatch) {
+                confirmUrl = `https://drive.usercontent.google.com/download?id=${idMatch[1]}&export=download&confirm=t${uuidMatch ? '&uuid=' + uuidMatch[1] : ''}`;
+              }
+            }
+          }
+
+          if (confirmUrl) {
+            console.log(`[Downloader] Seguindo confirmação de arquivo grande: ${confirmUrl}`);
+            return downloadDirectHttp(confirmUrl, destPath).then(resolve).catch(reject);
+          }
+          return reject(new Error('Download retornou página HTML de login ou erro em vez do arquivo de vídeo.'));
+        });
+        return;
       }
+
+      // Stream direto de vídeo para o disco (sem estourar buffer de memória)
       const fileStream = fs.createWriteStream(destPath);
       res.pipe(fileStream);
       fileStream.on('finish', () => {
@@ -365,7 +416,7 @@ function isRealMp4File(filePath) {
       return false;
     }
     const tag = buf.slice(4, 8).toString('ascii');
-    return tag === 'ftyp' || tag === 'moov' || tag === 'wide';
+    return tag === 'ftyp' || tag === 'moov' || tag === 'wide' || tag === 'mdat' || tag === 'free';
   } catch (_) {
     return false;
   }
@@ -698,10 +749,12 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
     if (!match) continue;
 
     const cutNum = parseInt(match[1], 10);
-    if (!cutsMap.has(cutNum)) {
-      cutsMap.set(cutNum, { cutIndex: cutNum, rawName: f.name });
+    const isThis16x9 = /_16x9\.(?:mp4|mov|mkv)$/i.test(f.name) || f.name.toLowerCase().includes('_16x9');
+    const cutKey = isThis16x9 ? `${cutNum}_16x9` : `${cutNum}_9x16`;
+    if (!cutsMap.has(cutKey)) {
+      cutsMap.set(cutKey, { cutIndex: cutNum, rawName: f.name });
     }
-    const cut = cutsMap.get(cutNum);
+    const cut = cutsMap.get(cutKey);
 
     const is16x9 = /_16x9\.(?:mp4|mov|mkv)$/i.test(f.name) || f.name.toLowerCase().includes('_16x9');
     const isLegenda = /(?:_|\s|-)?legenda\.(?:mp4|mov|mkv)$/i.test(f.name) ||
