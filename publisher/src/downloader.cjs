@@ -745,57 +745,58 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
   const cutsMap = new Map();
 
   for (const f of files) {
-    const match = f.name.match(/corte[_\s-]*(\d+)/i);
+    const match = f.name.match(/corte[\s-_]*(\d+)/i);
     if (!match) continue;
 
     const cutNum = parseInt(match[1], 10);
-    const isThis16x9 = /_16x9\.(?:mp4|mov|mkv)$/i.test(f.name) || f.name.toLowerCase().includes('_16x9');
-    const cutKey = isThis16x9 ? `${cutNum}_16x9` : `${cutNum}_9x16`;
+    const is16x9Format = /16x9|16_9|16-9/i.test(f.name);
+    const cutKey = is16x9Format ? `${cutNum}_16x9` : `${cutNum}_9x16`;
     if (!cutsMap.has(cutKey)) {
-      cutsMap.set(cutKey, { cutIndex: cutNum, rawName: f.name });
+      cutsMap.set(cutKey, { cutIndex: cutNum, rawName: f.name, formato: is16x9Format ? '16:9' : '9:16' });
     }
     const cut = cutsMap.get(cutKey);
 
-    const is16x9 = /_16x9\.(?:mp4|mov|mkv)$/i.test(f.name) || f.name.toLowerCase().includes('_16x9');
-    const isLegenda = /(?:_|\s|-)?legenda\.(?:mp4|mov|mkv)$/i.test(f.name) ||
-                      (f.name.toLowerCase().includes('legenda') && f.name.toLowerCase().endsWith('.mp4'));
-    const isPost = /(?:_|\s|-)?post\.txt$/i.test(f.name) ||
-                   (f.name.toLowerCase().includes('post') && f.name.toLowerCase().endsWith('.txt'));
+    const isVideoExt = /\.(mp4|mov|mkv|webm)$/i.test(f.name);
     const isSrt = /\.srt$/i.test(f.name);
-    const isCapa = /(?:_|\s|-)?capa\.(?:jpg|jpeg|png)$/i.test(f.name) ||
-                   (f.name.toLowerCase().includes('capa') && f.name.toLowerCase().endsWith('.jpg'));
-    const isRawVideo = /\.mp4$/i.test(f.name) && !isLegenda && !is16x9;
+    const isPost = /\.(txt|json)$/i.test(f.name) && (/post/i.test(f.name) || /descricao/i.test(f.name));
+    const isCapa = /\.(jpg|jpeg|png|webp)$/i.test(f.name) && (/capa/i.test(f.name) || /thumb/i.test(f.name));
 
-    if (is16x9) {
-      cut.video16x9 = { id: f.id, name: f.name };
-      cut.videoLegenda = { id: f.id, name: f.name };
-      cut.formato = '16:9';
-    } else if (isLegenda) {
-      cut.videoLegenda = { id: f.id, name: f.name };
-      cut.formato = '9:16';
+    if (isVideoExt) {
+      if (is16x9Format) {
+        cut.video16x9 = { id: f.id, name: f.name };
+        cut.videoLegenda = { id: f.id, name: f.name };
+        cut.formato = '16:9';
+      } else if (/legenda/i.test(f.name)) {
+        cut.videoLegenda = { id: f.id, name: f.name };
+        cut.formato = '9:16';
+      } else {
+        cut.rawVideo = { id: f.id, name: f.name };
+      }
     } else if (isPost) {
-      cut.post = { id: f.id, name: f.name };
-    } else if (isSrt) {
-      cut.srt = { id: f.id, name: f.name };
+      if (/post_youtube/i.test(f.name) || !cut.post) {
+        cut.post = { id: f.id, name: f.name };
+      }
     } else if (isCapa) {
       cut.capa = { id: f.id, name: f.name };
-    } else if (isRawVideo) {
-      cut.rawVideo = { id: f.id, name: f.name };
+    } else if (isSrt) {
+      cut.srt = { id: f.id, name: f.name };
     }
 
-    // Limpa o título do corte ignorando arquivos de capa ou textos de botões
-    if (!cut.titulo || cut.titulo.includes('capa') || cut.titulo.length > 60) {
-      const clean = sanitizeCutTitle(f.name);
-      if (clean && (!cut.titulo || !cut.titulo.includes('capa') || clean.length < cut.titulo.length)) {
-        cut.titulo = clean;
+    if (!isCapa && !isSrt) {
+      if (!cut.titulo || cut.titulo.includes('capa') || cut.titulo.length > 60) {
+        const clean = sanitizeCutTitle(f.name);
+        if (clean && (!cut.titulo || !cut.titulo.includes('capa') || clean.length < cut.titulo.length)) {
+          cut.titulo = clean;
+        }
       }
     }
   }
 
   const validCuts = Array.from(cutsMap.values())
     .map(c => {
-      // Se tiver vídeo com legenda, usa ele. Se não tiver mas tiver vídeo cru, usa como fallback
-      if (!c.videoLegenda && c.rawVideo) {
+      if (!c.videoLegenda && c.video16x9) {
+        c.videoLegenda = c.video16x9;
+      } else if (!c.videoLegenda && c.rawVideo) {
         c.videoLegenda = c.rawVideo;
       }
       if (!c.titulo || c.titulo.includes('capa')) {
@@ -803,7 +804,7 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
       }
       return c;
     })
-    .filter(c => c.videoLegenda && c.videoLegenda.id)
+    .filter(c => c.videoLegenda && c.videoLegenda.id && /\.(mp4|mov|mkv|webm)$/i.test(c.videoLegenda.name))
     .sort((a, b) => a.cutIndex - b.cutIndex);
 
   onLog(`[Drive Scan] ${validCuts.length} cortes com vídeo identificados na pasta.`);
