@@ -360,7 +360,21 @@ async function downloadGoogleDriveFileWithContext(ctx, fileId, destPath) {
 
     if (actualDownload) {
       console.log(`[Downloader] Gravando download nativo em disco: ${destPath}`);
-      await actualDownload.saveAs(destPath);
+      let checkTimer = null;
+      const savePromise = actualDownload.saveAs(destPath);
+      const pollPromise = new Promise((resolve) => {
+        checkTimer = setInterval(() => {
+          if (isRealMp4FileComplete(destPath)) {
+            clearInterval(checkTimer);
+            resolve(true);
+          }
+        }, 2500);
+      });
+      try {
+        await Promise.race([savePromise, pollPromise]);
+      } finally {
+        if (checkTimer) clearInterval(checkTimer);
+      }
       console.log(`[Downloader] Download nativo concluído e salvo em: ${destPath}`);
       return true;
     }
@@ -605,7 +619,15 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFi
         }
 
         console.log(`[Downloader] Iniciando download do vídeo do Corte ${cutIndex} via browser (ID: ${videoFileId})...`);
-        await downloadGoogleDriveFileWithContext(ctx, videoFileId, videoDestPath);
+        try {
+          await downloadGoogleDriveFileWithContext(ctx, videoFileId, videoDestPath);
+        } catch (errCtx) {
+          if (isRealMp4FileComplete(videoDestPath)) {
+            console.log(`[Downloader] Vídeo do Corte ${cutIndex} já está íntegro no disco (${errCtx.message}). Prosseguindo.`);
+          } else {
+            throw errCtx;
+          }
+        }
         downloadSuccess = isRealMp4FileComplete(videoDestPath);
       } catch (errAuth) {
         console.warn(`[Downloader] Tentativa via browser falhou (${errAuth.message}), tentando download direto...`);
