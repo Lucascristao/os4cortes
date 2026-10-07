@@ -164,6 +164,29 @@ class QueueExecutor extends EventEmitter {
     console.log(`[Executor] PROCESSANDO POSTAGEM: Corte ${p.cutIndex} no ${net.toUpperCase()}`);
     console.log('====================================================');
 
+    // Validacao estrita de integridade do video antes de abrir navegador
+    let isFileReady = false;
+    if (p.videoPath && fs.existsSync(p.videoPath)) {
+      try {
+        const { execSync } = require('child_process');
+        const out = execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${p.videoPath}"`, { timeout: 10000 }).toString().trim();
+        const dur = parseFloat(out);
+        if (!isNaN(dur) && dur > 5) {
+          isFileReady = true;
+        }
+      } catch (_) {}
+    }
+
+    if (!isFileReady) {
+      const currentSizeMb = (p.videoPath && fs.existsSync(p.videoPath)) ? (fs.statSync(p.videoPath).size / 1024 / 1024).toFixed(1) : '0';
+      console.warn(`[Executor] ⏳ Video do Corte ${p.cutIndex} (${net}) ainda nao esta completo no disco (${currentSizeMb} MB). Aguardando conclusao do download...`);
+      this.nextAvailable[net] = Date.now() + 30000;
+      this.q.status(job.id, 'queued', `Aguardando download completo (${currentSizeMb} MB no disco)...`);
+      this.emit('job-updated', { job, status: this.getStatus() });
+      this.activeJob = null;
+      return;
+    }
+
     this.q.status(job.id, 'publishing', `Iniciando envio para ${net}`);
     this.emit('job-started', { job, status: this.getStatus() });
 
@@ -181,7 +204,7 @@ class QueueExecutor extends EventEmitter {
             effectiveText = fileContent;
           }
           const firstLine = effectiveText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
-          if (firstLine && firstLine.length > 3) {
+          if (firstLine && firstLine.length > 3 && (!effectiveTitle || /^corte\s*\d+/i.test(effectiveTitle))) {
             effectiveTitle = firstLine;
           }
         } catch (_) {}

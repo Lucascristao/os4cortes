@@ -46,6 +46,8 @@ class DriveUploader:
 
         self.folder_id = folder_id
         self.service = self._criar_service()
+        # Garante que a pasta base do usuário no Drive também esteja pública
+        self.tornar_publico(self.folder_id)
 
     def _criar_service(self):
         creds = credenciais_por_env()
@@ -55,6 +57,20 @@ class DriveUploader:
                 "Defina GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET e GOOGLE_REFRESH_TOKEN."
             )
         return build("drive", "v3", credentials=creds, cache_discovery=False)
+
+    def tornar_publico(self, file_id: str) -> bool:
+        """Define a permissão do arquivo/pasta para 'Qualquer pessoa com o link' como leitor."""
+        try:
+            self.service.permissions().create(
+                fileId=file_id,
+                body={"role": "reader", "type": "anyone"},
+                fields="id",
+            ).execute(num_retries=3)
+            print(f"[DriveUploader] Item {file_id} tornado público ('Qualquer pessoa com o link').", flush=True)
+            return True
+        except Exception as exc:
+            print(f"[DriveUploader] Aviso: não foi possível definir permissão pública em {file_id}: {exc}", flush=True)
+            return False
 
     def criar_pasta(self, nome: str, parent_id: str | None = None) -> str:
         metadata = {
@@ -67,7 +83,10 @@ class DriveUploader:
         for tentativa in range(1, max_tentativas + 1):
             try:
                 result = self.service.files().create(body=metadata, fields="id,name").execute(num_retries=3)
-                return str(result["id"])
+                folder_id = str(result["id"])
+                # Torna a pasta pública automaticamente ('Qualquer pessoa com o link') para download desacoplado
+                self.tornar_publico(folder_id)
+                return folder_id
             except Exception as exc:
                 ultimo_erro = exc
                 print(f"[DriveUploader] Erro ao criar pasta '{nome}' (tentativa {tentativa}/{max_tentativas}): {exc}", flush=True)

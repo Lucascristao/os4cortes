@@ -1179,17 +1179,33 @@ function mostrarResultados(result, autoSend = true) {
   result.cuts.forEach((corte) => {
     const card = document.createElement("article");
     card.className = "result-card";
+    const is16x9 = corte.formato === "16:9" || corte.destino === "youtube";
     const title = document.createElement("strong");
-    title.textContent = `${String(corte.index).padStart(2, "0")}. ${corte.titulo}`;
+    title.textContent = `${String(corte.index).padStart(2, "0")}. ${corte.titulo}${is16x9 ? " (YouTube 16:9)" : ""}`;
     const links = document.createElement("div");
     links.className = "result-links";
-    links.append(
-      resultLink("Vídeo com legenda", corte.files.videoLegenda.url, true),
-      resultLink("Abrir legendado no Drive", corte.files.videoLegenda.url),
-      resultLink("Vídeo sem legenda", corte.files.video.url),
-      resultLink("SRT", corte.files.srt.url),
-      resultLink("Texto da postagem", corte.files.post.url),
-    );
+    if (is16x9) {
+      links.append(
+        resultLink("Vídeo YouTube (16:9)", (corte.files.video || corte.files.videoLegenda).url, true),
+        resultLink("Abrir no Drive", (corte.files.video || corte.files.videoLegenda).url),
+        resultLink("SRT", corte.files.srt.url),
+        resultLink("Texto da postagem", corte.files.post.url),
+      );
+      if (corte.files.capa?.url) {
+        links.append(resultLink("Capa / Thumbnail", corte.files.capa.url));
+      }
+    } else {
+      links.append(
+        resultLink("Vídeo com legenda", corte.files.videoLegenda.url, true),
+        resultLink("Abrir legendado no Drive", corte.files.videoLegenda.url),
+        resultLink("Vídeo sem legenda", corte.files.video.url),
+        resultLink("SRT", corte.files.srt.url),
+        resultLink("Texto da postagem", corte.files.post.url),
+      );
+      if (corte.files.capa?.url) {
+        links.append(resultLink("Capa", corte.files.capa.url));
+      }
+    }
     card.append(title, links);
     resultsList.appendChild(card);
   });

@@ -44,11 +44,14 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
 
   try {
     console.log('[YouTube 1/5] Carregando YouTube Studio...');
-    await page.goto('https://studio.youtube.com/', { waitUntil: 'domcontentloaded' });
+    await page.goto('https://studio.youtube.com/?approve_browser_access=true', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(3000);
 
     // Fecha possíveis popups de boas-vindas do Studio
     const dismissButtons = [
+      page.locator('a[href*="approve_browser_access"]'),
+      page.locator('text=/pular para o youtube studio/i'),
+      page.locator(':has-text("PULAR PARA O YOUTUBE STUDIO")'),
       page.locator('ytcp-button#dismiss-button'),
       page.locator('button:has-text("Dispensar")'),
       page.locator('button:has-text("Continuar")'),
@@ -56,19 +59,20 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
     ];
     for (const btn of dismissButtons) {
       if (await btn.count() > 0 && await btn.first().isVisible().catch(() => false)) {
+        console.log('[YouTube] Clicando em botão de dispensar/pular aviso inicial...');
         await btn.first().click().catch(() => {});
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(2000);
       }
     }
 
     console.log('[YouTube 2/5] Abrindo modal de upload...');
-    const createBtn = page.locator('button[id="create-icon"], ytcp-button:has-text("Criar"), button:has-text("Criar"), div[id="create-icon"]').first();
-    await createBtn.waitFor({ state: 'visible', timeout: 20000 });
+    const createBtn = page.locator('button[id="create-icon"], ytcp-button#create-icon, ytcp-button:has-text("Criar"), ytcp-button:has-text("Create"), button:has-text("Criar"), button:has-text("Create"), div[id="create-icon"], [aria-label*="Criar"], [aria-label*="Create"], ytcp-button-shape#create-icon').first();
+    await createBtn.waitFor({ state: 'visible', timeout: 45000 });
     await createBtn.click({ force: true });
     await page.waitForTimeout(1000);
 
-    const uploadOption = page.locator('tp-yt-paper-item:has-text("Enviar vídeos"), #text-item:has-text("Enviar vídeos")').first();
-    await uploadOption.waitFor({ state: 'visible', timeout: 15000 });
+    const uploadOption = page.locator('tp-yt-paper-item:has-text("Enviar vídeos"), tp-yt-paper-item:has-text("Upload videos"), tp-yt-paper-item:has-text("Enviar"), #text-item:has-text("Enviar vídeos"), #text-item:has-text("Upload videos"), ytcp-text-menu #text-item').first();
+    await uploadOption.waitFor({ state: 'visible', timeout: 20000 });
     await uploadOption.click({ force: true });
     await page.waitForTimeout(2000);
 
@@ -86,46 +90,114 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
     }
 
     console.log('[YouTube 4/5] Preenchendo metadados...');
-    const safeTitle = (title || 'Corte').slice(0, 95);
-    const titleBox = page.locator('ytcp-video-metadata-editor #title-textarea #textbox, #title-textarea #textbox, #textbox[aria-label*="título" i]').first();
-    if (await titleBox.isVisible({ timeout: 15000 }).catch(() => false)) {
-      await titleBox.click({ force: true });
+    const safeTitle = (title || 'Corte').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').slice(0, 95).trim();
+
+    // Seletores abrangentes para o campo de Título no YouTube Studio (Upload Dialog e Metadata Editor)
+    const titleSelectors = [
+      '#title-textarea #textbox',
+      'ytcp-video-title #textbox',
+      'ytcp-social-suggestions-textbox[label*="título" i] #textbox',
+      'ytcp-social-suggestions-textbox[label*="title" i] #textbox',
+      'ytcp-social-suggestions-textbox #textbox',
+      '#textbox[aria-label*="título" i]',
+      '#textbox[aria-label*="title" i]',
+      'div[aria-label*="título" i][contenteditable="true"]',
+      'div[aria-label*="title" i][contenteditable="true"]',
+      'ytcp-video-metadata-editor #title-textarea #textbox'
+    ];
+    const titleBox = page.locator(titleSelectors.join(', ')).first();
+
+    // Aguarda até 45s o campo de título estar visível (essencial para vídeos 16:9 maiores onde o diálogo leva alguns segundos para renderizar)
+    try {
+      await titleBox.waitFor({ state: 'visible', timeout: 45000 });
+      await titleBox.scrollIntoViewIfNeeded().catch(() => {});
+      await titleBox.click();
+      await titleBox.focus().catch(() => {});
+      await page.waitForTimeout(200);
       await page.keyboard.press('Control+A');
       await page.keyboard.press('Backspace');
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(150);
       await page.keyboard.insertText(safeTitle);
-      console.log('[YouTube] Título definido com sucesso:', safeTitle);
+      console.log('[YouTube] Título inserido com sucesso:', safeTitle);
+      await page.waitForTimeout(400);
+    } catch (errTitleWait) {
+      console.error('[YouTube] ❌ Falha ao localizar/preencher campo de título:', errTitleWait.message);
+      throw new Error(`Não foi possível carregar o formulário de metadados do YouTube Studio a tempo: ${errTitleWait.message}`);
     }
 
-    // Preenche descrição com seletor estrito do container de descrição
-    const descBox = page.locator('ytcp-video-metadata-editor #description-textarea #textbox, #description-container #textbox, ytcp-social-suggestions-textbox#description-textarea div#textbox').first();
-    if (description && await descBox.isVisible({ timeout: 5000 }).catch(() => false)) {
+    // Preenche descrição com seletores abrangentes e garantia estrita de foco
+    const descSelectors = [
+      '#description-textarea #textbox',
+      'ytcp-video-description #textbox',
+      'ytcp-social-suggestions-textbox[label*="descri" i] #textbox',
+      'ytcp-social-suggestions-textbox[label*="description" i] #textbox',
+      'div[aria-label*="descri" i][contenteditable="true"]',
+      'div[aria-label*="description" i][contenteditable="true"]',
+      '#description-container #textbox',
+      '#textbox[aria-label*="descri" i]',
+      '#textbox[aria-label*="description" i]',
+      'ytcp-video-metadata-editor #description-textarea #textbox'
+    ];
+    const descBox = page.locator(descSelectors.join(', ')).first();
+
+    if (description) {
       try {
-        await descBox.scrollIntoViewIfNeeded().catch(() => {});
-        await descBox.click({ force: true });
-        await page.waitForTimeout(300);
-        await page.keyboard.press('Control+A');
-        await page.keyboard.press('Backspace');
-        await page.waitForTimeout(200);
-        await page.keyboard.insertText(description);
-        console.log('[YouTube] Descrição preenchida com sucesso!');
+        if (await descBox.isVisible({ timeout: 15000 }).catch(() => false)) {
+          await descBox.scrollIntoViewIfNeeded().catch(() => {});
+          await descBox.click();
+          await descBox.focus().catch(() => {});
+          await page.waitForTimeout(300);
+
+          // Verifica se o foco ativo realmente migrou para a descrição antes de enviar teclas
+          const isDescFocused = await descBox.evaluate((el) => {
+            const active = document.activeElement;
+            return active === el || el.contains(active);
+          }).catch(() => false);
+
+          if (!isDescFocused) {
+            console.warn('[YouTube] Foco ainda não estava no elemento de descrição após clique. Reforçando foco...');
+            await descBox.click({ force: true }).catch(() => {});
+            await descBox.focus().catch(() => {});
+            await page.waitForTimeout(200);
+          }
+
+          await page.keyboard.press('Control+A');
+          await page.keyboard.press('Backspace');
+          await page.waitForTimeout(200);
+          await page.keyboard.insertText(description);
+          console.log('[YouTube] Descrição preenchida com sucesso!');
+          await page.waitForTimeout(500);
+        } else {
+          console.warn('[YouTube] Caixa de descrição não ficou visível a tempo.');
+        }
       } catch (errDesc) {
         console.warn('[YouTube] Aviso ao preencher descrição:', errDesc.message);
       }
     }
 
-    // Validação estrita de segurança do título (máximo 100 caracteres exigido pelo YouTube)
+    // Pós-verificação estrita de integridade do Título:
+    // Garante que o título não foi corrompido pela descrição, não divergiu e não permaneceu o nome do arquivo MP4
     try {
-      const currentTitle = (await titleBox.innerText().catch(() => '')) || '';
-      if (currentTitle.length > 100 || currentTitle.includes('\n')) {
-        console.warn(`[YouTube] Título excedeu 100 chars (${currentTitle.length} chars). Restaurando título seguro de ${safeTitle.length} chars...`);
-        await titleBox.click({ force: true });
+      const currentTitle = ((await titleBox.innerText().catch(() => '')) || '').trim();
+      if (currentTitle !== safeTitle) {
+        console.warn(`[YouTube] Título divergente detectado (atual: "${currentTitle}", esperado: "${safeTitle}"). Restaurando título oficial...`);
+        await titleBox.scrollIntoViewIfNeeded().catch(() => {});
+        await titleBox.click();
+        await titleBox.focus().catch(() => {});
+        await page.waitForTimeout(200);
         await page.keyboard.press('Control+A');
         await page.keyboard.press('Backspace');
-        await page.waitForTimeout(200);
+        await page.waitForTimeout(150);
         await page.keyboard.insertText(safeTitle);
+        await page.waitForTimeout(400);
+        const verifiedTitle = ((await titleBox.innerText().catch(() => '')) || '').trim();
+        console.log('[YouTube] Título oficial restaurado e confirmado:', verifiedTitle);
+      } else {
+        console.log('[YouTube] Título verificado e confirmado:', currentTitle);
       }
-    } catch (_) {}
+    } catch (errVerify) {
+      console.warn('[YouTube] Aviso na verificação de integridade do título:', errVerify.message);
+    }
 
     // Upload opcional de miniatura personalizada (Thumbnail / Capa 16:9)
     if (thumbnailPath && fs.existsSync(thumbnailPath)) {

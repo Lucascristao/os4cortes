@@ -37,7 +37,7 @@ async function publishInstagramReels({ videoPath, caption }) {
     await page.keyboard.press('Escape').catch(() => {});
 
     console.log('[Instagram 2/6] Abrindo modal Criar (+) ➔ Postar...');
-    const plusIcon = page.locator('svg[aria-label="Novo post"], svg[aria-label="Nova publicação"], svg[aria-label="New post"]').first();
+    const plusIcon = page.locator('a:has(svg[aria-label="Novo post"]), a:has(svg[aria-label="Nova publicação"]), div[role="button"]:has(svg[aria-label*="post" i]), [aria-label="Novo post"], [aria-label="Nova publicação"], [aria-label="New post"], svg[aria-label="Novo post"], svg[aria-label="Nova publicação"], svg[aria-label="New post"], a:has-text("Criar")').first();
     await plusIcon.waitFor({ state: 'visible', timeout: 15000 });
     await plusIcon.click({ force: true });
     await page.waitForTimeout(600);

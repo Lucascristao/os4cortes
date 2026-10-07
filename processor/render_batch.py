@@ -201,7 +201,6 @@ def main() -> int:
 
                 arquivos = [
                     ("video", video_16x9),
-                    ("videoLegenda", video_16x9),
                     ("srt", srt_path),
                     ("post", post_path),
                 ]
@@ -290,8 +289,8 @@ def main() -> int:
                     "url": f"https://drive.google.com/file/d/{ids['video']}/view",
                 },
                 "videoLegenda": {
-                    "id": ids["videoLegenda"],
-                    "url": f"https://drive.google.com/file/d/{ids['videoLegenda']}/view",
+                    "id": ids.get("videoLegenda", ids["video"]),
+                    "url": f"https://drive.google.com/file/d/{ids.get('videoLegenda', ids['video'])}/view",
                 },
                 "srt": {
                     "id": ids["srt"],

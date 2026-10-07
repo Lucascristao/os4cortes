@@ -128,7 +128,8 @@ class LocalBridgeServer {
 
   async processBatchInBackground(batch) {
     try {
-      await downloadBatch(batch, (downloadedCut) => {
+      const totalCuts = (batch.cuts || []).filter(c => c.files?.videoLegenda?.id || c.files?.video?.id).length;
+      const downloadedCuts = await downloadBatch(batch, (downloadedCut) => {
         // Assim que o corte é baixado, enfileira no SQLite
         const addedIds = this.executor.enqueueCorte({
           cutIndex: downloadedCut.cutIndex,
@@ -147,7 +148,12 @@ class LocalBridgeServer {
           this.onLog(`Corte ${downloadedCut.cutIndex}: Arquivos locais prontos (já constava na fila ou concluído).`);
         }
       });
-      this.onLog(`Todos os downloads da sessão ${batch.requestId} foram concluídos! Fila em execução.`);
+      const failedCount = totalCuts - downloadedCuts.length;
+      if (failedCount > 0) {
+        this.onLog(`⚠️ Downloads da sessão ${batch.requestId}: ${downloadedCuts.length}/${totalCuts} cortes baixados. ${failedCount} corte(s) falharam no download do Drive.`);
+      } else {
+        this.onLog(`✅ Todos os ${totalCuts} downloads da sessão ${batch.requestId} foram concluídos! Fila em execução.`);
+      }
     } catch (err) {
       console.error('[Bridge] Erro durante download em lote:', err);
       this.onLog(`Erro nos downloads do lote: ${err.message}`);

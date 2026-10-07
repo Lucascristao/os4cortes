@@ -70,23 +70,35 @@ async function ensureFolder(accessToken: string): Promise<string> {
     `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=10`
   );
 
-  if (found.files && found.files.length > 0) {
-    return found.files[0].id;
-  }
+  const folderId = (found.files && found.files.length > 0)
+    ? found.files[0].id
+    : (await driveFetch(
+        accessToken,
+        "https://www.googleapis.com/drive/v3/files?fields=id,name",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: "OS4 Cortes",
+            mimeType: "application/vnd.google-apps.folder",
+          }),
+        }
+      )).id;
 
-  const created = await driveFetch(
-    accessToken,
-    "https://www.googleapis.com/drive/v3/files?fields=id,name",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        name: "OS4 Cortes",
-        mimeType: "application/vnd.google-apps.folder",
-      }),
-    }
-  );
+  try {
+    await driveFetch(
+      accessToken,
+      `https://www.googleapis.com/drive/v3/files/${folderId}/permissions`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          role: "reader",
+          type: "anyone",
+        }),
+      }
+    );
+  } catch (_) {}
 
-  return created.id;
+  return folderId;
 }
 
 export default async (req: Request) => {

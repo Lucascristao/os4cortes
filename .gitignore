@@ -36,3 +36,8 @@ Thumbs.db
 # Node / Netlify
 node_modules/
 .netlify/
+
+# Rascunhos e scratch locais
+scratch/
+*.dat
+*.tmp
