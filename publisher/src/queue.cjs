@@ -9,7 +9,7 @@ class Queue {
       CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY, job TEXT, network TEXT NOT NULL, day TEXT NOT NULL, started INTEGER NOT NULL, next INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, job TEXT, state TEXT NOT NULL, at INTEGER NOT NULL, detail TEXT, synced INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);`);
-    this.db.prepare("UPDATE jobs SET state='queued', evidence='Recuperado após reinicialização' WHERE state='publishing'").run();
+    this.db.prepare("UPDATE jobs SET state='verify', evidence='Publicação interrompida. Verificar antes de reenviar.' WHERE state='publishing'").run();
     this.db.prepare("UPDATE jobs SET state='queued' WHERE state='preparing'").run();
   }
   transaction(fn) { this.db.exec('BEGIN IMMEDIATE'); try {const result=fn();this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;} }
@@ -22,7 +22,7 @@ class Queue {
   status(id,state,detail='',now=Date.now()) { this.transaction(()=>{this.db.prepare('UPDATE jobs SET state=?,evidence=? WHERE id=?').run(state,detail,id);this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(),id,state,now,detail);}); }
   eligibility(network,now=Date.now()) {
     const count=this.db.prepare('SELECT count(*) n FROM attempts WHERE network=? AND day=?').get(network,day(now)).n;
-    const next=this.db.prepare('SELECT max(next) n FROM attempts WHERE network=?').get(network).n || 0;
+    const next=Math.max(this.db.prepare('SELECT max(next) n FROM attempts WHERE network=?').get(network).n || 0, this.get('network_next', {})[network] || 0);
     return {eligible:count<50 && now>=next,count,next};
   }
   begin(id,now=Date.now(),delay=crypto.randomInt(180,301)*1000) {
@@ -32,10 +32,11 @@ class Queue {
       if(!job || !['queued','preparing'].includes(job.state)) throw new Error('Pedido já iniciado ou indisponível');
       const p=JSON.parse(job.payload);
       if(!this.eligibility(p.network,now).eligible) throw new Error('Aguardar limite ou intervalo');
-      if(this.db.prepare("SELECT id FROM jobs WHERE state='publishing'").get()) throw new Error('Outra publicação está ativa');
+      const active=this.db.prepare("SELECT payload FROM jobs WHERE state='publishing'").all();
+      if(active.length>=2 || active.some(j=>JSON.parse(j.payload).network===p.network)) throw new Error('Rede ou limite de envios simultâneos ocupado');
       this.db.prepare('INSERT INTO attempts VALUES(?,?,?,?,?,?)').run(crypto.randomUUID(),id,p.network,day(now),now,now+delay);
       this.db.prepare("UPDATE jobs SET state='publishing' WHERE id=?").run(id);
-      this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(),id,'publishing',now,'Intenção persistida antes do clique final');
+      this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(),id,'publishing',now,'Início de tentativa e intervalo persistidos');
     });
   }
   completedTodayJobIds(now = Date.now()) {
@@ -60,6 +61,7 @@ class Queue {
     return this.transaction(() => {
       const job = this.db.prepare('SELECT * FROM jobs WHERE id=?').get(id);
       if (!job) throw new Error('Corte não encontrado na fila');
+      if (!['failed','cancelled'].includes(job.state)) throw new Error('Verifique a publicação antes de reenviar este corte.');
       this.db.prepare("UPDATE jobs SET state='queued', evidence='Reenfileirado manualmente' WHERE id=?").run(id);
       this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(), id, 'queued', now, 'Reenfileirado pelo usuário');
       return true;
@@ -85,6 +87,24 @@ class Queue {
   }
   set(key,value) {this.db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run(key,JSON.stringify(value));}
   get(key,fallback=null) {const r=this.db.prepare('SELECT value FROM settings WHERE key=?').get(key);return r?JSON.parse(r.value):fallback;}
+  stage(id, state, detail, now=Date.now()) {
+    this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(),id,state,now, typeof detail==='string'?detail:JSON.stringify(detail));
+  }
+  history(limit=200) {
+    return this.db.prepare('SELECT e.at,e.state,e.detail,j.payload FROM events e LEFT JOIN jobs j ON j.id=e.job ORDER BY e.at DESC LIMIT ?').all(limit).map(e=>{
+      const p=e.payload?JSON.parse(e.payload):{};
+      return {at:e.at,state:e.state,detail:e.detail,network:p.network,cutIndex:p.cutIndex};
+    });
+  }
+  confirmation(id) {
+    const row=this.db.prepare("SELECT detail FROM events WHERE job=? AND state='publication_confirmed' ORDER BY at DESC LIMIT 1").get(id);
+    try{return row?JSON.parse(row.detail):null;}catch{return null;}
+  }
+  markVerified(id) {
+    const job=this.list().find(j=>j.id===id);
+    if(!job || job.state!=='verify') throw new Error('Publicação não está aguardando verificação.');
+    this.status(id,'completed','Publicação conferida na rede pelo usuário.');
+  }
   close(){this.db.close();}
 }
 module.exports={Queue,day};

@@ -46,8 +46,10 @@ function formatarTituloViralYoutube(tituloBruto, maxChars = 70) {
   return s || 'Corte';
 }
 
-async function publishYouTubeVideo({ videoPath, title, description = '', thumbnailPath = null }) {
+async function publishYouTubeVideo({ videoPath, title, description = '', thumbnailPath = null, attempt }) {
+  attempt?.stage('Aguardando acesso ao Google');
   return withGoogleLock(async () => {
+    attempt?.stage('Abrindo YouTube');
     const startTime = Date.now();
     const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
     const profileDir = path.join(dataDir, 'profiles', 'youtube');
@@ -82,6 +84,7 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
       args: ['--disable-blink-features=AutomationControlled']
     });
 
+    await attempt?.attach(ctx);
     const page = ctx.pages()[0] || await ctx.newPage();
     page.setDefaultTimeout(60000);
 
@@ -123,7 +126,8 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
     const fileInput = page.locator('input[type="file"]').first();
     await fileInput.waitFor({ state: 'attached', timeout: 20000 });
     const tUpload = Date.now();
-    await fileInput.setInputFiles(videoPath);
+    attempt?.stage('Enviando vídeo');
+      await fileInput.setInputFiles(videoPath);
     console.log('[YouTube] Arquivo enviado! Aguardando processamento inicial...');
     await page.waitForTimeout(3000);
 
@@ -391,6 +395,8 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
     console.log('[YouTube] >>> CLICANDO EM PUBLICAR <<<');
     await doneBtn.waitFor({ state: 'visible', timeout: 15000 });
     await doneBtn.scrollIntoViewIfNeeded().catch(() => {});
+    attempt?.stage('Publicando e aguardando confirmação');
+    attempt?.beforePublish();
     await doneBtn.click({ force: true });
 
     // Aguarda confirmação
@@ -405,10 +411,6 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
       'text="Short publicado"',
       'text="Vídeo enviado"',
       'text="Processando vídeo"',
-      'text="Verificações concluídas"',
-      'button:has-text("Fechar")',
-      'ytcp-button:has-text("Fechar")',
-      'ytcp-button#close-button'
     ];
 
     for (let w = 1; w <= 45; w++) {
@@ -423,6 +425,7 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
 
       if (isSuccess) {
         confirmed = true;
+        attempt?.confirm({ok:true,confirmed:true,network:'youtube',evidence:'Diálogo de publicação do YouTube',at:Date.now()});
         console.log('[YouTube] >>> VÍDEO CONFIRMADO PELO YOUTUBE! <<<');
         console.log('[YouTube] Mantendo navegador conectado por 15 segundos para estabilização de processamento e handshake...');
         await page.waitForTimeout(15000);

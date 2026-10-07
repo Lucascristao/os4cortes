@@ -59,6 +59,7 @@ async function downloadGoogleDriveFileDirect(fileId, destPath) {
   }
 
   const downloadUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
+  const imageFile = /\.(jpg|jpeg|png)$/i.test(destPath);
   console.log(`[Downloader] Acessando link do Drive (modo desacoplado): ${downloadUrl}`);
 
   const reqCtx = await request.newContext({
@@ -69,9 +70,9 @@ async function downloadGoogleDriveFileDirect(fileId, destPath) {
   try {
     const res = await reqCtx.get(downloadUrl, { maxRedirects: 5, timeout: 12000 });
     const cType = res.headers()['content-type'] || '';
-    if (res.ok() && (cType.includes('video') || cType.includes('octet-stream'))) {
+    if (res.ok() && (cType.includes('video') || cType.includes('octet-stream') || (imageFile && cType.includes('image/')))) {
       const buf = await res.body();
-      if (buf && buf.length > 500000 && !buf.slice(0, 100).toString().toLowerCase().includes('<html')) {
+      if (buf && buf.length > (imageFile ? 100 : 500000) && !buf.slice(0, 100).toString().toLowerCase().includes('<html')) {
         fs.writeFileSync(destPath, buf);
         console.log(`[Downloader] Download direto concluído: ${(buf.length / (1024 * 1024)).toFixed(1)} MB.`);
         return true;
@@ -520,8 +521,17 @@ function isRealMp4FileComplete(filePath) {
 }
 
 // Função principal: baixa um corte completo (.mp4 + .txt) e mede tempo e velocidade
-async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFileId = null, formato = null, requestId = 'default', onProgress = () => {} }) {
-  const destDir = path.join(downloadsBaseDir, requestId);
+const activeDownloads = new Map();
+function downloadCorte(options) {
+  const key = `${options.videoFileId}:${options.formato || '9:16'}`;
+  if (activeDownloads.has(key)) return activeDownloads.get(key);
+  const task = downloadCorteOnce(options).finally(() => activeDownloads.delete(key));
+  activeDownloads.set(key, task); return task;
+}
+async function downloadCorteOnce({ cutIndex, titulo, videoFileId, postFileId, capaFileId = null, formato = null, requestId = 'default', onProgress = () => {} }) {
+  if (!/^[\w-]{1,200}$/.test(videoFileId || '') || !/^[\w-]{1,200}$/.test(postFileId || '')) throw new Error('Pacote ainda não contém vídeo e texto finais.');
+  const safeRequest = String(requestId).replace(/[^\w-]/g, '_').slice(0, 200);
+  const destDir = path.join(downloadsBaseDir, safeRequest, videoFileId);
   fs.mkdirSync(destDir, { recursive: true });
 
   const cleanInitialTitle = sanitizeCutTitle(titulo) || `Corte ${cutIndex}`;
@@ -530,8 +540,8 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFi
   const videoFileName = is16x9
     ? `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_16x9.mp4`
     : `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_legenda.mp4`;
-  const postFileName = `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_post.txt`;
-  const capaFileName = `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_capa.jpg`;
+  const postFileName = `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_${is16x9 ? '16x9' : '9x16'}_post.txt`;
+  const capaFileName = `corte_${String(cutIndex).padStart(2, '0')}_${safeTitle}_${is16x9 ? '16x9' : '9x16'}_capa.jpg`;
   const videoDestPath = path.join(destDir, videoFileName);
   const postDestPath = path.join(destDir, postFileName);
   const capaDestPath = path.join(destDir, capaFileName);
@@ -650,6 +660,7 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFi
     try { if (fs.existsSync(videoDestPath)) fs.unlinkSync(videoDestPath); } catch (_) {}
     throw new Error(`Arquivo de vídeo do Corte ${cutIndex} não foi baixado corretamente (não é um MP4 válido).`);
   }
+  if (!postText.trim()) throw new Error('Texto da postagem não foi baixado. O vídeo ficará aguardando nova tentativa.');
 
   const durationSec = Number(((Date.now() - t0) / 1000).toFixed(1));
   const stats = fs.statSync(videoDestPath);
@@ -704,7 +715,7 @@ async function downloadBatch(batch, onCutDownloaded = () => {}) {
   const failedCuts = [];
 
   for (const c of cuts) {
-    const videoFileId = c.files?.videoLegenda?.id || c.files?.video?.id;
+    const videoFileId = c.formato === '16:9' ? c.files?.video?.id || c.files?.videoLegenda?.id : c.files?.videoLegenda?.id;
     const postFileId = c.files?.post?.id;
     const capaFileId = c.files?.capa?.id;
     const formato = c.formato || (c.destino === 'youtube' ? '16:9' : '9:16');
@@ -729,6 +740,7 @@ async function downloadBatch(batch, onCutDownloaded = () => {}) {
             console.log(`[Downloader Progress] Corte ${c.index}: ${p.status}`);
           }
         });
+        info.driveFileId = videoFileId;
         downloadedCuts.push(info);
         onCutDownloaded(info);
         downloaded = true;
@@ -758,7 +770,7 @@ async function downloadBatch(batch, onCutDownloaded = () => {}) {
     await new Promise(r => setTimeout(r, 30000));
 
     for (const c of failedCuts) {
-      const videoFileId = c.files?.videoLegenda?.id || c.files?.video?.id;
+      const videoFileId = c.formato === '16:9' ? c.files?.video?.id || c.files?.videoLegenda?.id : c.files?.videoLegenda?.id;
       const postFileId = c.files?.post?.id;
       const capaFileId = c.files?.capa?.id;
       const formato = c.formato || (c.destino === 'youtube' ? '16:9' : '9:16');
@@ -776,6 +788,7 @@ async function downloadBatch(batch, onCutDownloaded = () => {}) {
             console.log(`[Downloader Progress] Corte ${c.index}: ${p.status} (retry final)`);
           }
         });
+        info.driveFileId = videoFileId;
         downloadedCuts.push(info);
         onCutDownloaded(info);
         console.log(`[Downloader] ✅ Corte ${c.index || c.numero} recuperado com sucesso no retry final!`);
@@ -855,6 +868,7 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
 
             let matchedName = null;
             for (const src of sources) {
+              if (src.includes('_os4_publicador.json')) { matchedName = '_os4_publicador.json'; break; }
               // 1. Procura nome de corte com extensão de mídia/texto
               const m1 = src.match(/(corte[_\s-]*\d+[^"\n\r\t*?<>]+?\.(?:mp4|txt|srt|json|jpg|jpeg|png))/i);
               if (m1) {
@@ -965,7 +979,7 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
       if (!c.videoLegenda && c.video16x9) {
         c.videoLegenda = c.video16x9;
       } else if (!c.videoLegenda && c.rawVideo) {
-        c.videoLegenda = c.rawVideo;
+        // O vídeo bruto nunca é publicado como corte final.
       }
       if (!c.titulo || c.titulo.includes('capa')) {
         c.titulo = sanitizeCutTitle(c.rawName) || `Corte ${c.cutIndex}`;
@@ -976,7 +990,7 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
     .sort((a, b) => a.cutIndex - b.cutIndex);
 
   onLog(`[Drive Scan] ${validCuts.length} cortes com vídeo identificados na pasta.`);
-  return { folderId, cuts: validCuts };
+  return { folderId, cuts: validCuts, monitorFileId: files.find(f => f.name.includes('_os4_publicador.json'))?.id || null };
 }
 
 async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = console.log, onProgress = () => {} }) {
@@ -1066,6 +1080,7 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
 }
 
 module.exports = {
+  downloadTextFileDirect,
   downloadCorte,
   downloadBatch,
   downloadGoogleDriveFileWithContext,

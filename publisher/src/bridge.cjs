@@ -5,8 +5,9 @@ const PORT = 49152;
 const HOST = '127.0.0.1';
 
 class LocalBridgeServer {
-  constructor({ executor, onLog = () => {} }) {
+  constructor({ executor, watcher, onLog = () => {} }) {
     this.executor = executor;
+    this.watcher = watcher;
     this.onLog = onLog;
     this.server = null;
     this.activeBatch = null;
@@ -98,13 +99,7 @@ class LocalBridgeServer {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true, message: 'Importação do Drive iniciada com sucesso!' }));
 
-            const { importAndEnqueueDriveFolder } = require('./downloader.cjs');
-            this.onLog(`[Drive] Iniciando importação da pasta: ${folderUrl}`);
-            await importAndEnqueueDriveFolder({
-              folderUrlOrId: folderUrl,
-              executor: this.executor,
-              onLog: this.onLog
-            });
+            this.watcher.start(folderUrl);
           } catch (err) {
             console.error('[Bridge] Erro ao processar /import-drive:', err);
             this.onLog(`[Drive] Erro na importação: ${err.message}`);
@@ -140,7 +135,8 @@ class LocalBridgeServer {
           capaPath: downloadedCut.capaPath,
           formato: downloadedCut.formato,
           requestId: batch.requestId,
-          folderId: batch.folderId
+          folderId: batch.folderId,
+          driveFileId: downloadedCut.driveFileId
         });
         if (addedIds && addedIds.length > 0) {
           this.onLog(`Download concluído: Corte ${downloadedCut.cutIndex} (${downloadedCut.sizeMb} MB em ${downloadedCut.durationSec}s). Enfileirado para publicação.`);

@@ -694,3 +694,8 @@ footer {
   border-top: 1px solid #282e3d;
   background: #11141c;
 }
+
+#watch-list .queue-item {gap:12px;align-items:center;}
+#watch-list .queue-item span {overflow-wrap:anywhere;flex:1;}
+.queue-item-right {flex-wrap:wrap;}
+#network-status:empty {display:none;}

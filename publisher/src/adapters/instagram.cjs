@@ -2,7 +2,8 @@ const { chromium } = require('playwright');
 const path = require('node:path');
 const fs = require('node:fs');
 
-async function publishInstagramReels({ videoPath, caption }) {
+async function publishInstagramReels({ videoPath, caption, attempt }) {
+  attempt?.stage('Abrindo Instagram');
   const startTime = Date.now();
   const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
   const profileDir = path.join(dataDir, 'profiles', 'instagram');
@@ -19,6 +20,7 @@ async function publishInstagramReels({ videoPath, caption }) {
     args: ['--disable-blink-features=AutomationControlled']
   });
 
+  await attempt?.attach(ctx);
   const page = ctx.pages()[0] || await ctx.newPage();
   page.setDefaultTimeout(60000);
 
@@ -49,6 +51,7 @@ async function publishInstagramReels({ videoPath, caption }) {
     }
 
     console.log('[Instagram 3/6] Anexando arquivo de vídeo...');
+    attempt?.stage('Enviando vídeo');
     const fileInput = page.locator('input[type="file"]').first();
     await fileInput.waitFor({ state: 'attached', timeout: 30000 });
     const tUpload = Date.now();
@@ -91,6 +94,7 @@ async function publishInstagramReels({ videoPath, caption }) {
     await page.waitForTimeout(1200);
 
     console.log('[Instagram] Preenchendo legenda e hashtags...');
+    attempt?.stage('Preenchendo legenda');
     const captionEl = page.locator('div[aria-label*="legenda" i], div[aria-label*="caption" i], div[role="textbox"], div[contenteditable="true"]').first();
     await captionEl.waitFor({ state: 'visible', timeout: 20000 });
     await captionEl.click();
@@ -138,6 +142,8 @@ async function publishInstagramReels({ videoPath, caption }) {
     const shareBtn = page.locator('[role="dialog"]').getByRole('button', { name: 'Compartilhar', exact: true });
     await shareBtn.waitFor({ state: 'visible', timeout: 20000 });
 
+    attempt?.stage('Publicando e aguardando confirmação');
+    attempt?.beforePublish();
     const box = await shareBtn.boundingBox();
     if (box) {
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -158,8 +164,9 @@ async function publishInstagramReels({ videoPath, caption }) {
       await page.waitForTimeout(2000);
       const curText = await page.locator('[role="dialog"]').innerText().catch(() => '');
 
-      if (curText.includes('compartilhad') || curText.includes('shared')) {
+      if (/reel (?:foi )?compartilhado|(?:sua )?publicação (?:foi )?compartilhada|(?:your )?(?:reel|post) (?:has been )?shared/i.test(curText)) {
         confirmed = true;
+        attempt?.confirm({ok:true,confirmed:true,network:'instagram',evidence:'Mensagem de publicação compartilhada',at:Date.now()});
         publishSeconds = ((Date.now() - tUpload) / 1000).toFixed(1);
         console.log(`[Instagram] >>> CONFIRMADO: REEL COMPARTILHADO EM ${publishSeconds}s! <<<`);
         break;
@@ -183,7 +190,7 @@ async function publishInstagramReels({ videoPath, caption }) {
     await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
 
     return {
-      ok: true,
+      ok: confirmed,
       network: 'instagram',
       confirmed,
       totalSeconds,
@@ -191,8 +198,7 @@ async function publishInstagramReels({ videoPath, caption }) {
       screenshot: screenshotPath
     };
   } finally {
-    await page.waitForTimeout(2000);
-    await ctx.close();
+    await ctx.close().catch(() => {});
   }
 }
 

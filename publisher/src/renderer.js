@@ -42,10 +42,10 @@ function cleanAnsi(str) {
   return (str || '').replace(/\u001b\[[0-9;]*m/g, '').trim();
 }
 
-function appendLog(text) {
+function appendLog(text, at) {
   const line = document.createElement('div');
   line.className = 'log-line';
-  line.textContent = `[${new Date().toLocaleTimeString('pt-BR')}] ${text}`;
+  line.textContent = `[${new Date(at || Date.now()).toLocaleTimeString('pt-BR')}] ${text}`;
   logBox.appendChild(line);
   logBox.scrollTop = logBox.scrollHeight;
 }
@@ -57,7 +57,7 @@ document.querySelector('#clear-logs')?.addEventListener('click', () => {
 // Listener de logs da ponte
 if (window.os4?.onLog) {
   window.os4.onLog((data) => {
-    appendLog(typeof data === 'string' ? data : data.msg);
+    appendLog(typeof data === 'string' ? data : data.msg, data.time);
     updateQueueUi();
   });
 }
@@ -254,6 +254,11 @@ function syncStatCardsActive(filter) {
 function renderQueue(status) {
   if (!status) return;
   currentQueueStatus = status;
+  renderWatches(status.watchers || []);
+  const active=(status.activeJobs||[]).map(j=>`${j.network.toUpperCase()}: ${j.phase}`).join(' · ');
+  const limits=Object.entries(status.limits||{}).filter(([,n])=>n>=50).map(([n])=>`${n.toUpperCase()}: limite diário atingido, retomada no próximo dia`).join(' · ');
+  const blocked=(status.blockedNetworks||[]).map(n=>`${n.toUpperCase()}: navegador não encerrou; reinicie o publicador`).join(' · ');
+  document.querySelector('#network-status').textContent=[active,limits,blocked,status.counts?.verify?`${status.counts.verify} envio(s) aguardando conferência`:''].filter(Boolean).join(' · ');
 
   // Sincroniza cooldowns individuais por rede
   if (status.nextAvailable) {
@@ -394,6 +399,13 @@ function renderJobsList(jobs) {
       };
 
       right.append(btnErr, btnRetry, btnDel);
+    } else if (job.state === 'verify') {
+      const label = document.createElement('span'); label.textContent = 'Conferência pendente';
+      const yes = document.createElement('button'); yes.textContent = 'Já publicado'; yes.className='secondary btn-sm';
+      const no = document.createElement('button'); no.textContent = 'Não publicado: reenviar'; no.className='secondary btn-sm';
+      yes.onclick=async()=>{await window.os4.verifyJob(job.id,true);await updateQueueUi();};
+      no.onclick=async()=>{if(confirm('Conferiu na rede e este vídeo não foi publicado?')){await window.os4.verifyJob(job.id,false);await updateQueueUi();}};
+      right.append(label,yes,no);
     } else {
       const badge = document.createElement('span');
       badge.className = `status-badge status-${job.state}`;
@@ -503,7 +515,8 @@ if (btnImportDrive) {
 
     try {
       await window.os4.importDriveFolder(url);
-      driveFeedback.textContent = '🚀 Varredura iniciada! Acompanhe o progresso nos logs de atividade e na fila.';
+      btnImportDrive.disabled = false;
+      driveFeedback.textContent = 'Acompanhamento ativo. Pode deixar o publicador aberto ou na bandeja enquanto os cortes são gerados.';
       appendLog('[Drive UI] Pedido de importação da pasta enviado.');
     } catch (err) {
       btnImportDrive.disabled = false;
@@ -528,10 +541,22 @@ if (window.os4?.onDriveImportFinished) {
 
 document.querySelector('#site').onclick = () => window.os4.openSite();
 
+function renderWatches(items) {
+  const box=document.querySelector('#watch-list');box.replaceChildren();
+  for(const w of items){
+    const row=document.createElement('div');row.className='queue-item';
+    const text=document.createElement('span');
+    const next=w.enabled&&w.nextCheck?` · Próxima verificação em ${Math.max(0,Math.ceil((w.nextCheck-Date.now())/1000))}s`:'';
+    text.textContent=`Pasta ${w.folderId.slice(0,8)}… · ${w.readyCount}/${w.totalCuts||'?'} prontos · ${w.downloadedCount} baixados · ${w.detail}${next}`;
+    const button=document.createElement('button');button.className='secondary btn-sm';button.textContent=w.enabled?'Parar acompanhamento':'Retomar';
+    button.onclick=async()=>{if(w.enabled)await window.os4.stopWatch(w.folderId);else await window.os4.importDriveFolder(w.folderId);await updateQueueUi();};
+    row.append(text,button);box.append(row);
+  }
+}
+window.os4.history().then(items=>{for(const e of items.reverse())appendLog(`[${e.network||'Sistema'} · Corte ${e.cutIndex||''}] ${e.state}: ${e.detail||''}`,e.at);}).catch(()=>{});
 refresh();
 setInterval(() => {
   if (!document.hidden) {
     refresh();
   }
 }, 4000);
-

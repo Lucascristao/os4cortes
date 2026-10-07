@@ -2,7 +2,8 @@ const { chromium } = require('playwright');
 const path = require('node:path');
 const fs = require('node:fs');
 
-async function publishTikTok({ videoPath, caption }) {
+async function publishTikTok({ videoPath, caption, attempt }) {
+  attempt?.stage('Abrindo TikTok');
   const startTime = Date.now();
   const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
   const profileDir = path.join(dataDir, 'profiles', 'tiktok');
@@ -19,6 +20,7 @@ async function publishTikTok({ videoPath, caption }) {
     args: ['--disable-blink-features=AutomationControlled']
   });
 
+  await attempt?.attach(ctx);
   const page = ctx.pages()[0] || await ctx.newPage();
   page.setDefaultTimeout(60000);
 
@@ -38,6 +40,7 @@ async function publishTikTok({ videoPath, caption }) {
     }
 
     console.log('[TikTok 2/4] Enviando arquivo de vídeo...');
+    attempt?.stage('Enviando vídeo');
     const fileInput = page.locator('input[type="file"]').first();
     await fileInput.waitFor({ state: 'attached', timeout: 30000 });
     const tUpload = Date.now();
@@ -56,7 +59,9 @@ async function publishTikTok({ videoPath, caption }) {
     }
 
     console.log('[TikTok 3/4] Preenchendo legenda e hashtags...');
+    attempt?.stage('Preenchendo legenda');
     const captionEditor = page.locator('div[contenteditable="true"], div.notranslate[contenteditable="true"]').first();
+    await captionEditor.waitFor({state:'visible',timeout:30000});
     if (await captionEditor.isVisible().catch(() => false)) {
       await captionEditor.click({ force: true });
       await page.keyboard.press('Control+A');
@@ -65,14 +70,6 @@ async function publishTikTok({ videoPath, caption }) {
       await page.keyboard.insertText(caption);
       console.log('[TikTok] Legenda preenchida com sucesso!');
       await page.waitForTimeout(1000);
-    }
-
-    // Desativa a "Verificação de conteúdo simples" se estiver ativada
-    const checkToggle = page.locator('input[type="checkbox"][aria-checked="true"], [role="switch"][aria-checked="true"]').first();
-    if (await checkToggle.isVisible({ timeout: 2000 }).catch(() => false)) {
-      console.log('[TikTok] Desativando verificação de 10 minutos...');
-      await checkToggle.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(500);
     }
 
     console.log('[TikTok 4/4] >>> LOCALIZANDO BOTÃO PUBLICAR NO TIKTOK <<<');
@@ -86,6 +83,10 @@ async function publishTikTok({ videoPath, caption }) {
     await page.waitForTimeout(1000);
 
     console.log('[TikTok] Clicando no botão vermelho Publicar...');
+    await postBtn.waitFor({state:'visible'});
+    if (!await postBtn.isEnabled()) throw new Error('TikTok ainda está processando o vídeo.');
+    attempt?.stage('Publicando e aguardando confirmação');
+    attempt?.beforePublish();
     const box = await postBtn.boundingBox();
     if (box) {
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -100,49 +101,35 @@ async function publishTikTok({ videoPath, caption }) {
 
     // Se abrir modal de confirmação "Deseja publicar agora?"
     const modalPubBtn = page.locator('div[role="dialog"] button:has-text("Publicar"), div[role="dialog"] div[role="button"]:has-text("Publicar")').first();
+    let modalConfirmed = false;
     if (await modalPubBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
       console.log('[TikTok] Confirmando modal de publicação...');
+      attempt?.check();
       await modalPubBtn.click({ force: true });
+      modalConfirmed = true;
     }
 
-    // Aguarda confirmação com retentativa de clique caso o TikTok estivesse verificando
+    // A confirmação do modal é distinta do botão final e só recebe um clique.
     console.log('[TikTok] Aguardando confirmação do TikTok...');
     let confirmed = false;
     for (let w = 1; w <= 40; w++) {
       await page.waitForTimeout(2000);
       const url = page.url();
-      const hasSuccessText = await page.locator('text="Seu vídeo foi publicado", text="Publicado com sucesso", text="Gerenciar publicações", text="Manage your posts", text="Vídeo publicado"').first().isVisible().catch(() => false);
+      const hasSuccessText = await page.locator('text="Seu vídeo foi publicado", text="Publicado com sucesso", text="Your video has been uploaded", text="Vídeo publicado"').first().isVisible().catch(() => false);
       if (url.includes('/tiktokstudio/content') || hasSuccessText) {
         confirmed = true;
+        attempt?.confirm({ok:true,confirmed:true,network:'tiktok',evidence:hasSuccessText?'Mensagem de publicação concluída':'Redirecionamento para lista de publicações',at:Date.now()});
         console.log('[TikTok] >>> CONFIRMADO: VÍDEO PUBLICADO NO TIKTOK! <<<');
         break;
       }
 
-      // Se abrir modal de confirmação no meio do caminho
-      const modalPubBtn = page.locator('div[role="dialog"] button:has-text("Publicar"), div[role="dialog"] div[role="button"]:has-text("Publicar")').first();
-      if (await modalPubBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-        console.log('[TikTok] Confirmando modal pendente de publicação...');
-        await modalPubBtn.click({ force: true }).catch(() => {});
-        continue;
+      if (!modalConfirmed && await modalPubBtn.isVisible().catch(() => false)) {
+        attempt?.check();
+        await modalPubBtn.click();
+        modalConfirmed = true;
       }
 
-      // Se após 3 segundos o botão vermelho Publicar ainda estiver na tela (ex: terminou verificação de direitos autorais agora)
-      if (w % 3 === 0) {
-        const stillPostBtn = page.locator('button:has-text("Publicar")').last();
-        if (await stillPostBtn.isVisible().catch(() => false)) {
-          console.log(`[TikTok] [Tentativa ${w}] Botão Publicar ainda presente, reenviando clique...`);
-          await stillPostBtn.scrollIntoViewIfNeeded().catch(() => {});
-          const b = await stillPostBtn.boundingBox().catch(() => null);
-          if (b) {
-            await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
-            await page.mouse.down();
-            await page.waitForTimeout(100);
-            await page.mouse.up();
-          } else {
-            await stillPostBtn.click({ force: true }).catch(() => {});
-          }
-        }
-      }
+
     }
 
     const totalSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -163,8 +150,7 @@ async function publishTikTok({ videoPath, caption }) {
       screenshot: screenshotPath
     };
   } finally {
-    await page.waitForTimeout(3000);
-    await ctx.close();
+    await ctx.close().catch(() => {});
   }
 }
 

@@ -1,13 +1,15 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, powerMonitor, safeStorage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const cp = require('node:child_process');
 const { Queue } = require('./queue.cjs');
 const { QueueExecutor } = require('./executor.cjs');
 const { LocalBridgeServer } = require('./bridge.cjs');
-const { importAndEnqueueDriveFolder } = require('./downloader.cjs');
+const { scanDriveFolder, downloadTextFileDirect, downloadCorte } = require('./downloader.cjs');
+const { FolderWatcher } = require('./watcher.cjs');
 
-const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
+const smoke = process.argv.includes('--smoke-test');
+const dataDir = smoke ? (process.env.OS4_SMOKE_DIR || path.join(app.getPath('temp'), `OS4Publicador-smoke-${process.pid}`)) : path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
 app.setPath('userData', path.join(dataDir, 'interface'));
 
 const platforms = {
@@ -16,9 +18,20 @@ const platforms = {
   youtube: 'https://studio.youtube.com/'
 };
 
-let win, tray, q, executor, bridge, quitting = false;
+let win, tray, q, executor, bridge, watcher, quitting = false;
 const contexts = new Map();
 const loginProcesses = new Map();
+const logPath = path.join(dataDir, 'activity.ndjson');
+function logToUi(msg) {
+  const clean = String(msg).replace(/([?&](?:token|confirm|uuid|key)=)[^\s&]+/gi, '$1[oculto]');
+  const entry = {msg:clean,time:new Date().toISOString()};
+  try {
+    if (fs.existsSync(logPath) && fs.statSync(logPath).size > 5*1024*1024) fs.renameSync(logPath, logPath+'.previous');
+    fs.appendFileSync(logPath,JSON.stringify(entry)+'\n');
+  } catch (_) {}
+  win?.webContents.send('app-log',entry);
+}
+function queueStatus() {return executor ? {...executor.getStatus(),watchers:watcher?.status()||[]} : null;}
 
 function getNativeBrowserPath() {
   const candidates = [
@@ -50,25 +63,41 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     fs.mkdirSync(dataDir, { recursive: true });
+    for (const method of ['log','warn','error']) {
+      const original=console[method].bind(console);
+      console[method]=(...args)=>{original(...args);logToUi(args.map(a=>a instanceof Error?a.message:typeof a==='string'?a:JSON.stringify(a)).join(' '));};
+    }
     q = new Queue(path.join(dataDir, 'queue.sqlite'));
     executor = new QueueExecutor(q);
+    watcher = new FolderWatcher({queue:q,executor,scan:scanDriveFolder,readText:downloadTextFileDirect,download:downloadCorte,onLog:logToUi,
+      protect:token => {
+        if (!safeStorage.isEncryptionAvailable()) throw new Error('Proteção de credenciais do Windows indisponível.');
+        return safeStorage.encryptString(token).toString('base64');
+      },
+      unprotect:value => safeStorage.decryptString(Buffer.from(value,'base64'))
+    });
+    watcher.on('updated',()=>win?.webContents.send('queue-status',queueStatus()));
 
     bridge = new LocalBridgeServer({
       executor,
+      watcher,
       onLog: (msg) => {
-        console.log('[Bridge Log]', msg);
-        win?.webContents.send('app-log', { msg, time: new Date().toLocaleTimeString('pt-BR') });
+        logToUi(msg);
       }
     });
-    bridge.start();
+    if (!smoke) bridge.start();
 
     // Eventos do executor para a UI
-    executor.on('queue-updated', (status) => win?.webContents.send('queue-status', status));
+    executor.on('queue-updated', () => win?.webContents.send('queue-status', queueStatus()));
     executor.on('job-started', (data) => win?.webContents.send('queue-status', data.status));
     executor.on('job-completed', (data) => win?.webContents.send('queue-status', data.status));
     executor.on('job-failed', (data) => win?.webContents.send('queue-status', data.status));
     executor.on('cooldown', (data) => win?.webContents.send('cooldown', data));
-    executor.ensureWorkerRunning();
+    executor.on('worker-error',e=>logToUi(`[Fila] ${e.message}`));
+    executor.on('job-started',data=>logToUi(`[Fila] Corte ${data.job.payload.cutIndex}: envio no ${data.job.payload.network}.`));
+    executor.on('job-completed',data=>logToUi(`[Fila] Corte ${data.job.payload.cutIndex}: confirmação no ${data.job.payload.network}.`));
+    executor.on('job-failed',data=>logToUi(`[Fila] Corte ${data.job.payload.cutIndex}: ${data.error}`));
+    if (!smoke) {executor.ensureWorkerRunning();watcher.ensureRunning();}
 
     const browserDir = app.isPackaged
       ? path.join(process.resourcesPath, 'browser')
@@ -134,6 +163,7 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     try { bridge?.stop(); } catch (_) {}
     try { executor?.stop(); } catch (_) {}
+    watcher?.shutdown();
     for (const proc of loginProcesses.values()) {
       try { proc.kill(); } catch (_) {}
     }
@@ -158,7 +188,7 @@ ipcMain.handle('state', (event) => {
   const openNetworks = [...new Set([...contexts.keys(), ...loginProcesses.keys()])];
   return {
     version: app.getVersion(),
-    phase: 'Validação inicial — publicação automática ainda desabilitada',
+    phase: smoke ? 'Teste de interface; envios desativados' : 'Publicação contínua e acompanhamento de pastas ativos',
     dataDir,
     accounts: q.get('accounts', {}),
     open: openNetworks,
@@ -170,6 +200,7 @@ ipcMain.handle('state', (event) => {
 ipcMain.handle('login', async (event, network) => {
   validateEvent(event);
   if (!Object.hasOwn(platforms, network)) throw new Error('Rede inválida');
+  if (executor.activeJobs.has(network)) throw new Error('Esta rede está publicando. Aguarde o envio terminar antes de abrir o login.');
 
   if (loginProcesses.has(network)) {
     return;
@@ -257,53 +288,24 @@ ipcMain.handle('open-site', (event) => {
 
 ipcMain.handle('get-queue', (event) => {
   validateEvent(event);
-  return executor ? executor.getStatus() : null;
+  return queueStatus();
 });
 
 ipcMain.handle('enqueue-manual', (event, payload) => {
   validateEvent(event);
+  if (smoke) throw new Error('Envios desativados neste teste.');
   if (!executor) throw new Error('Executor não iniciado');
   return executor.enqueueCorte(payload);
 });
 
-let isImportingDrive = false;
-
 ipcMain.handle('import-drive-folder', async (event, folderUrl) => {
   validateEvent(event);
-  if (!executor) throw new Error('Executor não iniciado');
-  if (isImportingDrive) throw new Error('Já existe uma importação de pasta em andamento.');
-
-  isImportingDrive = true;
-  const logToUi = (msg) => {
-    console.log(msg);
-    win?.webContents.send('app-log', { msg, time: new Date().toLocaleTimeString('pt-BR') });
-  };
-
-  (async () => {
-    try {
-      logToUi(`[Drive] Iniciando varredura da pasta: ${folderUrl}`);
-      const res = await importAndEnqueueDriveFolder({
-        folderUrlOrId: folderUrl,
-        executor,
-        onLog: logToUi,
-        onProgress: (p) => {
-          win?.webContents.send('app-log', {
-            msg: `[Download] Corte ${p.cutIndex}: ${p.status}`,
-            time: new Date().toLocaleTimeString('pt-BR')
-          });
-        }
-      });
-      win?.webContents.send('drive-import-finished', res);
-    } catch (err) {
-      logToUi(`[Drive] ❌ Falha na importação: ${err.message}`);
-      win?.webContents.send('drive-import-finished', { ok: false, error: err.message });
-    } finally {
-      isImportingDrive = false;
-    }
-  })();
-
-  return { ok: true, message: 'Varredura da pasta do Drive iniciada com sucesso!' };
+  if (smoke) throw new Error('Envios desativados neste teste.');
+  return watcher.start(folderUrl);
 });
+ipcMain.handle('watch:stop',(event,id)=>{validateEvent(event);watcher.stop(id);return true;});
+ipcMain.handle('queue:verify',(event,{id,published})=>{validateEvent(event);if(typeof published!=='boolean')throw new Error('Verificação inválida');return executor.verifyJob(id,published);});
+ipcMain.handle('history',(event)=>{validateEvent(event);return q.history();});
 
 ipcMain.handle('queue:pause', (event) => {
   validateEvent(event);

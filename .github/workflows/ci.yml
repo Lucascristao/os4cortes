@@ -30,6 +30,9 @@ jobs:
           npm test
           node --check web/app.js
           node --check web/sw.js
+          npm --prefix publisher test
+          find publisher/src -name '*.cjs' -exec node --check {} \;
+          node --check publisher/src/renderer.js
 
       - name: Validar Python
         run: |

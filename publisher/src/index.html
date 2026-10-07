@@ -24,15 +24,16 @@
     <section class="drive-section">
       <div class="section-header">
         <div>
-          <h2>Importar Pasta do Google Drive</h2>
-          <p class="hint">Cole o link da pasta gerada no Drive para varrer os cortes, baixar apenas os arquivos finais com legenda e enfileirar as publicações.</p>
+          <h2>Acompanhar Pasta do Google Drive</h2>
+          <p class="hint">Cole a pasta do novo vídeo, mesmo vazia. O aplicativo verifica novos cortes a cada 2 minutos, baixa os pacotes completos e continua publicando enquanto os demais são gerados.</p>
         </div>
       </div>
       <div class="drive-input-row">
         <input type="text" id="drive-folder-input" class="drive-input" placeholder="Cole o link ou ID da pasta do Google Drive aqui..." aria-label="Link da pasta do Google Drive" />
-        <button id="btn-import-drive" class="primary">📥 Escanear & Iniciar Fila</button>
+        <button id="btn-import-drive" class="primary">📥 Acompanhar & Iniciar Fila</button>
       </div>
       <div id="drive-import-feedback" class="drive-feedback hidden"></div>
+      <div id="watch-list" aria-live="polite"></div>
     </section>
 
     <!-- Fila de Publicações -->
@@ -55,6 +56,7 @@
           <p>O envio automático está suspenso. Clique em "▶️ Retomar Fila" quando desejar continuar.</p>
         </div>
       </div>
+      <p id="network-status" class="hint" aria-live="polite"></p>
 
       <div id="cooldown-banner" class="cooldown-banner hidden">
         <span class="cooldown-icon">⏱️</span>

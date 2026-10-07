@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $sourceRoot = $PSScriptRoot
-$packageRoot = Join-Path $sourceRoot 'dist/portable-0.1.0'
+$packageVersion = (Get-Content -LiteralPath (Join-Path $sourceRoot 'package.json') -Raw | ConvertFrom-Json).version
+$packageRoot = Join-Path $sourceRoot "dist/portable-$packageVersion"
 if ((Test-Path -LiteralPath $packageRoot) -and (Get-ChildItem -LiteralPath $packageRoot -Force)) { throw 'O pacote já existe. Use uma nova versão ou revise o diretório antes de reconstruir.' }
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 $runtimeRoot = Join-Path $sourceRoot 'node_modules/electron/dist'
