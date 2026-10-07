@@ -5,6 +5,8 @@ import { setEnvironmentContext, connectLambda } from '@netlify/blobs';
 import setup from '../netlify/functions/github-setup.mts';
 import start from '../netlify/functions/workflow-start.mts';
 import progress from '../netlify/functions/workflow-progress.mts';
+import publisherFolder from '../netlify/functions/publisher-folder.mts';
+import {publisherToken} from '../netlify/functions/_shared/publisher.mts';
 import status from '../netlify/functions/workflow-status.mts';
 import { blobStore } from '../netlify/functions/_shared/platform.mts';
 
@@ -99,7 +101,7 @@ test('preview writes are isolated from production stores',async()=>{
  assert.equal(await blobStore('os4-config',context).get('preview-only'),null);
 });
 
-test('stale queued jobs auto-expire on status polling',async()=>{
+test('stale queued jobs remain resumable while a runner is waiting',async()=>{
  const oldId='stale-queued-123';
  const oldJob={
   ownerHash:crypto.createHash('sha256').update('owner@example.test').digest('hex'),
@@ -109,17 +111,36 @@ test('stale queued jobs auto-expire on status polling',async()=>{
   stage:'fila',
   detail:'Enviado para o GitHub Actions',
   percent:0,
-  createdAt:new Date(Date.now()-4*60*1000).toISOString(),
-  updatedAt:new Date(Date.now()-4*60*1000).toISOString(),
+  createdAt:new Date(Date.now()-20*60*1000).toISOString(),
+  updatedAt:new Date(Date.now()-20*60*1000).toISOString(),
  };
  await blobStore('os4-jobs',context).setJSON(oldId,oldJob);
  const res=await status(req('workflow-status?id='+oldId),context);
  assert.equal(res.status,200);
  const data=await res.json();
- assert.equal(data.job.status,'error');
- assert.equal(data.job.stage,'timeout');
- assert.ok(data.job.error.includes('Timeout'));
+ assert.equal(data.job.status,'queued');
+ assert.equal(data.job.stale,true);
+ assert.equal(data.job.error,null);
 });
 
+test('more than 30 cuts flow through dispatch, partial readiness and scoped publication API',async()=>{
+ const folderId='folder01234567890123456789';
+ const cuts=Array.from({length:40},(_,i)=>({inicio:'00:00',fim:'00:15',titulo:`Título ${i+1}`}));
+ const response=await start(req('workflow-start','POST',{kind:'render',folderId,videoFileId:'source',transcriptJsonFileId:'transcript',cuts}),context);
+ assert.equal(response.status,202);const {requestId}=await response.json();
+ const scope=publisherToken(callbackSecret,folderId);
+ const read=(id=folderId,auth=scope)=>publisherFolder(new Request(`https://os4.example.test/.netlify/functions/publisher-folder?folderId=${id}`,{headers:{Authorization:`Bearer ${auth}`}}),context);
+ assert.equal((await read(folderId,'wrong')).status,401);
+ assert.equal((await read('otherfolder0123456789012345')).status,401);
+ const update={request_id:requestId,token:crypto.createHmac('sha256',callbackSecret).update('os4-progress:'+requestId).digest('hex'),status:'running',stage:'cortes'};
+ assert.equal((await progress(req('workflow-progress','POST',{...update,ready_cut:{index:1,files:{video:{id:'raw'},post:{id:'post'}}}}),context)).status,400);
+ const ready={index:40,formato:'9:16',titulo:'Pronto',files:{videoLegenda:{id:'final40'},post:{id:'post40'}}};
+ assert.equal((await progress(req('workflow-progress','POST',{...update,ready_cut:ready}),context)).status,200);
+ await progress(req('workflow-progress','POST',{...update,percent:90}),context);
+ let feed=await (await read()).json();assert.equal(feed.totalCuts,40);assert.equal(feed.readyCount,1);assert.equal(feed.cuts[0].index,40);
+ assert.equal(feed.callbackHash,undefined);assert.equal(feed.token,undefined);assert.equal(feed.ownerHash,undefined);
+ await progress(req('workflow-progress','POST',{...update,status:'completed',result:{cuts:[{...ready,index:39,files:{videoLegenda:{id:'final39'},post:{id:'post39'}}}]}}),context);
+ feed=await (await read()).json();assert.equal(feed.status,'completed');assert.deepEqual(feed.cuts.map(c=>c.index),[39,40]);
+});
 
 

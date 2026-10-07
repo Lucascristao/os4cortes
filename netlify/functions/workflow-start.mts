@@ -145,8 +145,8 @@ export default safeHandler(async (request, context) => {
     if (!folderId || !videoFileId || !transcriptJsonFileId) {
       return json(400, { ok: false, error: "A sessão de transcrição está incompleta. Transcreva o vídeo novamente." });
     }
-    if (!cuts.length || cuts.length > 30) {
-      return json(400, { ok: false, error: "O pacote precisa ter entre 1 e 30 cortes." });
+    if (!cuts.length) {
+      return json(400, { ok: false, error: "O pacote precisa ter pelo menos um corte." });
     }
 
     for (const [index, cut] of cuts.entries()) {
@@ -189,6 +189,8 @@ export default safeHandler(async (request, context) => {
     ownerHash: ownerHash(user.email),
     callbackHash: crypto.createHash("sha256").update(derivedCallbackToken).digest("hex"),
     kind,
+    folderId: kind === "render" ? inputs.folder_id : null,
+    totalCuts: kind === "render" ? JSON.parse(inputs.cuts_json).length : null,
     status: "queued",
     stage: "fila",
     detail: "Enviado para o GitHub Actions",
@@ -197,6 +199,9 @@ export default safeHandler(async (request, context) => {
     updatedAt: now,
   };
   await jobsStore.setJSON(requestId, jobBase);
+  if (kind === "render") {
+    await jobsStore.setJSON(`publisher-folder:${inputs.folder_id}`, { requestId, ownerHash: jobBase.ownerHash });
+  }
 
   const dispatch = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
     method: "POST",

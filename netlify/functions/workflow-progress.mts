@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { blobStore, safeHandler } from "./_shared/platform.mts";
+import { readyCut, readyKey } from "./_shared/publisher.mts";
 
 function sha(value) {
   return crypto.createHash("sha256").update(String(value || "")).digest("hex");
@@ -43,9 +44,17 @@ export default safeHandler(async (request, context) => {
   }
 
   // Delayed progress must not overwrite a completed result or a terminal error.
-  if (["completed", "error"].includes(current.status)) return json(200, { ok: true });
+  if (["completed", "error", "cancelled"].includes(current.status)) return json(200, { ok: true });
 
-  const allowedStatus = new Set(["queued", "running", "completed", "error"]);
+  if (body.ready_cut) {
+    const cut = readyCut(body.ready_cut);
+    if (!cut || current.kind !== "render" || cut.index > current.totalCuts) {
+      return json(400, { ok: false, error: "Pacote de corte incompleto." });
+    }
+    await store.setJSON(readyKey(requestId, cut.index), cut);
+  }
+
+  const allowedStatus = new Set(["queued", "running", "completed", "error", "cancelled"]);
   const next = {
     ...current,
     updatedAt: new Date().toISOString(),

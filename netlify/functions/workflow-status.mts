@@ -66,27 +66,14 @@ export default safeHandler(async (request, context) => {
   const ageSinceCreated = now - createdTime;
   const ageSinceUpdated = now - updatedTime;
 
-  // Auto-expira trabalhos que ficaram travados na fila sem início no GitHub Actions
-  if (job.status === "queued" && ageSinceCreated > 3 * 60 * 1000) {
-    job.status = "error";
-    job.stage = "timeout";
-    job.detail = "O tempo limite de espera na fila do GitHub Actions foi excedido. Tente novamente.";
-    job.error = "Timeout na fila do GitHub Actions";
-    job.updatedAt = new Date().toISOString();
-    try { await store.setJSON(requestId, job); } catch {}
-  } else if (job.status === "running" && ageSinceUpdated > 45 * 60 * 1000) {
-    job.status = "error";
-    job.stage = "timeout";
-    job.detail = "Tempo limite de execução excedido.";
-    job.error = "Timeout de processamento";
-    job.updatedAt = new Date().toISOString();
-    try { await store.setJSON(requestId, job); } catch {}
-  }
+  // Silence can mean a queued runner or a long media operation.
+  const stale = ['queued','running'].includes(job.status) && ageSinceUpdated > 15 * 60 * 1000;
 
   const safe = {
     id: requestId,
     kind: job.kind,
     status: job.status,
+    stale,
     stage: job.stage || "",
     detail: job.detail || "",
     percent: Number(job.percent || 0),

@@ -520,7 +520,7 @@ function acompanharJob(id, kind) {
           btnGerarCortes.disabled = false;
           btnGerarCortes.textContent = "Gerar todos os cortes";
         }
-      } else if (job.status === "error") {
+      } else if (job.status === "error" || job.status === "cancelled") {
         clearInterval(pollTimer);
         pollTimer = null;
         localStorage.removeItem(STORAGE_JOB);
@@ -531,24 +531,8 @@ function acompanharJob(id, kind) {
         btnTranscrever.textContent = "Transcrever";
         btnGerarCortes.disabled = false;
         btnGerarCortes.textContent = "Gerar todos os cortes";
-      } else if (job.status === "queued") {
-        const jobCreatedAt = job.createdAt ? new Date(job.createdAt).getTime() : 0;
-        if (jobCreatedAt && (Date.now() - jobCreatedAt > 3 * 60 * 1000)) {
-          clearInterval(pollTimer);
-          pollTimer = null;
-          localStorage.removeItem(STORAGE_JOB);
-          alternarBotaoCancelar(false);
-          btnTranscrever.disabled = false;
-          btnTranscrever.textContent = "Transcrever";
-          btnGerarCortes.disabled = false;
-          btnGerarCortes.textContent = "Gerar todos os cortes";
-          setStatus(kind === "render" ? "cortes" : "video", "Aguardando", "idle");
-          atualizarProgresso({
-            percent: 0,
-            title: "Processamento expirado",
-            detail: "O processamento anterior demorou muito para iniciar na fila do GitHub Actions. O botão foi liberado.",
-          });
-        }
+      } else if (job.stale) {
+        progressDetail.textContent = 'Sem atualização recente do GitHub Actions. O acompanhamento continua automaticamente.';
       }
     } catch (erro) {
       console.warn("Falha ao consultar andamento:", erro);
@@ -796,7 +780,6 @@ function normalizarTimestamp(valor) {
 function normalizarPacote(data) {
   const lista = Array.isArray(data) ? data : data?.cortes;
   if (!Array.isArray(lista) || !lista.length) throw new Error("Nenhum corte encontrado no JSON.");
-  if (lista.length > 30) throw new Error("O máximo é 30 cortes por vez.");
 
   return lista.map((c, i) => {
     const inicio = normalizarTimestamp(c?.inicio);
@@ -1270,7 +1253,7 @@ async function enviarParaPublicadorLocal(result, manual = false) {
         titleEl.textContent = "🚀 Enviado para o OS4 Publicador Local!";
         titleEl.style.color = "#4ade80";
       }
-      if (msgEl) msgEl.textContent = `Lote de ${result.cuts.length} cortes recebido! Downloads e fila de postagem (com pausas de 5–10 min) já iniciados no seu computador.`;
+      if (msgEl) msgEl.textContent = `Lote de ${result.cuts.length} cortes recebido! Downloads e fila de postagem (com pausas de 3–5 min por rede) já iniciados no seu computador.`;
       if (btnReenviar) {
         btnReenviar.disabled = false;
         btnReenviar.textContent = "Enviado com sucesso ✓";

@@ -15,7 +15,8 @@ from .captions import (
     gerar_capa_16x9,
 )
 from .drive import uploader_por_env
-from .progress import completed, emit, failed
+from .progress import completed, emit, failed, start_heartbeat
+from .publisher import save_publisher_manifest
 try:
     from .tracking import render_cinematic_16x9, render_tracking_9x16
 except ImportError:
@@ -45,8 +46,6 @@ def normalizar_cortes(raw: str) -> list[dict]:
     cortes = data if isinstance(data, list) else data.get("cortes", [])
     if not isinstance(cortes, list) or not cortes:
         raise ValueError("Nenhum corte encontrado no pacote.")
-    if len(cortes) > 30:
-        raise ValueError("Máximo de 30 cortes por processamento.")
 
     saida: list[dict] = []
     for idx, corte in enumerate(cortes, start=1):
@@ -111,6 +110,7 @@ def main() -> int:
     work.mkdir(parents=True, exist_ok=True)
     out.mkdir(parents=True, exist_ok=True)
 
+    heartbeat = start_heartbeat()
     try:
         cortes = normalizar_cortes(args.cuts_json)
         total = len(cortes)
@@ -119,6 +119,7 @@ def main() -> int:
             raise RuntimeError("Google Drive não está configurado no GitHub Actions.")
 
         emit("preparando_cortes", 2.0, f"Preparando {total} cortes", total_cuts=total)
+        save_publisher_manifest(uploader, args.folder_id, work)
 
         video = work / "video_base.mp4"
         transcricao_json = work / "transcricao.json"
@@ -332,6 +333,7 @@ def main() -> int:
                 f"Corte {i}/{total} concluído",
                 cut=i,
                 total_cuts=total,
+                ready_cut=resultados[-1],
             )
 
         result = {
@@ -346,6 +348,7 @@ def main() -> int:
         failed("Falha ao gerar os cortes", str(exc))
         raise
     finally:
+        heartbeat.set()
         try:
             shutil.rmtree(work, ignore_errors=True)
         except Exception:

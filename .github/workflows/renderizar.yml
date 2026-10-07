@@ -76,7 +76,7 @@ jobs:
             --output "output"
 
       - name: Reportar falha ao front
-        if: failure()
+        if: failure() || cancelled()
         shell: bash
         run: |
           python - <<'PY'
@@ -89,7 +89,7 @@ jobs:
               payload = json.dumps({
                   "request_id": rid,
                   "token": token,
-                  "status": "error",
+                  "status": "cancelled" if "${{ job.status }}" == "cancelled" else "error",
                   "stage": "erro",
                   "percent": 100,
                   "detail": "A geração dos cortes falhou no GitHub Actions.",

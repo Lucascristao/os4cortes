@@ -6,7 +6,23 @@ import json
 import os
 import time
 import urllib.request
+import threading
 from typing import Any
+
+_last_payload: dict[str, Any] = {}
+_post_lock = threading.RLock()
+
+
+def start_heartbeat(interval: float = 60.0) -> threading.Event:
+    """Keep long FFmpeg/download operations alive without inventing progress."""
+    stop = threading.Event()
+    def run() -> None:
+        while not stop.wait(interval):
+            with _post_lock:
+                if _last_payload and _last_payload.get("status") not in ("completed", "error", "cancelled"):
+                    _post(dict(_last_payload))
+    threading.Thread(target=run, daemon=True, name="os4-progress-heartbeat").start()
+    return stop
 
 
 def _callback_token(request_id: str) -> str:
@@ -71,6 +87,7 @@ def emit(
     status: str = "running",
     result: dict[str, Any] | None = None,
     error: str | None = None,
+    ready_cut: dict[str, Any] | None = None,
 ) -> None:
     parts = [
         "OS4_PROGRESS",
@@ -113,7 +130,12 @@ def emit(
     if error is not None:
         payload["error"] = str(error)
 
-    _post(payload)
+    if ready_cut is not None:
+        payload["ready_cut"] = ready_cut
+    with _post_lock:
+        _last_payload.clear()
+        _last_payload.update({k: v for k, v in payload.items() if k != "ready_cut"})
+        _post(payload)
 
 
 def completed(detail: str, result: dict[str, Any]) -> None:
