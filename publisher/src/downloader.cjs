@@ -551,9 +551,11 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFi
     const sizeMb = Number((stats.size / (1024 * 1024)).toFixed(1));
     console.log(`[Downloader] Corte ${cutIndex} já existe localmente em ${videoDestPath} (${sizeMb} MB). Reutilizando.`);
     let cleanTitle = cleanInitialTitle;
-    if (!cleanTitle || /^corte\s*\d+$/i.test(cleanTitle)) {
+    if (postText) {
       const firstLine = postText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
-      if (firstLine && firstLine.length > 3) cleanTitle = firstLine;
+      if (firstLine && firstLine.length > 3) {
+        cleanTitle = firstLine;
+      }
     }
 
     const result = {
@@ -663,12 +665,10 @@ async function downloadCorte({ cutIndex, titulo, videoFileId, postFileId, capaFi
   console.log('====================================================');
 
   let cleanTitle = cleanInitialTitle;
-  if (!cleanTitle || /^corte\s*\d+$/i.test(cleanTitle)) {
-    if (postText) {
-      const firstLine = postText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
-      if (firstLine && firstLine.length > 3) {
-        cleanTitle = firstLine;
-      }
+  if (postText) {
+    const firstLine = postText.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
+    if (firstLine && firstLine.length > 3) {
+      cleanTitle = firstLine;
     }
   }
 

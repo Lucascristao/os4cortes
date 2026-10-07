@@ -3,6 +3,49 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { withGoogleLock } = require('../google-lock.cjs');
 
+// Formata títulos para o YouTube: viral, instigante, sem cortar no meio de palavras e preservando acentos
+function formatarTituloViralYoutube(tituloBruto, maxChars = 70) {
+  if (!tituloBruto) return 'Corte';
+  
+  let s = String(tituloBruto).trim();
+  // Remove prefixos numéricos ("Corte 01:", "01 - ", etc.)
+  s = s.replace(/^(?:corte\s*\d+[\s:_-]*|\d+[\s:._-]*)/i, '').trim();
+  // Pega apenas a primeira linha caso venha com quebras
+  s = s.split(/\r?\n/)[0].trim();
+
+  // Se tem separador com convidado ou programa (" | " ou " - ")
+  if (s.includes(' | ') || s.includes(' - ')) {
+    const separador = s.includes(' | ') ? ' | ' : ' - ';
+    const partes = s.split(separador).map(p => p.trim()).filter(Boolean);
+    const gancho = partes[0];
+    const complemento = partes.slice(1).join(separador);
+
+    // Se o gancho principal for forte e explicativo (>= 25 caracteres), usamos o gancho direto para máxima viralidade
+    if (gancho.length >= 25 && gancho.length <= maxChars) {
+      s = gancho;
+    } else if (gancho.length + separador.length + complemento.length <= maxChars) {
+      s = `${gancho}${separador}${complemento}`;
+    } else {
+      s = gancho;
+    }
+  }
+
+  // Se ainda assim passar de maxChars, trunca elegantemente na última palavra completa
+  if (s.length > maxChars) {
+    const sub = s.slice(0, maxChars);
+    const lastSpace = sub.lastIndexOf(' ');
+    if (lastSpace > 25) {
+      s = sub.slice(0, lastSpace);
+    } else {
+      s = sub;
+    }
+  }
+
+  // Limpa pontuações soltas no final
+  s = s.replace(/[\s|_:-]+$/, '').trim();
+  return s || 'Corte';
+}
+
 async function publishYouTubeVideo({ videoPath, title, description = '', thumbnailPath = null }) {
   return withGoogleLock(async () => {
     const startTime = Date.now();
@@ -90,7 +133,8 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
     }
 
     console.log('[YouTube 4/5] Preenchendo metadados...');
-    const safeTitle = (title || 'Corte').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').slice(0, 95).trim();
+    const safeTitle = formatarTituloViralYoutube(title, 70);
+    console.log(`[YouTube] Título viral formatado (${safeTitle.length} chars): "${safeTitle}"`);
 
     // Seletores abrangentes para o campo de Título no YouTube Studio (Upload Dialog e Metadata Editor)
     const titleSelectors = [
@@ -303,31 +347,50 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
       throw new Error(`Processamento interrompido pelo YouTube: ${errTxt.trim()}`);
     }
 
-    // Garante que a transmissão do arquivo de vídeo foi 100% concluída antes de publicar
-    console.log('[YouTube] Aguardando confirmação de envio dos dados do vídeo...');
-    const uploadDoneSelector = 'text=/envio conclu[ií]do/i, text=/upload complete/i, text=/processando/i, text=/processing/i, text=/verificações concluídas/i, text=/checks complete/i';
-    let uploadConfirmed = false;
-    for (let u = 1; u <= 180; u++) {
+    // Garante que o botão de Publicar está ativo e clica assim que habilitado ou verificações concluídas
+    console.log('[YouTube] Aguardando confirmação e liberação do botão Publicar...');
+    const doneBtn = page.locator('ytcp-button#done-button, button:has-text("Publicar"), button:has-text("Salvar"), #done-button').first();
+
+    for (let u = 1; u <= 60; u++) {
       if (await page.locator(processingErrorSelector).first().isVisible({ timeout: 500 }).catch(() => false)) {
         const errTxt = await page.locator(processingErrorSelector).first().innerText().catch(() => 'Processamento interrompido');
         throw new Error(`Processamento interrompido pelo YouTube: ${errTxt.trim()}`);
       }
-      const isDone = await page.locator(uploadDoneSelector).first().isVisible({ timeout: 1000 }).catch(() => false);
-      if (isDone) {
-        uploadConfirmed = true;
-        console.log(`[YouTube] ✅ Envio dos bytes do vídeo 100% concluído em ${u * 2}s!`);
+
+      // Se o botão Publicar já está visível e habilitado (sem aria-disabled="true" ou disabled)
+      const isDoneBtnVisible = await doneBtn.isVisible().catch(() => false);
+      const isDoneBtnDisabled = await doneBtn.getAttribute('aria-disabled').catch(() => null) === 'true' ||
+                                await doneBtn.getAttribute('disabled').catch(() => null) !== null;
+
+      if (isDoneBtnVisible && !isDoneBtnDisabled) {
+        console.log(`[YouTube] ✅ Botão Publicar já habilitado e pronto em ${Math.round(u * 1.5)}s! Clicando diretamente...`);
         break;
       }
-      if (u % 10 === 0) {
-        console.log(`[YouTube] Transmitindo arquivo para os servidores do YouTube (${u * 2}s)...`);
+
+      // Verificação rápida no texto da página para evitar esperar desnecessariamente
+      const hasChecksDone = await page.evaluate(() => {
+        const text = document.body ? document.body.innerText : '';
+        return /verificações concluídas/i.test(text) ||
+               /checks complete/i.test(text) ||
+               /envio concluído/i.test(text) ||
+               /upload complete/i.test(text);
+      }).catch(() => false);
+
+      if (hasChecksDone && isDoneBtnVisible) {
+        console.log(`[YouTube] ✅ Verificações concluídas detectadas no YouTube em ${Math.round(u * 1.5)}s!`);
+        break;
       }
-      await page.waitForTimeout(2000);
+
+      if (u % 5 === 0) {
+        console.log(`[YouTube] Processando envio no YouTube (${Math.round(u * 1.5)}s)...`);
+      }
+      await page.waitForTimeout(1500);
     }
 
     // Clica em Publicar
     console.log('[YouTube] >>> CLICANDO EM PUBLICAR <<<');
-    const doneBtn = page.locator('ytcp-button#done-button, button:has-text("Publicar"), button:has-text("Salvar")').first();
-    await doneBtn.waitFor({ state: 'visible', timeout: 25000 });
+    await doneBtn.waitFor({ state: 'visible', timeout: 15000 });
+    await doneBtn.scrollIntoViewIfNeeded().catch(() => {});
     await doneBtn.click({ force: true });
 
     // Aguarda confirmação
