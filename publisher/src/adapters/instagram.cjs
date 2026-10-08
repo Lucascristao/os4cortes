@@ -160,11 +160,11 @@ async function publishInstagramReels({ videoPath, caption, attempt }) {
     console.log('[Instagram] Aguardando envio e confirmação do Instagram...');
     let confirmed = false;
     let publishSeconds = 0;
-    for (let wait = 1; wait <= 60; wait++) {
+    for (let wait = 1; wait <= 90; wait++) {
       await page.waitForTimeout(2000);
       const curText = await page.locator('[role="dialog"]').innerText().catch(() => '');
 
-      if (/reel (?:foi )?compartilhado|(?:sua )?publicação (?:foi )?compartilhada|(?:your )?(?:reel|post) (?:has been )?shared/i.test(curText)) {
+      if (/(?:reel|v[ií]deo|post) (?:foi )?(?:compartilhado|partilhado)|(?:sua )?publicação (?:foi )?(?:compartilhada|partilhada)|(?:your )?(?:reel|post) (?:has been )?shared/i.test(curText)) {
         confirmed = true;
         attempt?.confirm({ok:true,confirmed:true,network:'instagram',evidence:'Mensagem de publicação compartilhada',at:Date.now()});
         publishSeconds = ((Date.now() - tUpload) / 1000).toFixed(1);
@@ -197,6 +197,11 @@ async function publishInstagramReels({ videoPath, caption, attempt }) {
       uploadSeconds: publishSeconds,
       screenshot: screenshotPath
     };
+  } catch (error) {
+    const screenshot = path.join(dataDir, `insta-error-${Date.now()}.png`);
+    await page.screenshot({path:screenshot,timeout:5000}).catch(() => {});
+    console.warn(`[Instagram] Diagnóstico do envio: ${screenshot}`);
+    throw error;
   } finally {
     await ctx.close().catch(() => {});
   }

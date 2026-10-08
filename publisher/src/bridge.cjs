@@ -36,7 +36,7 @@ class LocalBridgeServer {
         return res.end(JSON.stringify({
           ok: true,
           app: 'OS4 Publicador',
-          executorStatus: this.executor?.getStatus() || null,
+          executorStatus: this.executor ? {...this.executor.getStatus(),watchers:this.watcher?.status()||[]} : null,
           activeBatch: this.activeBatch
         }));
       }

@@ -1,5 +1,6 @@
 const { DatabaseSync } = require('node:sqlite');
 const crypto = require('node:crypto');
+const { sanitizeDiagnostic } = require('./diagnostics.cjs');
 const day = (ms) => new Intl.DateTimeFormat('en-CA', {timeZone:'America/Fortaleza',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ms));
 class Queue {
   constructor(file) {
@@ -19,7 +20,7 @@ class Queue {
     return this.db.prepare('INSERT OR IGNORE INTO jobs VALUES(?,?,?,?,?,NULL)').run(p.id,fp,JSON.stringify(p),'queued',now).changes === 1;
   }
   list() { return this.db.prepare('SELECT * FROM jobs ORDER BY created').all().map(r=>({...r,payload:JSON.parse(r.payload)})); }
-  status(id,state,detail='',now=Date.now()) { this.transaction(()=>{this.db.prepare('UPDATE jobs SET state=?,evidence=? WHERE id=?').run(state,detail,id);this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(),id,state,now,detail);}); }
+  status(id,state,detail='',now=Date.now()) { detail=sanitizeDiagnostic(detail);this.transaction(()=>{this.db.prepare('UPDATE jobs SET state=?,evidence=? WHERE id=?').run(state,detail,id);this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(),id,state,now,detail);}); }
   eligibility(network,now=Date.now()) {
     const count=this.db.prepare('SELECT count(*) n FROM attempts WHERE network=? AND day=?').get(network,day(now)).n;
     const next=Math.max(this.db.prepare('SELECT max(next) n FROM attempts WHERE network=?').get(network).n || 0, this.get('network_next', {})[network] || 0);

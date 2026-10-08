@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
-const { execFileSync } = require('node:child_process');
+const { videoDuration } = require('./media-probe.cjs');
+const { sanitizeDiagnostic } = require('./diagnostics.cjs');
 const EventEmitter = require('node:events');
 const { buildYouTubeTitle } = require('./titles.cjs');
 const { PublicationAttempt } = require('./attempt.cjs');
@@ -9,7 +10,7 @@ class QueueExecutor extends EventEmitter {
   constructor(q, options = {}) {
     super(); this.q=q; this.options=options; this.now=options.now||Date.now;
     this.isPaused=Boolean(q.get('queue_paused',false)); this.isRunning=false;
-    this.activeJobs=new Map(); this.phases={}; this.nextAvailable=q.get('network_next',{}); this.blocked=new Set();
+    this.activeJobs=new Map(); this.phases={}; this.nextAvailable=q.get('network_next',{}); this.blocked=new Set();this.closing=new Map();
     for(const job of q.list().filter(j=>j.state==='verify')) {
       if(q.confirmation(job.id)?.confirmed) q.status(job.id,'completed','Confirmação recuperada após reinício.');
     }
@@ -38,6 +39,7 @@ class QueueExecutor extends EventEmitter {
   }
   async tick(){
     if(this.isPaused||!this.isRunning)return;
+    for(const [net,attempt] of this.closing){if(attempt.isClosed()){this.closing.delete(net);this.blocked.delete(net);}}
     for(const job of this.q.list().filter(j=>j.state==='queued')) {
       const net=job.payload.network;
       if(this.activeJobs.size>=2)break;
@@ -51,16 +53,15 @@ class QueueExecutor extends EventEmitter {
     }
     this.update();
   }
-  validateVideo(file){
+  async validateVideo(file){
     if(this.options.validateVideo)return this.options.validateVideo(file);
     if(!file||!fs.existsSync(file))throw new Error('Arquivo de vídeo ausente. Baixe novamente o corte.');
-    const out=execFileSync('ffprobe',['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',file],{timeout:15000,windowsHide:true}).toString();
-    if(!(Number(out.trim())>5))throw new Error('Vídeo incompleto ou duração inválida.');
+    if(!(await videoDuration(file)>5))throw new Error('Vídeo incompleto ou duração inválida.');
   }
   async processJob(job){
     const p=job.payload,net=p.network,started=this.now();let begun=false,attempt;
     try{
-      this.validateVideo(p.videoPath);
+      await this.validateVideo(p.videoPath);
       const text=p.postPath&&fs.existsSync(p.postPath)?fs.readFileSync(p.postPath,'utf8').trim():(p.postText||'').trim();
       if(!text)throw new Error('Texto da postagem ausente. O corte não será publicado sem legenda.');
       this.q.begin(job.id,started);begun=true;
@@ -79,14 +80,15 @@ class QueueExecutor extends EventEmitter {
       const firstLine=text.split('\n').find(l=>l.trim()&&!l.startsWith('#'))||p.titulo;
       const task=Promise.resolve().then(()=>publishers[net]({videoPath:p.videoPath,caption:text,title:buildYouTubeTitle(firstLine,text),description:text,thumbnailPath:p.capaPath,attempt}));
       let timer;
-      const expiry=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Tempo de envio excedido. Navegador encerrado para liberar a fila.')),this.options.timeoutMs||(net==='youtube'?600000:300000));});
+      const expiry=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Tempo de envio excedido. Navegador encerrado para liberar a fila.')),this.options.timeoutMs||600000);});
       let result;try{result=await Promise.race([task,expiry]);}finally{clearTimeout(timer);}
       if(!result?.ok||result.confirmed!==true)throw new Error('A rede não confirmou a publicação.');
       attempt.confirm(result);
       this.q.status(job.id,'completed',`Publicação confirmada em ${Math.round((this.now()-started)/1000)}s.`,this.now());
       this.emit('job-completed',{job,result,status:this.getStatus()});this.scheduleCleanup(p.videoPath);
     }catch(e){
-      if(attempt&&!(await attempt.abort()))this.blocked.add(net);
+      e.message=sanitizeDiagnostic(e.message);
+      if(attempt&&!(await attempt.abort())){this.blocked.add(net);this.closing.set(net,attempt);}
       if(this.q.confirmation(job.id)?.confirmed){
         this.q.status(job.id,'completed','Publicação confirmada; encerramento do navegador recuperado.',this.now());this.scheduleCleanup(p.videoPath);
       }else if(attempt?.submitted){

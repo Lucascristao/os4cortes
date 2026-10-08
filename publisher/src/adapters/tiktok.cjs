@@ -1,6 +1,7 @@
 const { chromium } = require('playwright');
 const path = require('node:path');
 const fs = require('node:fs');
+const { waitForUploadReady } = require('../upload-ready.cjs');
 
 async function publishTikTok({ videoPath, caption, attempt }) {
   attempt?.stage('Abrindo TikTok');
@@ -49,7 +50,7 @@ async function publishTikTok({ videoPath, caption, attempt }) {
 
     // Aguarda o botão Publicar estar visível na página de detalhes
     const publishBtn = page.locator('button:has-text("Publicar"), div[role="button"]:has-text("Publicar")').first();
-    await publishBtn.waitFor({ state: 'visible', timeout: 45000 });
+    await publishBtn.waitFor({ state: 'visible', timeout: 120000 });
     await page.waitForTimeout(4000);
 
     // Fecha popup "Entendi" se reaparecer
@@ -84,7 +85,7 @@ async function publishTikTok({ videoPath, caption, attempt }) {
 
     console.log('[TikTok] Clicando no botão vermelho Publicar...');
     await postBtn.waitFor({state:'visible'});
-    if (!await postBtn.isEnabled()) throw new Error('TikTok ainda está processando o vídeo.');
+    await waitForUploadReady(postBtn, page, attempt);
     attempt?.stage('Publicando e aguardando confirmação');
     attempt?.beforePublish();
     const box = await postBtn.boundingBox();
@@ -149,6 +150,11 @@ async function publishTikTok({ videoPath, caption, attempt }) {
       uploadSeconds,
       screenshot: screenshotPath
     };
+  } catch (error) {
+    const screenshot = path.join(dataDir, `tiktok-error-${Date.now()}.png`);
+    await page.screenshot({path:screenshot,timeout:5000}).catch(() => {});
+    console.warn(`[TikTok] Diagnóstico do envio: ${screenshot}`);
+    throw error;
   } finally {
     await ctx.close().catch(() => {});
   }

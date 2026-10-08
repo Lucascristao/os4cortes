@@ -5,10 +5,11 @@ class PublicationAttempt {
   stage(detail){this.check();this.callbacks.stage?.(detail);}
   beforePublish(){this.check();if(!this.submitted){this.callbacks.intent?.();this.submitted=true;}}
   confirm(result){if(!result?.confirmed||this.receipt)return;this.receipt=result;this.callbacks.confirmed?.(result);}
+  isClosed(){return this.contexts.size===0;}
   async abort(){
     this.controller.abort(new Error('Tentativa encerrada.'));let timer;
     const closing=Promise.allSettled([...this.contexts].map(ctx=>ctx.close()));
-    try{const results=await Promise.race([closing,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),15000);})]);return !!results&&results.every(r=>r.status==='fulfilled');}
+    try{const results=await Promise.race([closing,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),30000);})]);return this.isClosed()||!!results&&results.every(r=>r.status==='fulfilled');}
     finally{clearTimeout(timer);}
   }
 }

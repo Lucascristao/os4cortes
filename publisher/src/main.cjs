@@ -7,6 +7,7 @@ const { QueueExecutor } = require('./executor.cjs');
 const { LocalBridgeServer } = require('./bridge.cjs');
 const { scanDriveFolder, downloadTextFileDirect, downloadCorte } = require('./downloader.cjs');
 const { FolderWatcher } = require('./watcher.cjs');
+const { sanitizeDiagnostic } = require('./diagnostics.cjs');
 
 const smoke = process.argv.includes('--smoke-test');
 const dataDir = smoke ? (process.env.OS4_SMOKE_DIR || path.join(app.getPath('temp'), `OS4Publicador-smoke-${process.pid}`)) : path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
@@ -23,7 +24,7 @@ const contexts = new Map();
 const loginProcesses = new Map();
 const logPath = path.join(dataDir, 'activity.ndjson');
 function logToUi(msg) {
-  const clean = String(msg).replace(/([?&](?:token|confirm|uuid|key)=)[^\s&]+/gi, '$1[oculto]');
+  const clean = sanitizeDiagnostic(msg);
   const entry = {msg:clean,time:new Date().toISOString()};
   try {
     if (fs.existsSync(logPath) && fs.statSync(logPath).size > 5*1024*1024) fs.renameSync(logPath, logPath+'.previous');
@@ -65,7 +66,7 @@ if (!app.requestSingleInstanceLock()) {
     fs.mkdirSync(dataDir, { recursive: true });
     for (const method of ['log','warn','error']) {
       const original=console[method].bind(console);
-      console[method]=(...args)=>{original(...args);logToUi(args.map(a=>a instanceof Error?a.message:typeof a==='string'?a:JSON.stringify(a)).join(' '));};
+      console[method]=(...args)=>{const clean=sanitizeDiagnostic(args.map(a=>a instanceof Error?a.message:typeof a==='string'?a:JSON.stringify(a)).join(' '));original(clean);logToUi(clean);};
     }
     q = new Queue(path.join(dataDir, 'queue.sqlite'));
     executor = new QueueExecutor(q);
