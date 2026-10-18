@@ -26,6 +26,7 @@ work/
 output/
 outputs_teste/
 .render_work/
+.editorial-cache/
 
 # SO / editor
 .DS_Store

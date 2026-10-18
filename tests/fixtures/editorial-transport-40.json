@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "purpose": "Shared Node/Python transport vector: forty complete editorial cuts with Unicode.",
+  "count": 40,
+  "template": {
+    "titulo": "Uma resposta com contexto",
+    "inicio": "00:10",
+    "fim": "00:30",
+    "formato": "9:16",
+    "destino": "reels_tiktok",
+    "saida_suave": false,
+    "legenda_post": "Um teste de transporte deve conservar narração, acentuação, evidências e ordem das cenas. Um teste de transporte deve conservar narração, acentuação, evidências e ordem das cenas. Um teste de transporte deve conservar narração, acentuação, evidências e ordem das cenas. Um teste de transporte deve conservar narração, acentuação, evidências e ordem das cenas. Um teste de transporte deve conservar narração, acentuação, evidências e ordem das cenas. Um teste de transporte deve conservar narração, acentuação, evidências e ordem das cenas. Um teste de transporte deve conservar narração, acentuação, evidências e ordem das cenas. Um teste de transporte deve conservar narração, acentuação, evidências e ordem das cenas.",
+    "hashtags": [
+      "#contexto",
+      "#entrevista"
+    ],
+    "editorial": {
+      "version": 1,
+      "source": {
+        "label": "Entrevista de referência",
+        "date": "2026-10-18"
+      },
+      "scenes": [
+        {
+          "id": "opening",
+          "kind": "narration",
+          "text": "O que esta resposta esclarece? Cada frase serve apenas como dado de teste para conferir o transporte sem alterar o conteúdo. O que esta resposta esclarece? Cada frase serve apenas como dado de teste para conferir o transporte sem alterar o conteúdo. O que esta resposta esclarece? Cada frase serve apenas como dado de teste para conferir o transporte sem alterar o conteúdo. O que esta resposta esclarece? Cada frase serve apenas como dado de teste para conferir o transporte sem alterar o conteúdo. O que esta resposta esclarece? Cada frase serve apenas como dado de teste para conferir o transporte sem alterar o conteúdo. O que esta resposta esclarece? Cada frase serve apenas como dado de teste para conferir o transporte sem alterar o conteúdo. O que esta resposta esclarece? Cada frase serve apenas como dado de teste para conferir o transporte sem alterar o conteúdo. O que esta resposta esclarece? Cada frase serve apenas como dado de teste para conferir o transporte sem alterar o conteúdo.",
+          "background": {
+            "start": 10,
+            "end": 15
+          },
+          "visual": {
+            "title": "O que foi dito?",
+            "kicker": "SEGUNDO A FONTE",
+            "lines": [
+              "O que ela confirma",
+              "O que diz não saber"
+            ]
+          },
+          "tts": {
+            "delivery": "hook",
+            "cues": []
+          },
+          "evidence": [
+            {
+              "start": 15,
+              "end": 25
+            }
+          ]
+        },
+        {
+          "id": "answer",
+          "kind": "clip",
+          "start": 15,
+          "end": 25
+        },
+        {
+          "id": "closing",
+          "kind": "narration",
+          "text": "A fonte confirma a apresentação e delimita o que diz saber. Que parte da resposta esclarece a sua dúvida? A fonte confirma a apresentação e delimita o que diz saber. Que parte da resposta esclarece a sua dúvida? A fonte confirma a apresentação e delimita o que diz saber. Que parte da resposta esclarece a sua dúvida? A fonte confirma a apresentação e delimita o que diz saber. Que parte da resposta esclarece a sua dúvida? A fonte confirma a apresentação e delimita o que diz saber. Que parte da resposta esclarece a sua dúvida? A fonte confirma a apresentação e delimita o que diz saber. Que parte da resposta esclarece a sua dúvida? A fonte confirma a apresentação e delimita o que diz saber. Que parte da resposta esclarece a sua dúvida? A fonte confirma a apresentação e delimita o que diz saber. Que parte da resposta esclarece a sua dúvida?",
+          "background": {
+            "start": 22,
+            "end": 25
+          },
+          "visual": {
+            "title": "Qual parte esclarece?",
+            "kicker": "A PERGUNTA",
+            "lines": [
+              "Veja a resposta completa"
+            ]
+          },
+          "tts": {
+            "delivery": "question",
+            "cues": []
+          },
+          "evidence": [
+            {
+              "start": 15,
+              "end": 25
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "transport": "gzip-base64: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"
+}

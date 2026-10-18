@@ -15,6 +15,7 @@ const githubToken = $("#githubToken");
 const githubSetupMsg = $("#githubSetupMsg");
 const videoUrl = $("#videoUrl");
 const hasLowerThirdInput = $("#hasLowerThird");
+const simpleCutsInput = $("#simpleCuts");
 const pacote = $("#pacote");
 const cutsEditor = $("#cutsEditor");
 const transcriptSection = $("#transcriptSection");
@@ -69,12 +70,22 @@ function atualizarTarjaVideo() {
   if (hasLowerThirdInput) {
     hasLowerThirdInput.checked = Boolean(sessaoTranscricao && key === chaveVideo(sessaoTranscricao.videoUrl) && sessaoTranscricao.hasLowerThird === true);
   }
+  if (simpleCutsInput) {
+    simpleCutsInput.checked = Boolean(sessaoTranscricao && key === chaveVideo(sessaoTranscricao.videoUrl) && sessaoTranscricao.simpleCuts === true);
+  }
 }
 
 hasLowerThirdInput?.addEventListener("change", () => {
   // A URL pode ser um rascunho de outro vídeo; só altera a sessão correspondente.
   if (sessaoTranscricao && chaveVideo(videoUrl?.value) === chaveVideo(sessaoTranscricao.videoUrl)) {
     sessaoTranscricao.hasLowerThird = hasLowerThirdInput.checked;
+    salvarSessaoTranscricao();
+  }
+});
+
+simpleCutsInput?.addEventListener("change", () => {
+  if (sessaoTranscricao && chaveVideo(videoUrl?.value) === chaveVideo(sessaoTranscricao.videoUrl)) {
+    sessaoTranscricao.simpleCuts = simpleCutsInput.checked;
     salvarSessaoTranscricao();
   }
 });
@@ -226,7 +237,7 @@ function restaurarSessao() {
     const rawResults = localStorage.getItem(STORAGE_RESULTS);
     if (rawResults && !localStorage.getItem(STORAGE_JOB)) {
       const result = JSON.parse(rawResults);
-      if (result?.cuts?.length) {
+      if (result?.cuts && (result.cuts.length || result.errors?.length)) {
         mostrarResultados(result, false);
       }
     }
@@ -428,6 +439,7 @@ videoUrl?.addEventListener("change", atualizarMetadadosUrl);
 btnTranscrever?.addEventListener("click", async () => {
   const url = videoUrl.value.trim();
   const hasLowerThird = hasLowerThirdInput?.checked === true;
+  const simpleCuts = simpleCutsInput?.checked === true;
   if (!url) {
     alert("Cole a URL do vídeo primeiro.");
     return;
@@ -452,9 +464,9 @@ btnTranscrever?.addEventListener("click", async () => {
   try {
     const dados = await api("/.netlify/functions/workflow-start", {
       method: "POST",
-      body: JSON.stringify({ kind: "transcribe", videoUrl: url, hasLowerThird }),
+      body: JSON.stringify({ kind: "transcribe", videoUrl: url, hasLowerThird, simpleCuts }),
     });
-    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "transcribe", videoUrl: url, hasLowerThird, timestamp: Date.now() }));
+    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "transcribe", videoUrl: url, hasLowerThird, simpleCuts, timestamp: Date.now() }));
     alternarBotaoCancelar(true);
     acompanharJob(dados.requestId, "transcribe");
   } catch (erro) {
@@ -562,6 +574,7 @@ function acompanharJob(id, kind) {
             ...job.result,
             videoUrl: jobLocal?.videoUrl || job.result?.videoUrl || "",
             hasLowerThird: job.hasLowerThird === true,
+            simpleCuts: typeof job.simpleCuts === "boolean" ? job.simpleCuts : jobLocal?.simpleCuts === true,
           });
           btnTranscrever.disabled = false;
           btnTranscrever.textContent = "Transcrever outro";
@@ -577,6 +590,7 @@ function acompanharJob(id, kind) {
         alternarBotaoCancelar(false);
         setStatus(kind === "render" ? "cortes" : "video", "Erro", "error");
         atualizarProgresso({ percent: job.percent || 100, title: "Processamento interrompido", detail: job.error || job.detail || "Falha no processamento." });
+        if (job.result?.cuts && job.result?.errors?.length) mostrarResultados(job.result, false);
         btnTranscrever.disabled = false;
         btnTranscrever.textContent = "Transcrever";
         btnGerarCortes.disabled = false;
@@ -625,6 +639,7 @@ function retomarJob() {
       if (videoUrl) videoUrl.value = job.videoUrl || "";
       lowerThirdVideoKey = chaveVideo(job.videoUrl);
       if (hasLowerThirdInput) hasLowerThirdInput.checked = job.hasLowerThird === true;
+      if (simpleCutsInput) simpleCutsInput.checked = job.simpleCuts === true;
       btnTranscrever.disabled = true;
       btnTranscrever.textContent = "Processando...";
     } else {
@@ -639,11 +654,12 @@ function retomarJob() {
 
 function mostrarTranscricao(result) {
   if (!result) return;
-  sessaoTranscricao = { ...result, videoUrl: result.videoUrl || "", hasLowerThird: result.hasLowerThird === true };
+  sessaoTranscricao = { ...result, videoUrl: result.videoUrl || "", hasLowerThird: result.hasLowerThird === true, simpleCuts: result.simpleCuts === true };
   salvarSessaoTranscricao();
   if (videoUrl) videoUrl.value = sessaoTranscricao.videoUrl;
   lowerThirdVideoKey = chaveVideo(sessaoTranscricao.videoUrl);
   if (hasLowerThirdInput) hasLowerThirdInput.checked = sessaoTranscricao.hasLowerThird;
+  if (simpleCutsInput) simpleCutsInput.checked = sessaoTranscricao.simpleCuts;
 
   transcriptText.value = result.transcript || "";
   driveFolderLink.href = result.driveFolderUrl || `https://drive.google.com/drive/folders/${result.folderId}`;
@@ -664,6 +680,60 @@ $("#btnCopiarTranscricao")?.addEventListener("click", async (event) => {
     setTimeout(() => (botao.textContent = original), 1300);
   }
 });
+
+function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, blocoVideoOriginal }) {
+  const fonte = sampleAuthor && sampleAuthor !== "Canal Oficial" ? sampleAuthor : "Fonte original";
+  const dadosFonte = blocoVideoOriginal.replace('Canal / Host: "Canal Oficial"', 'Canal / Host: não informado');
+  const narracao = (id, title, start, end, text, delivery = "explain") => ({
+    id, kind: "narration", text,
+    background: { start, end },
+    visual: { title, kicker: "[Tema ou contexto curto]", lines: ["[Ponto verificável da fala]"] },
+    tts: { delivery, cues: [] },
+    evidence: [{ start, end }],
+  });
+  const exemplo = [{
+    titulo: "[Título fiel à ideia completa]", inicio: "00:01:15", fim: "00:02:20",
+    formato: "9:16", destino: "reels_tiktok", saida_suave: true,
+    legenda_post: "[Reflexão breve e crédito da fonte]", hashtags: ["#tema"],
+    editorial: {
+      version: 1,
+      source: { label: fonte, date: "" },
+      scenes: [
+        narracao("abertura", "[Pergunta específica]", 75, 82, "[Contexto atribuído e pergunta que o vídeo vai esclarecer.]", "hook"),
+        { id: "entrevista-1", kind: "clip", start: 75, end: 93 },
+        narracao("comentario", "[Distinção central]", 94, 103, "[Comentário próprio que explica ou compara as falas com base na evidência.]"),
+        { id: "entrevista-2", kind: "clip", start: 119, end: 132 },
+        narracao("fechamento", "[Conclusão proporcional]", 125, 140, "[Resposta à pergunta inicial, limite da evidência e próxima pergunta concreta, se pertinente.]", "closing"),
+      ],
+    },
+  }];
+  return `Você é o editor do OS4 Cortes. Leia toda a transcrição e crie vídeos autorais completos: a fala original deve sustentar uma explicação própria que dê contexto, faça uma análise e entregue uma conclusão.
+
+O canal aborda economia, empreendedorismo, política e outros temas. Use linguagem de criador que conversa e levanta perguntas, sem tom de telejornal, boletim ou manchete. A identidade visual é a mesma entre assuntos; os textos devem se adaptar ao conteúdo e permanecer fiéis à fonte.
+
+Selecione ideias com começo, meio e fim. Conduza cada vídeo por uma pergunta específica e verificável: contexto e pergunta na abertura; excertos completos e comentário no desenvolvimento; conclusão proporcional ao que foi ouvido no fechamento. A narração deve acrescentar informação ou raciocínio, além de anunciar o corte.
+
+Escreva como uma conversa clara e curiosa com uma pessoa, com perguntas naturais e frases curtas. Preserve a atribuição: diferencie o que o entrevistado afirma, a evidência disponível e a sua interpretação. As perguntas devem pedir informação, sem insinuações ou acusações. Não invente falas, datas, participantes, números, fatos ou conclusões. Use apenas o que a fonte permite sustentar; dados externos sem fonte verificada devem ficar fora da locução.
+
+Entregue somente um array JSON válido. Mantenha os campos normais de cada corte e inclua editorial em TODOS os objetos, com version: 1. Proponha os DOIS destinos quando a fonte sustentar boas ideias, sem forçar quantidade: formato 9:16/destino reels_tiktok para verticais e 16:9/youtube para horizontais. No YouTube, use a mesma lógica autoral para aprofundar uma explicação completa; a versão horizontal não deve apenas alongar o vertical. Selecione apenas vídeos com uma ideia completa; recalcule o ritmo pela história, sem esticar silêncio ou repetir conteúdo para atingir duração.
+
+Contrato editorial obrigatório:
+- source.label identifica a fonte; source.date usa AAAA-MM-DD somente se a data estiver confirmada, ou string vazia se desconhecida. Credite a fonte na legenda_post/descricao. URL da fonte: ${urlAtual || "[URL fornecida]"}.
+- scenes contém de 2 a 12 cenas na ordem final, combinando narration e clip. Use ids únicos com letras, números, hífen ou sublinhado, começando por letra ou número (até 40 caracteres).
+- clip: id, kind: "clip", start e end numéricos em segundos da fonte original.
+- narration: id, kind: "narration", text (texto literal que será falado, até 1400 caracteres), background: {start,end}, visual: {title,kicker,lines}, tts: {delivery:"explain",cues:[]}, evidence: [{start,end}].
+- background escolhe vídeo real para o fundo em movimento; evidence traz de 1 a 8 intervalos da transcrição que sustentam a narração. Todos os intervalos precisam ter end > start e caber entre inicio/fim do corte, em segundos absolutos do vídeo original.
+- inicio/fim são o envelope da fonte: use o menor start e o maior end de TODAS as referências em clips, backgrounds e evidence. A duração final é a soma dos áudios narrados e dos clips na montagem; ela não é a duração desse envelope da fonte.
+- Use títulos visuais curtos e fortes, preferencialmente de 4 a 8 palavras, até 100 caracteres; kicker temático até 60; no máximo 3 frases curtas de apoio, mostradas uma por vez. Evite rótulos de telejornal e não repita a legenda da voz na tela de apoio. A montagem cuida do vídeo ao fundo, blur, preto neutro, movimento do texto, voz e legendas.
+- Escolha tts.delivery pela intenção de cada cena: hook na abertura que apresenta o assunto, explain ao explicar, question em pergunta direta, contrast para uma distinção e closing ao concluir. Use cues vazio para começar; a direção deve acompanhar a intenção sem mudar a identidade da voz. Não coloque instruções de voz no text. Preserve a fala original nos clips.
+- Nos horizontais inclua descricao e tags; nos verticais legenda_post e hashtags. Os títulos, créditos e descrições também devem ser fiéis à fonte.
+
+O exemplo abaixo ilustra o schema. Substitua TODOS os textos entre colchetes, tema, números e tempos por escolhas reais da transcrição. Não copie esses tempos como se tivessem sido encontrados na fonte.
+${JSON.stringify(exemplo, null, 2)}
+${dadosFonte}
+--- TRANSCRIÇÃO ---
+${transcricao}`;
+}
 
 $("#btnCopiarPromptIA")?.addEventListener("click", async (event) => {
   const transcricao = transcriptText.value.trim();
@@ -691,7 +761,7 @@ $("#btnCopiarPromptIA")?.addEventListener("click", async (event) => {
     ? `\n--- DADOS DO VÍDEO ORIGINAL NO YOUTUBE ---\nTítulo oficial no YouTube: "${sampleTitle}"\nCanal / Host: "${sampleAuthor}"\n`
     : "";
 
-  const promptCompleto = `Você é um editor sênior e estrategista multiplataforma do OS4 Cortes, especializado em gerar conteúdos de alta performance para redes sociais (Reels e TikTok) e vídeos normais para o YouTube (formato horizontal de canal de cortes).
+  const promptSimples = `Você é um editor sênior e estrategista multiplataforma do OS4 Cortes, especializado em gerar conteúdos de alta performance para redes sociais (Reels e TikTok) e vídeos normais para o YouTube (formato horizontal de canal de cortes).
 Leia toda a transcrição antes de selecionar. Sua missão é entregar um ÚNICO PACOTE JSON UNIFICADO contendo DOIS TIPOS DE CORTES:
 
 --- GRUPO 1: CORTES VERTICAIS (Instagram Reels & TikTok) ---
@@ -750,6 +820,8 @@ ${blocoVideoOriginal}
 --- TRANSCRIÇÃO ---
 ${transcricao}`;
 
+  const promptCompleto = simpleCutsInput?.checked === true ? promptSimples
+    : criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, blocoVideoOriginal });
   const botao = event?.currentTarget || $("#btnCopiarPromptIA");
   const original = botao?.textContent || "Copiar Prompt para IA";
   await navigator.clipboard.writeText(promptCompleto);
@@ -838,6 +910,10 @@ function normalizarPacote(data) {
   if (!Array.isArray(lista) || !lista.length) throw new Error("Nenhum corte encontrado no JSON.");
 
   return lista.map((c, i) => {
+    const temEditorial = Object.hasOwn(c || {}, "editorial");
+    if (temEditorial && (!c.editorial || typeof c.editorial !== "object" || Array.isArray(c.editorial))) {
+      throw new Error(`Corte ${i + 1}: editorial precisa ser um objeto JSON.`);
+    }
     const inicio = normalizarTimestamp(c?.inicio);
     const fim = normalizarTimestamp(c?.fim);
     const segInicio = converterTempoSegundos(inicio);
@@ -871,6 +947,7 @@ function normalizarPacote(data) {
       hashtags,
       tags: hashtags,
       saida_suave: c?.saida_suave !== false,
+      ...(temEditorial ? { editorial: c.editorial } : {}),
     };
   });
 }
@@ -887,6 +964,14 @@ function criarCampo(label, valor, tipo = "input") {
   return { wrap, campo };
 }
 
+function adicionarRotuloEditorial(cabecalho, metadados) {
+  if (!Object.hasOwn(metadados || {}, "editorial")) return;
+  const badge = document.createElement("span");
+  badge.className = "network-badge";
+  badge.textContent = "Mini vídeo narrado";
+  cabecalho.appendChild(badge);
+}
+
 function renderizarEditor(cortes) {
   cutsEditor.innerHTML = "";
   cortes.forEach((corte, index) => {
@@ -896,6 +981,11 @@ function renderizarEditor(cortes) {
     const isYoutube = corte.formato === "16:9" || corte.destino === "youtube";
     card.dataset.formato = isYoutube ? "16:9" : "9:16";
     card.dataset.destino = isYoutube ? "youtube" : "reels_tiktok";
+    // Keep the plan on its card so editing or reordering cannot associate it with another cut.
+    card.os4CutMetadata = {
+      saida_suave: corte.saida_suave !== false,
+      ...(Object.hasOwn(corte, "editorial") ? { editorial: corte.editorial } : {}),
+    };
 
     const top = document.createElement("div");
     top.className = "cut-card-head";
@@ -906,6 +996,7 @@ function renderizarEditor(cortes) {
     badge.className = `network-badge ${isYoutube ? "yt-badge" : "vertical-badge"}`;
     badge.textContent = isYoutube ? "▶️ YouTube (16:9)" : "📱 Reels & TikTok (9:16)";
     strong.appendChild(badge);
+    adicionarRotuloEditorial(strong, card.os4CutMetadata);
 
     const actions = document.createElement("div");
     actions.className = "cut-card-actions";
@@ -995,6 +1086,7 @@ function renderizarEditor(cortes) {
         const isYt = c.dataset.formato === "16:9";
         if (lbl) {
           lbl.innerHTML = `Corte ${i + 1} <span class="network-badge ${isYt ? "yt-badge" : "vertical-badge"}">${isYt ? "▶️ YouTube (16:9)" : "📱 Reels & TikTok (9:16)"}</span>`;
+          adicionarRotuloEditorial(lbl, c.os4CutMetadata);
         }
         const bDel = c.querySelector(".btn-delete-cut");
         if (bDel) bDel.setAttribute("aria-label", `Excluir corte ${i + 1}`);
@@ -1046,6 +1138,7 @@ function lerCortesEditor() {
     const destino = card.dataset.destino || (formato === "16:9" ? "youtube" : "reels_tiktok");
     const textoPost = card.querySelector('[data-field="legenda_post"]')?.value?.trim() || "";
     const tagsVal = card.querySelector('[data-field="hashtags"]')?.value?.trim() || "";
+    const metadados = card.os4CutMetadata || {};
     return {
       titulo: card.querySelector('[data-field="titulo"]').value.trim(),
       inicio: card.querySelector('[data-field="inicio"]').value.trim(),
@@ -1056,8 +1149,31 @@ function lerCortesEditor() {
       legenda_post: textoPost,
       hashtags: tagsVal,
       tags: tagsVal,
+      saida_suave: metadados.saida_suave !== false,
+      ...(Object.hasOwn(metadados, "editorial") ? { editorial: metadados.editorial } : {}),
     };
   });
+}
+
+function planoAutoralValido(corte) {
+  const plano = corte.editorial;
+  const cenas = plano?.scenes;
+  if (plano?.version !== 1 || !Array.isArray(cenas) || cenas.length < 2 || cenas.length > 12) return false;
+  const intervalo = (valor) => Number.isFinite(valor?.start) && Number.isFinite(valor?.end)
+    && valor.start >= 0 && valor.end > valor.start;
+  const tipos = new Set();
+  for (const cena of cenas) {
+    if (!cena || typeof cena !== "object") return false;
+    tipos.add(cena.kind);
+    if (cena.kind === "clip") {
+      if (!intervalo(cena)) return false;
+    } else if (cena.kind === "narration") {
+      if (typeof cena.text !== "string" || !cena.text.trim() || !intervalo(cena.background)
+        || typeof cena.visual?.title !== "string" || !cena.visual.title.trim()
+        || !Array.isArray(cena.evidence) || !cena.evidence.length || !cena.evidence.every(intervalo)) return false;
+    } else return false;
+  }
+  return tipos.has("narration") && tipos.has("clip");
 }
 
 btnGerarCortes?.addEventListener("click", async () => {
@@ -1113,6 +1229,19 @@ btnGerarCortes?.addEventListener("click", async () => {
   }
 
   const cuts = lerCortesEditor();
+  const simpleCuts = sessaoTranscricao.simpleCuts === true;
+  if (!simpleCuts) {
+    const invalido = cuts.findIndex((corte) => !planoAutoralValido(corte));
+    if (invalido !== -1) {
+      const mensagem = `Corte ${invalido + 1}: o modo autoral precisa de um plano editorial version: 1 com narração, evidências e trechos da fonte. Use “Copiar Prompt para IA” para gerar um pacote novo ou marque “Usar corte simples (formato antigo)”.`;
+      cards[invalido].classList.add("has-error");
+      cards[invalido].scrollIntoView({ behavior: "smooth", block: "center" });
+      setStatus("cortes", "Plano autoral necessário", "error");
+      atualizarProgresso({ percent: 0, title: "Complete o pacote autoral", detail: mensagem });
+      alert(mensagem);
+      return;
+    }
+  }
 
   btnGerarCortes.disabled = true;
   btnGerarCortes.textContent = "Iniciando...";
@@ -1130,10 +1259,11 @@ btnGerarCortes?.addEventListener("click", async () => {
         videoFileId: sessaoTranscricao.videoFileId,
         transcriptJsonFileId: sessaoTranscricao.transcriptJsonFileId,
         hasLowerThird: sessaoTranscricao.hasLowerThird === true,
+        simpleCuts,
         cuts,
       }),
     });
-    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "render", videoUrl: sessaoTranscricao.videoUrl, hasLowerThird: sessaoTranscricao.hasLowerThird === true, timestamp: Date.now() }));
+    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "render", videoUrl: sessaoTranscricao.videoUrl, hasLowerThird: sessaoTranscricao.hasLowerThird === true, simpleCuts, timestamp: Date.now() }));
     alternarBotaoCancelar(true);
     acompanharJob(dados.requestId, "render");
   } catch (erro) {
@@ -1208,12 +1338,21 @@ function resultLink(texto, url, primary = false) {
 
 function mostrarResultados(result, autoSend = true) {
   if (!result?.cuts) return;
+  const errors = Array.isArray(result.errors) ? result.errors : [];
+  const completedCount = Number.isInteger(result.completedCount) && result.completedCount >= 0
+    ? result.completedCount : result.cuts.length;
+  const requestedCount = Math.max(completedCount + errors.length,
+    Number.isInteger(result.requestedCount) && result.requestedCount >= 0 ? result.requestedCount : result.cuts.length);
+  const partial = errors.length > 0 || completedCount < requestedCount;
+  const summary = partial
+    ? `${completedCount}/${requestedCount} cortes prontos; ${errors.length} com falha`
+    : `${completedCount}/${requestedCount} cortes concluídos e salvos no Google Drive`;
   resultsList.innerHTML = "";
   resultsDriveLink.href = driveAccountUrl(result.driveFolderUrl || `https://drive.google.com/drive/folders/${result.folderId}`);
 
   const tituloEl = resultsSection?.querySelector(".section-title h2");
   if (tituloEl) {
-    tituloEl.textContent = `${result.cuts.length}/${result.cuts.length} cortes concluídos e salvos no Google Drive`;
+    tituloEl.textContent = summary;
   }
 
   result.cuts.forEach((corte) => {
@@ -1238,15 +1377,29 @@ function mostrarResultados(result, autoSend = true) {
       links.append(
         resultLink("Vídeo com legenda", corte.files.videoLegenda.url, true),
         resultLink("Abrir legendado no Drive", corte.files.videoLegenda.url),
-        resultLink("Vídeo sem legenda", corte.files.video.url),
-        resultLink("SRT", corte.files.srt.url),
-        resultLink("Texto da postagem", corte.files.post.url),
       );
+      if (corte.files.video.id !== corte.files.videoLegenda.id) {
+        links.append(resultLink("Vídeo sem legenda", corte.files.video.url));
+      }
+      links.append(resultLink("SRT", corte.files.srt.url), resultLink("Texto da postagem", corte.files.post.url));
       if (corte.files.capa?.url) {
         links.append(resultLink("Capa", corte.files.capa.url));
       }
     }
     card.append(title, links);
+    resultsList.appendChild(card);
+  });
+
+  errors.forEach((error) => {
+    const card = document.createElement("article");
+    card.className = "result-card result-error";
+    const title = document.createElement("strong");
+    const index = Number.isInteger(error.index) ? String(error.index).padStart(2, "0") : "Corte";
+    title.textContent = `${index}. ${error.titulo || "Corte sem título"} — falhou`;
+    const message = document.createElement("p");
+    message.className = "hint";
+    message.textContent = error.error || "Este corte não foi concluído.";
+    card.append(title, message);
     resultsList.appendChild(card);
   });
 
@@ -1257,10 +1410,15 @@ function mostrarResultados(result, autoSend = true) {
   document.getElementById("cutsLiveProgress")?.classList.add("hidden");
   resultsSection.classList.remove("hidden");
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
-  setStatus("cortes", `${result.cuts.length} concluídos`, "ok");
+  setStatus("cortes", partial ? summary : `${completedCount} concluídos`, errors.length ? "error" : partial ? "active" : "ok");
+  if (partial) {
+    atualizarProgresso({ percent: requestedCount ? completedCount / requestedCount * 100 : 0,
+      title: errors.length ? "Lote com falhas" : "Cortes prontos", detail: summary });
+  }
+  if (!result.cuts.length) document.getElementById("publisherAutoBanner")?.classList.add("hidden");
 
   // Envia automaticamente para o OS4 Publicador somente após conclusão de renderização fresca
-  if (autoSend) {
+  if (autoSend && result.cuts.length) {
     enviarParaPublicadorLocal(result, false);
   }
 }
