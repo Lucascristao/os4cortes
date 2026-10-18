@@ -18,12 +18,12 @@ from pathlib import Path
 import sys
 
 if __package__:
-    from .editorial_plan import effective_editorial_profile, normalize_editorial_plan
+    from .editorial_plan import effective_editorial_intent, effective_editorial_profile, normalize_editorial_plan
 else:  # Portable cloud bundle: editorial_plan.py resides beside this file.
-    from editorial_plan import effective_editorial_profile, normalize_editorial_plan
+    from editorial_plan import effective_editorial_intent, effective_editorial_profile, normalize_editorial_plan
 
 
-VOICE_ADAPTER_VERSION = "os4-editorial-live-adapter-v3-contextual-commentator"
+VOICE_ADAPTER_VERSION = "os4-editorial-live-adapter-v4-commentary-intent"
 MASTER_PITCH_SEMITONES = -1.0
 VOICE_TONE_REFERENCE = {
     "repository": "https://github.com/Lucascristao/Plotquake",
@@ -33,7 +33,13 @@ VOICE_TONE_REFERENCE = {
 }
 OS4_GLOBAL_DIRECTION = (
     "Direção OS4 Cortes: interprete como um comentarista de direita bem com a vida, "
-    "próximo de quem escuta, com personalidade, curiosidade e provocação na medida do roteiro. "
+    "próximo de quem escuta, seguro, espirituoso e incisivo, com curiosidade e provocação "
+    "na medida do roteiro. Desenvolva a observação escrita com presença de comentarista, "
+    "sem reprisar manchetes, dar sermão ou assumir automaticamente o papel de advogado. "
+    "Quando a direção for de apoio à análise da fonte, interprete como cocomentarista "
+    "alinhado: concordância com a crítica escrita e impulso para desenvolvê-la, sem "
+    "função automática de conter ou corrigir um comentarista aliado. Esse alinhamento "
+    "não transforma alegações em fatos: preserve as atribuições e incertezas do texto. "
     "Em política, a presença pode ser incisiva; em humor, leve e brincalhona; "
     "em economia e negócios, curiosa e clara. O tom e a intensidade de cada cena "
     "definem ritmo, pausas, ênfase e intenção, respeitando a preparação e a surpresa. "
@@ -106,6 +112,7 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
     """
     normalized = normalize_editorial_plan(raw_plan)
     profile = effective_editorial_profile(normalized)
+    intent = effective_editorial_intent(normalized)
     worker, worker_dir = _load_worker(ode_root)
     output = Path(output_dir).resolve()
     overrides = dict(delivery_overrides or {})
@@ -115,22 +122,23 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
     global_direction_fingerprint = fingerprint({"version": VOICE_ADAPTER_VERSION, "channel": "OS4 Cortes", "system_instruction": worker.live_session_config("Charon")["system_instruction"]})
     # Also isolate the speech profile explicitly, in addition to ODE's voice
     # policy fingerprint, so old ODE/pilot caches cannot pass accidentally.
-    speech_fingerprint = fingerprint({"ode_speech_profile": worker.project_speech_fingerprint({"speech": {"pronunciations": {}}}), "os4_global_direction": global_direction_fingerprint, "editorial_profile": profile})
+    speech_fingerprint = fingerprint({"ode_speech_profile": worker.project_speech_fingerprint({"speech": {"pronunciations": {}}}), "os4_global_direction": global_direction_fingerprint, "editorial_profile": profile, "editorial_intent": intent})
     jobs = []
     for position, scene in enumerate(normalized["scenes"]):
         if scene["kind"] != "narration":
             continue
         tts = copy.deepcopy(scene["tts"])
         scene_profile = effective_editorial_profile(normalized, scene)
-        # Never pass free-form editorial angle/question to the model. Interpretation
-        # is a fixed translation of these validated enums, plus existing literal cues.
+        # Free-form argument metadata never reaches the voice model. Only fixed
+        # enum translations and existing literal cues may direct interpretation.
         for field in ("perspective", "topic", "tone", "intensity"):
             tts[field] = scene_profile[field]
+        tts["commentary_mode"] = intent["mode"]
         if scene["id"] in overrides:
             tts["delivery"] = overrides[scene["id"]]
         ode_scene = {"id": scene["id"], "narration": scene["text"], "tts": tts}
         direction = worker.scene_voice_direction(ode_scene)
-        if any(direction.get(field) != scene_profile[field] for field in ("perspective", "topic", "tone", "intensity")):
+        if any(direction.get(field) != scene_profile[field] for field in ("perspective", "topic", "tone", "intensity")) or direction.get("commentary_mode") != intent["mode"]:
             raise RuntimeError("Runtime de voz sem suporte ao perfil contextual OS4; use o runtime local atualizado.")
         worker.canonical_tokens(scene["text"], direction.get("pronunciations", {}))
         jobs.append({"scene": ode_scene, "scene_index": position, "scene_id": scene["id"], "narration": scene["text"], "narration_hash": hashlib.sha256(scene["text"].encode("utf-8")).hexdigest(), "output_file": output / f"{scene['id']}.wav", "editorial_profile": scene_profile, "direction": direction, "direction_fingerprint": worker.scene_direction_fingerprint(ode_scene)})
@@ -143,6 +151,7 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
         "voice": "Charon", "presenter_name": "Roberto", "channel_identity": "OS4 Cortes",
         "global_direction": OS4_GLOBAL_DIRECTION,
         "editorial_profile": profile,
+        "editorial_intent": intent,
         "global_direction_fingerprint": global_direction_fingerprint,
         "direction_overrides_in_memory": overrides,
         "ode_worker_sha256": hashlib.sha256((worker_dir / "synthesize_scenes.py").read_bytes()).hexdigest(),

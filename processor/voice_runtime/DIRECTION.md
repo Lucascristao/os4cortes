@@ -8,7 +8,7 @@ O OS4 mantém português brasileiro, curiosidade e conversa direta. A direção 
 
 ## Personalidade e interpretação contextual
 
-A direção editorial do OS4 é de direita, com um comentarista bem com a vida, próximo e provocativo. Isso define personalidade e leitura do roteiro. O sintetizador não escreve o comentário nem acrescenta posicionamentos, acusações ou ressalvas: lê o texto literal aprovado no pacote. Humor e ironia são intenção de interpretação, sem risadas artificiais, escárnio permanente ou piadas inventadas. Assuntos graves e sofrimento pedem sobriedade e respeito.
+A direção editorial do OS4 é de direita, com um comentarista seguro, espirituoso, incisivo e bem com a vida, próximo e provocativo. Isso define personalidade e leitura do roteiro. O sintetizador não escreve o comentário nem acrescenta fatos, posicionamentos, acusações ou ressalvas: lê o texto literal importado no pacote. Evita reprisar manchetes, dar sermão ou assumir automaticamente o papel de advogado. Humor e ironia são intenção de interpretação, sem risadas artificiais, escárnio permanente ou piadas inventadas. Assuntos graves e sofrimento pedem sobriedade e respeito.
 
 O pacote pode declarar `editorial.profile` com `perspective: right`, `topic: politics|economy|business|humor|general`, `tone: conversational|provocative|ironic|playful|explanatory|serious`, `intensity: low|medium|high`, `angle` e `audience_question`. O perfil presente exige os seis campos; `angle` é texto não vazio até 240 caracteres e `audience_question` pode ser vazia até 240. Campos desconhecidos e enums inválidos são rejeitados antes de qualquer síntese. Pacotes antigos sem perfil permanecem sem esse metadado e recebem somente os defaults efetivos right/general/conversational/medium.
 
@@ -16,7 +16,15 @@ Cada cena de narração pode sobrescrever `tts.tone` e `tts.intensity`. O motor 
 
 `angle` e `audience_question` são metadados do roteiro: ficam no manifesto e no fingerprint, nunca são inseridos como instrução livre nem lidos pelo modelo. Somente os enums validados, traduzidos em diretivas fixas, chegam à interpretação. O texto após `ROTEIRO` é preservado. O perfil efetivo, direções e versão da política participam dos fingerprints para impedir o reaproveitamento da interpretação séria antiga. Um worker ODE externo que não reconheça o contrato contextual é rejeitado antes de sintetizar, em vez de ignorar o perfil.
 
-Esta é uma adaptação local em `tts_config.py`, `voice-policy.json` e no adaptador OS4. Os hashes de proveniência em `ORIGIN.json` continuam identificando os arquivos originais importados. Não foram alterados loop Live, retries, alinhamento, fidelidade lexical, escrita dos WAVs brutos ou tratamento tonal do master.
+## Relação do comentário com a fonte
+
+O contrato novo inclui `editorial.intent` com exatamente quatro campos: `mode: support_source|challenge_source|direct_commentary`, `source_point`, `target` e `contribution`. `source_point` e `contribution` são textos não vazios de até 240 caracteres; `target` pode ser vazio até 240. Campos extras, ausências, objetos nulos e valores inválidos são rejeitados antes do worker ou de qualquer custo de voz. Por compatibilidade, pacotes antigos sem `intent` continuam aceitos e sem esse campo adicionado ao plano normalizado; o modo efetivo é `direct_commentary`, com os três textos vazios.
+
+O modo `support_source` pede interpretação de cocomentarista alinhado à análise escrita: cumplicidade, concordância e desenvolvimento do ponto, sem função automática de conter ou corrigir o comentarista aliado. Preserva as atribuições e incertezas literais: alinhamento não torna uma alegação um fato. `challenge_source` interpreta a contestação do argumento ou opinião mostrada, somente quando escrita. `direct_commentary` acompanha a fala primária ou situação de política, humor, economia e negócios, sem presumir alinhamento ou oposição à pessoa da fonte. O tom, a intensidade e o delivery continuam herdados ou sobrescritos por cena, com a mesma voz grave e identidade.
+
+Somente o enum validado `intent.mode` é transportado internamente como `tts.commentary_mode` e traduzido pelo runtime para uma instrução fixa. `source_point`, `target` e `contribution` documentam o argumento do roteiro; ficam no manifesto e no fingerprint, nunca no prompt de síntese. O conteúdo completo de `intent` participa do fingerprint de fala para invalidar caches incompatíveis. Alterações do modo também mudam o fingerprint da direção da cena. Não há detector lexical, revisão semântica por outro modelo nem aprovação humana por vídeo. A conferência humana é uma calibração inicial de estilo; o fluxo de importação e geração segue automático.
+
+Esta é uma adaptação local em `tts_config.py`, `voice-policy.json` e no adaptador OS4. Os hashes de proveniência em `ORIGIN.json` continuam identificando os arquivos originais importados. Não foram alterados loop Live, retries, alinhamento, fidelidade lexical, escrita dos WAVs brutos ou tratamento tonal do master. A direção de cocomentário desta revisão foi validada offline; não foi comprada uma nova síntese para testar os metadados.
 
 ## RAW e master são etapas diferentes
 

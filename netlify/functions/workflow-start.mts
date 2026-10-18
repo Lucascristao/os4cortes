@@ -79,6 +79,7 @@ function validYoutubeUrl(value) {
 const EDITORIAL_TOPICS = ["politics", "economy", "business", "humor", "general"];
 const EDITORIAL_TONES = ["conversational", "provocative", "ironic", "playful", "explanatory", "serious"];
 const EDITORIAL_INTENSITIES = ["low", "medium", "high"];
+const COMMENTARY_MODES = ["support_source", "challenge_source", "direct_commentary"];
 
 function editorialShapeError(plan, clipStart, clipEnd) {
   const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
@@ -99,6 +100,23 @@ function editorialShapeError(plan, clipStart, clipEnd) {
   }
   if (!isObject(plan)) return invalid("editorial precisa ser um objeto.");
   if (plan.version !== 1) return invalid("o campo version precisa ser o número 1.");
+  if (Object.hasOwn(plan, "intent")) {
+    const intent = plan.intent;
+    if (!isObject(intent)) return invalid("o campo intent precisa ser um objeto.");
+    const fields = ["mode", "source_point", "target", "contribution"];
+    if (Object.keys(intent).some((field) => !fields.includes(field))) {
+      return invalid("o campo intent contém uma propriedade não suportada.");
+    }
+    if (!COMMENTARY_MODES.includes(intent.mode)) return invalid("o campo intent.mode contém um papel de comentário desconhecido.");
+    for (const field of ["source_point", "contribution"]) {
+      if (typeof intent[field] !== "string" || !intent[field].trim() || intent[field].length > 240) {
+        return invalid(`o campo intent.${field} precisa conter texto de até 240 caracteres.`);
+      }
+    }
+    if (typeof intent.target !== "string" || intent.target.length > 240) {
+      return invalid("o campo intent.target precisa ser uma string de até 240 caracteres; pode ser vazia quando não houver alvo de cobrança.");
+    }
+  }
   if (Object.hasOwn(plan, "profile")) {
     const profile = plan.profile;
     if (!isObject(profile)) return invalid("o campo profile precisa ser um objeto.");

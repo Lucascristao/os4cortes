@@ -20,6 +20,8 @@ O fechamento entrega a observação, opinião ou desfecho prometido. Quando houv
 
 O pacote registra `editorial.profile`: perspectiva `right`, tema, tom, intensidade, ângulo e pergunta opcional em string vazia. Cada cena pode sobrescrever `tts.tone` e `tts.intensity`; os demais parâmetros herdam o perfil do corte. A intenção da cena (`hook`, `explain`, `contrast`, `question`, `closing`) continua separada do tom. Perfil e direções são metadados; somente `text` vira fala. Consulte o [contrato de automação](editorial-automation-contract.md).
 
+O novo pacote também declara `editorial.intent`: papel em relação à fonte, ponto da análise original, alvo da cobrança e contribuição do OS4. Quando a fonte traz uma análise alinhada, o narrador desenvolve o argumento como cocomentarista; não desloca automaticamente a pauta para moderar o comentarista da fonte. Entrevistas diretas, humor e argumentos de outra posição recebem a relação adequada ao conteúdo. O [perfil detalhado](os4-commentator-profile.md) reúne as regras e os exemplos calibrados uma vez; não há aprovação recorrente de vídeos.
+
 ## Atribuição e evidência
 
 Para cada afirmação, registrar se é fala atribuída, fato verificado em outra fonte, inferência editorial ou pergunta. Associar falas a palavras e timestamps da transcrição e manter a URL/origem. A legenda automática ajuda a localizar; a revisão do áudio confirma nomes, negativas e limites de corte. Timestamps derivados de legendas não devem ser apresentados como alinhamento acústico confirmado.

@@ -73,7 +73,12 @@ DELIVERY_INSTRUCTIONS = {
     "closing": "Conclua a ideia com presença e proximidade, no mesmo estado de espírito do trecho, sem moral da história automática.",
 }
 PERSPECTIVE_INSTRUCTIONS = {
-    "right": "Identidade editorial: comentarista de direita, seguro e bem com a vida. Aplique essa personalidade somente à interpretação do roteiro literal, sem acrescentar posicionamentos ou transformar assuntos cotidianos em disputa política.",
+    "right": "Identidade editorial: comentarista de direita, seguro, espirituoso, incisivo e bem com a vida, próximo de quem escuta. Dê presença à observação escrita, com ironia contextual quando pedida, sem reprisar manchetes, advogar ou dar sermão. Aplique essa personalidade somente à interpretação do roteiro literal, sem acrescentar fatos, acusações, ressalvas ou posicionamentos nem transformar assuntos cotidianos em disputa política.",
+}
+COMMENTARY_MODE_INSTRUCTIONS = {
+    "support_source": "Papel nesta análise: cocomentarista alinhado à fonte. Interprete a concordância e o desenvolvimento da crítica que já estão escritos, com cumplicidade e presença; não assuma automaticamente a função de conter ou corrigir o comentarista aliado. Apoio à análise não converte alegações em fatos: preserve atribuições e incertezas do roteiro. Não invente, reescreva ou acrescente fala.",
+    "challenge_source": "Papel nesta análise: questionar o argumento ou a opinião mostrada, somente na medida em que essa contestação está escrita. Dê clareza ao contraste e à cobrança do roteiro, sem criar oposição, acusações, justificativas ou respostas próprias. Preserve atribuições e cada palavra.",
+    "direct_commentary": "Papel neste corte: comentar diretamente a fala primária ou a situação de humor, economia, negócios ou outro tema, conforme o roteiro. Não presuma alinhamento ou oposição à pessoa da fonte nem invente um debatedor; interprete apenas a observação escrita, com o tom contextual indicado.",
 }
 TOPIC_INSTRUCTIONS = {
     "politics": "Contexto político: presença firme e perguntas incisivas quando escritas, com conversa próxima; evite defesa jurídica automática e indignação permanente.",
@@ -164,7 +169,7 @@ def scene_voice_direction(scene: dict) -> dict:
         if str(raw.get(field, "0%")) not in ("0%", "+0%", "-0%"):
             raise ValueError(f"Gemini Live raw não aplica {field}; use direção de interpretação.")
     result = {}
-    for field, choices in (("perspective", PERSPECTIVE_INSTRUCTIONS), ("topic", TOPIC_INSTRUCTIONS), ("tone", TONE_INSTRUCTIONS), ("intensity", INTENSITY_INSTRUCTIONS)):
+    for field, choices in (("perspective", PERSPECTIVE_INSTRUCTIONS), ("topic", TOPIC_INSTRUCTIONS), ("tone", TONE_INSTRUCTIONS), ("intensity", INTENSITY_INSTRUCTIONS), ("commentary_mode", COMMENTARY_MODE_INSTRUCTIONS)):
         if field in raw:
             if not isinstance(raw[field], str) or raw[field] not in choices:
                 raise ValueError(f"Perfil vocal tem {field} desconhecido.")
@@ -230,7 +235,7 @@ def scene_direction_fingerprint(scene: dict) -> str | None:
     direction = scene_voice_direction(scene)
     if not direction:
         return None
-    return hashlib.sha256(json.dumps({"version": "live-scene-direction-v4-contextual", "direction": direction, "instruction": live_turn_text("", direction)}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(json.dumps({"version": "live-scene-direction-v5-commentary-intent", "direction": direction, "instruction": live_turn_text("", direction)}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def live_turn_text(
@@ -247,7 +252,7 @@ def live_turn_text(
         instructions.append(
             f"CONTINUIDADE VOCAL: Esta cena dá sequência à frase anterior: {json.dumps(previous_context[-120:], ensure_ascii=False)}. Retome com o mesmo timbre, registro de base e distância do microfone; ritmo e intenção acompanham a direção desta cena."
         )
-    for field, choices in (("perspective", PERSPECTIVE_INSTRUCTIONS), ("topic", TOPIC_INSTRUCTIONS), ("tone", TONE_INSTRUCTIONS), ("intensity", INTENSITY_INSTRUCTIONS)):
+    for field, choices in (("perspective", PERSPECTIVE_INSTRUCTIONS), ("topic", TOPIC_INSTRUCTIONS), ("tone", TONE_INSTRUCTIONS), ("intensity", INTENSITY_INSTRUCTIONS), ("commentary_mode", COMMENTARY_MODE_INSTRUCTIONS)):
         if field in direction:
             value = direction[field]
             if not isinstance(value, str) or value not in choices:

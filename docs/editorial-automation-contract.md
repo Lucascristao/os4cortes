@@ -105,6 +105,29 @@ Tema, perspectiva, tom e intensidade são convertidos em instruções fixas e va
 
 A linha de direita orienta a leitura política; humor e outros assuntos seguem o material. Atribuir relatos e preservar condições relevantes continua obrigatório. Ressalvas não são um fechamento automático: usam-se quando corrigem uma inferência concreta. O formato permite uma ou mais intervenções autorais, sem exigir três blocos de voz, perguntas artificiais ou comentários que revelem a piada antes da hora.
 
+### Intenção do cocomentarista
+
+O [perfil permanente do comentarista](os4-commentator-profile.md) detalha personalidade, relação com a fonte, ritmo e exemplos. A calibração é inicial; não há aprovação humana adicional por vídeo nem chamada de revisão textual acrescentada ao motor. O prompt pede uma conferência interna na própria geração do JSON, sem uma etapa extra no fluxo.
+
+O novo prompt exige também `editorial.intent` em cada proposta:
+
+```json
+{
+  "mode": "support_source",
+  "source_point": "O comentarista cobra uma diferença entre a negativa apresentada e o relato da entrevistada.",
+  "target": "A versão política colocada em dúvida pelo relato.",
+  "contribution": "Desenvolver por que uma negativa absoluta transforma esse contraste numa cobrança específica."
+}
+```
+
+O objeto usa exatamente essas quatro chaves. `mode` aceita `support_source` (cocomentário alinhado), `challenge_source` (contestação do argumento) e `direct_commentary` (comentário sobre fonte primária ou situação). `source_point` e `contribution` são strings não vazias de até 240 caracteres; `target` é uma string de até 240 caracteres e pode ser vazia quando não houver alvo de cobrança. Profile continua com seus seis campos anteriores.
+
+O objeto é opcional nos pacotes v1 antigos, que mantêm `direct_commentary` como direção efetiva sem inserir novos campos no JSON. A presença de `intent` inválido falha na validação técnica; não é convertida em aprovação, em corte simples ou em novo texto.
+
+Somente o enum `mode` chega à direção de voz, como `commentary_mode` interno traduzido em instrução fixa. Os três textos livres ficam nos metadados e no fingerprint. Eles não são comandos enviados ao sintetizador e não viram falas por conta própria. O modo e o perfil participam do cache; trocar a intenção não reutiliza uma interpretação incompatível.
+
+A conferência de significado solicitada no prompt não equivale a uma segunda leitura semântica pelo processador. O motor continua responsável por estrutura, tempo, fidelidade literal e execução das direções. Não há bloqueio lexical nem nova confirmação por lote ou por vídeo.
+
 ```json
 {
   "titulo": "O que essa resposta esclarece?",

@@ -13,7 +13,8 @@
     "Changed runtime imports to relative imports.",
     "Inlined the unchanged tokens function from align_narration.py into gemini_live_fidelity.py, with its Decimal/InvalidOperation/unicodedata imports.",
     "No changes to Live receive loop, retry policy, lexical fidelity, cache checks or raw WAV writing.",
-    "Local OS4 contextual acting adaptation in tts_config.py and voice-policy.json: fixed enum instructions for perspective/topic/tone/intensity, scene overrides and updated policy/direction fingerprints; no narration rewriting or raw audio processing. Original source hashes above remain provenance, not checksums of the adapted files."
+    "Local OS4 contextual acting adaptation in tts_config.py and voice-policy.json: fixed enum instructions for perspective/topic/tone/intensity and commentary_mode, scene overrides and updated policy/direction fingerprints; no narration rewriting or raw audio processing. Original source hashes above remain provenance, not checksums of the adapted files.",
+    "OS4 editorial intent records the written source point, target and contribution only as hashed manifest metadata. Only the validated support_source/challenge_source/direct_commentary enum reaches the voice as a fixed acting instruction. No semantic review, extra model call, content approval gate or narration generation was added to the runtime."
   ],
   "entry_point": "synthesize_scenes.synthesize_missing_jobs",
   "model": "gemini-3.8-live",

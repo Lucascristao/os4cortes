@@ -10,6 +10,10 @@ import re
 EDITORIAL_TOPICS = ("politics", "economy", "business", "humor", "general")
 EDITORIAL_TONES = ("conversational", "provocative", "ironic", "playful", "explanatory", "serious")
 EDITORIAL_INTENSITIES = ("low", "medium", "high")
+EDITORIAL_COMMENTARY_MODES = ("support_source", "challenge_source", "direct_commentary")
+DEFAULT_EDITORIAL_INTENT = {
+    "mode": "direct_commentary", "source_point": "", "target": "", "contribution": "",
+}
 DEFAULT_EDITORIAL_PROFILE = {
     "perspective": "right", "topic": "general", "tone": "conversational",
     "intensity": "medium", "angle": "", "audience_question": "",
@@ -60,6 +64,29 @@ def effective_editorial_profile(plan, scene=None):
     return profile
 
 
+def _editorial_intent(raw):
+    if not isinstance(raw, dict) or set(raw) != set(DEFAULT_EDITORIAL_INTENT):
+        raise ValueError("editorial.intent: objeto com mode, source_point, target e contribution obrigatório, sem campos adicionais.")
+    target = raw["target"]
+    if not isinstance(target, str) or len(target) > 240:
+        raise ValueError("editorial.intent.target: texto de até 240 caracteres.")
+    return {
+        "mode": _choice(raw["mode"], "editorial.intent.mode", EDITORIAL_COMMENTARY_MODES),
+        "source_point": _text(raw["source_point"], "editorial.intent.source_point", 240),
+        "target": target.strip(),
+        "contribution": _text(raw["contribution"], "editorial.intent.contribution", 240),
+    }
+
+
+def effective_editorial_intent(plan):
+    """Resolve commentary acting without adding a field to legacy packages.
+
+    The free text documents the written argument; it is never model direction.
+    Only the validated mode selects a fixed instruction for literal speech.
+    """
+    return _editorial_intent(plan["intent"]) if "intent" in plan else dict(DEFAULT_EDITORIAL_INTENT)
+
+
 def _text(value, name, maximum):
     if not isinstance(value, str) or not value.strip() or len(value) > maximum:
         raise ValueError(f"{name}: texto obrigatório, até {maximum} caracteres.")
@@ -97,6 +124,8 @@ def normalize_editorial_plan(raw, *, clip_start=None, clip_end=None):
     result = {"version": 1, "source": {"label": label, "date": date}, "scenes": []}
     if "profile" in raw:
         result["profile"] = _editorial_profile(raw["profile"])
+    if "intent" in raw:
+        result["intent"] = _editorial_intent(raw["intent"])
     identifiers = set()
     for index, scene in enumerate(scenes):
         name = f"editorial.scenes[{index}]"

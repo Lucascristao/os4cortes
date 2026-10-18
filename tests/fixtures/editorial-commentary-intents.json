@@ -1,0 +1,20 @@
+[
+  {
+    "mode": "support_source",
+    "source_point": "O comentarista cobra coerência entre a promessa de reduzir despesas e o aumento descrito na fonte.",
+    "target": "A diferença entre a promessa e a despesa apresentada.",
+    "contribution": "Acrescentar que a cobrança por responsabilidade com o dinheiro público começa nas próprias decisões."
+  },
+  {
+    "mode": "challenge_source",
+    "source_point": "O comentarista defende uma restrição como resposta ao problema apresentado.",
+    "target": "O argumento de que a restrição resolve o problema descrito.",
+    "contribution": "Questionar o efeito concreto da proposta e desenvolver a leitura de liberdade e responsabilidade."
+  },
+  {
+    "mode": "direct_commentary",
+    "source_point": "O empreendedor brinca com a distância entre a automação prometida e o trabalho manual mostrado.",
+    "target": "",
+    "contribution": "Reagir brevemente depois da surpresa, conectando a piada à rotina de quem toca o próprio negócio."
+  }
+]

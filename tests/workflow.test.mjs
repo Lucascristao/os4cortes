@@ -354,6 +354,49 @@ function fractionalEditorialCut() {
 }
 
 const contextualProfiles = JSON.parse(fs.readFileSync(new URL('./fixtures/editorial-contextual-profiles.json', import.meta.url), 'utf8'));
+const commentaryIntents = JSON.parse(fs.readFileSync(new URL('./fixtures/editorial-commentary-intents.json', import.meta.url), 'utf8'));
+
+test('commentary role and declared contribution are transported without adding per-video approval', async () => {
+ const cuts = commentaryIntents.map((intent, index) => {
+  const cut = narratedCut();
+  cut.editorial.profile = structuredClone(contextualProfiles[index]);
+  cut.editorial.intent = structuredClone(intent);
+  return cut;
+ });
+ const response = await start(req('workflow-start', 'POST', renderBody({ cuts, simpleCuts: false })), context);
+ assert.equal(response.status, 202);
+ const sent = JSON.parse(dispatches.at(-1).inputs.cuts_json);
+ assert.deepEqual(sent, cuts);
+ assert.equal(sent[0].editorial.intent.mode, 'support_source');
+ assert.equal(Object.hasOwn(sent[0], 'approved'), false);
+});
+
+test('invalid commentary intent fails before starting a runner while legacy intent remains optional', async () => {
+ const before = dispatches.length;
+ const recordsBefore = records.size;
+ const changes = [
+  [cut => { cut.editorial.intent = null; }, /intent precisa ser um objeto/],
+  [cut => { cut.editorial.intent.mode = 'always_agree'; }, /intent\.mode/],
+  [cut => { cut.editorial.intent.source_point = ' '; }, /intent\.source_point/],
+  [cut => { cut.editorial.intent.contribution = 'a'.repeat(241); }, /intent\.contribution/],
+  [cut => { delete cut.editorial.intent.target; }, /intent\.target/],
+  [cut => { cut.editorial.intent.target = false; }, /intent\.target/],
+  [cut => { cut.editorial.intent.require_approval = true; }, /intent contém uma propriedade não suportada/],
+ ];
+ for (const [change, diagnostic] of changes) {
+  const cut = narratedCut();
+  cut.editorial.intent = structuredClone(commentaryIntents[0]);
+  change(cut);
+  const response = await start(req('workflow-start', 'POST', renderBody({ cuts: [cut], simpleCuts: false })), context);
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, diagnostic);
+ }
+ assert.equal(dispatches.length, before);
+ assert.equal(records.size, recordsBefore);
+ const legacy = await start(req('workflow-start', 'POST', renderBody({ cuts: [narratedCut()], simpleCuts: false })), context);
+ assert.equal(legacy.status, 202);
+ assert.equal(Object.hasOwn(JSON.parse(dispatches.at(-1).inputs.cuts_json)[0].editorial, 'intent'), false);
+});
 
 test('contextual profiles and scene interpretation cross the API without rewriting literal narration', async () => {
  const cuts = contextualProfiles.map((profile, index) => {

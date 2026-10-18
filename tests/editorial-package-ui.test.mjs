@@ -70,6 +70,7 @@ function harness(saved = {}) {
   const requests = [];
   const alerts = [];
   const copied = [];
+  const confirmations = [];
   const state = { job: { status: 'running', percent: 1 } };
   const context = {
     URL, URLSearchParams, console,
@@ -81,7 +82,7 @@ function harness(saved = {}) {
       removeItem: key => storage.delete(key),
     },
     setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {},
-    alert: message => alerts.push(message), confirm: () => true,
+    alert: message => alerts.push(message), confirm: message => { confirmations.push(message); return true; },
     fetch: async (path, options = {}) => {
       requests.push({ path, body: options.body ? JSON.parse(options.body) : null });
       const data = path.includes('workflow-start') ? { requestId: 'request' }
@@ -93,7 +94,7 @@ function harness(saved = {}) {
   vm.runInContext(source, context);
   vm.runInContext('githubConnected = true;', context);
   return {
-    context, get, storage, requests, alerts, copied, state,
+    context, get, storage, requests, alerts, copied, confirmations, state,
     cards: () => get('#cutsEditor').querySelectorAll('.cut-card'),
     async import(cuts) {
       get('#pacote').value = JSON.stringify(cuts);
@@ -270,6 +271,34 @@ test('prompt autoral dá personalidade e adapta comentário e interpretação a 
   assert.equal(profile.tone, 'provocative');
 });
 
+test('prompt transmite cocomentário, intenção e exemplos com conferência interna na mesma resposta', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao(session());
+  await h.get('#btnCopiarPromptIA').fire('click');
+  const prompt = h.copied[0];
+  assert.match(prompt, /Identidade permanente do OS4/);
+  assert.match(prompt, /atue como cocomentarista alinhado/);
+  assert.match(prompt, /preserve o foco da cobrança política/);
+  assert.match(prompt, /pelo argumento demonstrável/);
+  assert.match(prompt, /não se torna aliada porque aparece em um canal de direita/);
+  assert.match(prompt, /Uma pergunta de entrevistador tampouco é uma confirmação independente/);
+  assert.match(prompt, /Exemplos FICTÍCIOS/);
+  assert.match(prompt, /Cocomentário político alinhado/);
+  assert.match(prompt, /Humor: numa situação inventada/);
+  assert.match(prompt, /Negócios: num caso inventado/);
+  assert.match(prompt, /Não transporte os acontecimentos fictícios para o JSON/);
+  assert.match(prompt, /exatamente estes quatro campos/);
+  assert.match(prompt, /Confira|confira internamente o roteiro no mesmo trabalho de escrita/);
+  assert.match(prompt, /sem criar uma etapa de conferência humana por vídeo/);
+  assert.match(prompt, /sem repetir o trecho/);
+  assert.match(prompt, /monólogo final de um minuto/);
+  const example = JSON.parse(prompt.match(/(\[\n  \{\n    "titulo"[\s\S]+?\n\])\n/)[1]);
+  assert.deepEqual(Object.keys(example[0].editorial.intent).sort(), ['contribution', 'mode', 'source_point', 'target']);
+  assert.equal(example[0].editorial.intent.mode, 'support_source');
+  assert.equal(h.confirmations.length, 0);
+  assert.equal(h.requests.some(request => /review|editorial-check|generate-script/.test(request.path)), false);
+});
+
 const contextualProfile = extra => ({
   perspective: 'right', topic: 'politics', tone: 'provocative', intensity: 'medium',
   angle: 'O peso político da resposta que ouvimos.', audience_question: 'Qual resposta faltou nesta conversa?', ...extra,
@@ -299,14 +328,87 @@ test('cartão permite revisar tema, tom, intensidade, ângulo, pergunta e heran�
   const editorial = validPlan();
   const literal = '<img src=x onerror=alert(1)>';
   editorial.profile = contextualProfile({ angle: literal });
+  editorial.intent = { mode: 'support_source', source_point: literal, target: literal, contribution: literal };
   await h.import([cut({ editorial })]);
   const details = h.cards()[0].querySelector('.editorial-direction');
   assert.match(details.textContent, /Comentarista de direita.*Política.*Provocativo.*Média/);
   assert.ok(details.textContent.includes(`Ângulo: ${literal}`));
   assert.match(details.textContent, /Pergunta ao público: Qual resposta faltou/);
   assert.match(details.textContent, /abertura: Provocativo; intensidade Média \(acompanha o corte\)/);
+  assert.match(details.textContent, /Papel do narrador: Cocomentário alinhado/);
+  for (const label of ['Ponto da fonte', 'Alvo da cobrança', 'Contribuição do OS4']) {
+    assert.ok(details.querySelectorAll('p').some(line => line.textContent === `${label}: ${literal}`));
+  }
   assert.equal(details.querySelector('img'), null);
   assert.ok(details.querySelectorAll('p').some(line => line.textContent === `Ângulo: ${literal}`));
+});
+
+test('os três papéis atravessam importação, edição e restauração e geram sem aprovação adicional', async () => {
+  const intents = JSON.parse(fs.readFileSync(new URL('./fixtures/editorial-commentary-intents.json', import.meta.url), 'utf8'));
+  assert.deepEqual(intents.map(intent => intent.mode).sort(), ['challenge_source', 'direct_commentary', 'support_source']);
+  for (const intent of intents) {
+    const h = harness();
+    const editorial = validPlan();
+    editorial.profile = contextualProfile();
+    editorial.intent = intent;
+    h.context.mostrarTranscricao(session());
+    await h.import([cut({ titulo: 'Excluir' }), cut({ editorial })]);
+    h.cards()[1].querySelector('[data-field="titulo"]').value = 'Comentário com intenção';
+    await h.cards()[0].querySelector('.btn-delete-cut').fire('click');
+    // Deletion still has its existing confirmation; generating adds no approval.
+    h.confirmations.length = 0;
+    await h.get('#btnGerarCortes').fire('click');
+    assert.equal(h.alerts.length, 0, intent.mode);
+    assert.equal(h.confirmations.length, 0, intent.mode);
+    assert.deepEqual(starts(h)[0].body.cuts[0].editorial, editorial);
+    const saved = JSON.parse(h.storage.get(packageKey));
+    assert.deepEqual(saved[0].editorial.intent, intent);
+    const restored = harness({ [packageKey]: JSON.stringify(saved), [sessionKey]: JSON.stringify(session()) });
+    restored.context.restaurarSessao();
+    await restored.get('#btnImportar').fire('click');
+    await restored.get('#btnGerarCortes').fire('click');
+    assert.deepEqual(starts(restored)[0].body.cuts[0].editorial.intent, intent);
+    assert.equal(restored.confirmations.length, 0, intent.mode);
+    assert.ok(restored.requests.every(request => /workflow-(start|status)/.test(request.path)), intent.mode);
+    if (intent.target === '') assert.match(restored.cards()[0].textContent, /Sem cobrança específica/);
+  }
+});
+
+test('intenção é opcional para pacotes anteriores e não é fabricada pelo importador', async () => {
+  const h = harness();
+  const editorial = validPlan();
+  editorial.profile = contextualProfile();
+  h.context.mostrarTranscricao(session());
+  await h.import([cut({ editorial })]);
+  await h.get('#btnGerarCortes').fire('click');
+  assert.equal(h.alerts.length, 0);
+  assert.deepEqual(starts(h)[0].body.cuts[0].editorial, editorial);
+  assert.equal(Object.hasOwn(starts(h)[0].body.cuts[0].editorial, 'intent'), false);
+});
+
+test('intenção presente exige quatro campos válidos, sem descartar o pacote antes do diagnóstico', async () => {
+  const validIntent = { mode: 'direct_commentary', source_point: 'O assunto da fonte.', target: '', contribution: 'Uma observação própria.' };
+  const invalid = [null, [], 'support_source', {},
+    { ...validIntent, mode: 'right' }, { ...validIntent, mode: 'toString' },
+    { ...validIntent, source_point: '' }, { ...validIntent, source_point: ' ' }, { ...validIntent, source_point: 1 },
+    { ...validIntent, source_point: 'a'.repeat(241) }, { ...validIntent, target: null },
+    { ...validIntent, target: 'a'.repeat(241) }, { ...validIntent, contribution: '' },
+    { ...validIntent, contribution: ' ' }, { ...validIntent, contribution: 'a'.repeat(241) },
+    { ...validIntent, approved: true },
+    Object.fromEntries(Object.entries(validIntent).filter(([key]) => key !== 'target')),
+  ];
+  for (const intent of invalid) {
+    const h = harness();
+    const editorial = validPlan();
+    editorial.intent = intent;
+    h.context.mostrarTranscricao(session());
+    await h.import([cut({ editorial })]);
+    assert.deepEqual(plain(h.context.lerCortesEditor()[0].editorial.intent), intent);
+    await h.get('#btnGerarCortes').fire('click');
+    assert.equal(starts(h).length, 0, JSON.stringify(intent));
+    assert.equal(h.alerts.length, 1, JSON.stringify(intent));
+    assert.match(h.alerts[0], /Corte 1:/);
+  }
 });
 
 test('todos os perfis contextuais compartilhados passam pelo gate e seguem intactos ao motor', async () => {
