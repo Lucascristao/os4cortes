@@ -3,3 +3,6 @@ Pillow
 google-api-python-client
 google-auth
 google-auth-httplib2
+google-genai==2.26.0
+num2words>=0.5.14,<0.6
+faster-whisper>=1.2,<2

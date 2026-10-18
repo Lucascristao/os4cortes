@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { blobStore, safeHandler } from "./_shared/platform.mts";
 
 function fromBase64url(value) {
@@ -73,6 +74,38 @@ function validYoutubeUrl(value) {
   }
 }
 
+// Reject unusable plans before starting a runner. Python remains authoritative
+// for voice directions, visual limits, transcript evidence and content checks.
+function validEditorialShape(plan, clipStart, clipEnd) {
+  const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+  const validSpan = (value) => isObject(value) && Number.isFinite(value.start) && Number.isFinite(value.end) &&
+    value.start >= 0 && value.end > value.start && value.start >= clipStart - 0.001 && value.end <= clipEnd + 0.001;
+  if (!isObject(plan) || plan.version !== 1 || !Array.isArray(plan.scenes) ||
+      plan.scenes.length < 2 || plan.scenes.length > 12) return false;
+  const identifiers = new Set();
+  let hasNarration = false;
+  let hasClip = false;
+  for (const scene of plan.scenes) {
+    if (!isObject(scene) || typeof scene.id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(scene.id) ||
+        identifiers.has(scene.id)) return false;
+    identifiers.add(scene.id);
+    if (scene.kind === "clip") {
+      if (!validSpan(scene)) return false;
+      hasClip = true;
+    } else if (scene.kind === "narration") {
+      if (typeof scene.text !== "string" || !scene.text.trim() || scene.text.length > 1400 ||
+          !validSpan(scene.background) || !Array.isArray(scene.evidence) || scene.evidence.length < 1 ||
+          scene.evidence.length > 8 || !scene.evidence.every(validSpan) ||
+          !isObject(scene.visual) || typeof scene.visual.title !== "string" ||
+          !scene.visual.title.trim() || scene.visual.title.length > 100) return false;
+      hasNarration = true;
+    } else {
+      return false;
+    }
+  }
+  return hasNarration && hasClip;
+}
+
 export default safeHandler(async (request, context) => {
   if (request.method !== "POST") {
     return json(405, { ok: false, error: "Método não permitido." });
@@ -104,6 +137,11 @@ export default safeHandler(async (request, context) => {
     return json(400, { ok: false, error: "A opção de tarja do vídeo precisa ser verdadeira ou falsa." });
   }
   const hasLowerThird = body.hasLowerThird === true;
+  if (Object.hasOwn(body, "simpleCuts") && typeof body.simpleCuts !== "boolean") {
+    return json(400, { ok: false, error: "A opção de corte simples precisa ser verdadeira ou falsa." });
+  }
+  // Cached old clients omit this field; the new UI explicitly sends false by default.
+  const simpleCuts = !Object.hasOwn(body, "simpleCuts") || body.simpleCuts === true;
 
   const configStore = blobStore("os4-config", context);
   const jobsStore = blobStore("os4-jobs", context);
@@ -170,11 +208,29 @@ export default safeHandler(async (request, context) => {
       if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
         return json(400, { ok: false, error: `Corte ${index + 1}: informe início e fim válidos, com fim maior que início.` });
       }
+      if (!simpleCuts) {
+        if (!validEditorialShape(cut?.editorial, start, end)) {
+          return json(400, { ok: false, error: `Corte ${index + 1}: o formato autoral precisa de um plano editorial. Importe o pacote com narração ou marque corte simples.` });
+        }
+      }
     }
 
-    const cutsJson = JSON.stringify(cuts);
-    if (cutsJson.length > 60000) {
-      return json(400, { ok: false, error: "O pacote de cortes ficou grande demais. Reduza os textos do pacote." });
+    const renderCuts = simpleCuts ? cuts.map(({ editorial, ...cut }) => cut) : cuts;
+    let cutsJson = JSON.stringify(renderCuts);
+    if (simpleCuts) {
+      if (cutsJson.length > 60000) {
+        return json(400, { ok: false, error: "O pacote de cortes ficou grande demais. Reduza os textos do pacote." });
+      }
+    } else {
+      if (Buffer.byteLength(cutsJson, "utf8") > 512000) {
+        return json(400, { ok: false, error: "O pacote autoral excede 512000 bytes. Divida o lote em pacotes menores." });
+      }
+      if (cutsJson.length > 60000) {
+        cutsJson = `gzip-base64:${gzipSync(cutsJson).toString("base64")}`;
+        if (cutsJson.length > 60000) {
+          return json(400, { ok: false, error: "O pacote autoral continua acima de 60000 caracteres após compressão. Divida o lote em pacotes menores." });
+        }
+      }
     }
 
     workflow = "renderizar.yml";
@@ -187,6 +243,7 @@ export default safeHandler(async (request, context) => {
       callback_url: callbackUrl,
       lower_third_mode: hasLowerThird ? "crop" : "off",
       lower_third_height: hasLowerThird ? "0.30" : "0",
+      cut_mode: simpleCuts ? "simple" : "editorial",
     };
   }
 
@@ -196,8 +253,9 @@ export default safeHandler(async (request, context) => {
     callbackHash: crypto.createHash("sha256").update(derivedCallbackToken).digest("hex"),
     kind,
     hasLowerThird,
+    simpleCuts,
     folderId: kind === "render" ? inputs.folder_id : null,
-    totalCuts: kind === "render" ? JSON.parse(inputs.cuts_json).length : null,
+    totalCuts: kind === "render" ? body.cuts.length : null,
     status: "queued",
     stage: "fila",
     detail: "Enviado para o GitHub Actions",

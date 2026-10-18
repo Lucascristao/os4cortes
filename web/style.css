@@ -119,6 +119,8 @@ label { display: block; font-weight: 750; margin-bottom: 10px; }
 .video-option { display: flex; align-items: center; gap: 10px; margin: 16px 0 0; font-size: .9rem; cursor: pointer; }
 .video-option input { width: 18px; height: 18px; margin: 0; padding: 0; flex: 0 0 auto; accent-color: var(--accent); cursor: pointer; }
 .hint.video-option-hint { margin-top: 6px; padding-left: 28px; }
+.result-card.result-error { border-color: #8b3434; }
+.result-card.result-error > strong { color: #fca5a5; }
 
 input, textarea {
   width: 100%;

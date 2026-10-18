@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "source": {
+    "label": "CNN Brasil",
+    "date": "2026-10-17"
+  },
+  "scenes": [
+    {
+      "id": "abertura",
+      "kind": "narration",
+      "text": "Roberta diz que apresentou Lulinha a Antônio Camilo. Mas o que essa resposta esclarece? Repara na diferença entre as duas falas.",
+      "background": {
+        "start": 87.65,
+        "end": 103.65
+      },
+      "visual": {
+        "title": "O que essa resposta esclarece?",
+        "kicker": "SEGUNDO ROBERTA",
+        "lines": [
+          "O que ela confirma",
+          "O que diz não saber"
+        ]
+      },
+      "tts": {
+        "delivery": "hook",
+        "cues": [
+          {
+            "text": "Mas o que essa resposta esclarece?",
+            "kind": "emphasis",
+            "intent": "curiosity",
+            "arc": "question",
+            "emphasis_word": "esclarece"
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "start": 87.759,
+          "end": 90.5
+        },
+        {
+          "start": 91.52,
+          "end": 97.28
+        },
+        {
+          "start": 209.12,
+          "end": 216.65
+        }
+      ]
+    },
+    {
+      "id": "entrevista-1",
+      "kind": "clip",
+      "start": 87.65,
+      "end": 103.65
+    },
+    {
+      "id": "comentario",
+      "kind": "narration",
+      "text": "Ela nega intenção de negócios na apresentação. Essa é a explicação dela para aquele encontro. Só que explicar a intenção é diferente de saber o que veio depois. Escuta como ela responde quando chega nessa parte.",
+      "background": {
+        "start": 91.52,
+        "end": 103.65
+      },
+      "visual": {
+        "title": "A diferença está aqui",
+        "kicker": "A EXPLICAÇÃO DELA",
+        "lines": [
+          "Intenção da apresentação",
+          "Conhecimento do que veio depois"
+        ]
+      },
+      "tts": {
+        "delivery": "explain",
+        "cues": [
+          {
+            "text": "Só que explicar a intenção é diferente de saber o que veio depois.",
+            "kind": "contrast",
+            "intent": "discovery",
+            "arc": "contrast",
+            "emphasis_word": "intenção"
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "start": 91.52,
+          "end": 97.28
+        },
+        {
+          "start": 97.28,
+          "end": 103.4
+        },
+        {
+          "start": 204.76,
+          "end": 208.9
+        },
+        {
+          "start": 209.12,
+          "end": 216.65
+        }
+      ]
+    },
+    {
+      "id": "entrevista-2",
+      "kind": "clip",
+      "start": 204.7,
+      "end": 216.65
+    },
+    {
+      "id": "fechamento",
+      "kind": "narration",
+      "text": "No fim, ela confirma que apresentou os dois, mas diz não saber o que aconteceu depois. Esse trecho não prova nem descarta uma relação posterior. Se você estivesse nessa entrevista, qual seria sua próxima pergunta sobre a troca de contatos?",
+      "background": {
+        "start": 204.7,
+        "end": 216.65
+      },
+      "visual": {
+        "title": "Qual seria sua próxima pergunta?",
+        "kicker": "TROCA DE CONTATOS",
+        "lines": [
+          "Ela confirma a apresentação",
+          "Diz não saber os desdobramentos"
+        ]
+      },
+      "tts": {
+        "delivery": "question",
+        "cues": [
+          {
+            "text": "Esse trecho não prova nem descarta uma relação posterior.",
+            "kind": "contrast",
+            "intent": "caution",
+            "arc": "resolve"
+          },
+          {
+            "text": "Se você estivesse nessa entrevista, qual seria sua próxima pergunta sobre a troca de contatos?",
+            "kind": "emphasis",
+            "intent": "curiosity",
+            "arc": "question",
+            "emphasis_word": "pergunta"
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "start": 87.759,
+          "end": 90.5
+        },
+        {
+          "start": 204.76,
+          "end": 208.9
+        },
+        {
+          "start": 209.12,
+          "end": 216.65
+        }
+      ]
+    }
+  ]
+}
