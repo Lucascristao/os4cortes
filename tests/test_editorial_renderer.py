@@ -5,9 +5,44 @@ import unittest
 from unittest.mock import patch
 
 from processor.editorial_renderer import build_timeline, fingerprint, scene_fingerprint, validate_voice_bundle, _cache_valid, _validate_voice_policy, StaleVoicePolicy
+from processor.editorial_renderer import _rejected_alignment_scenes, _ensure_voice_bundle
+from processor import editorial_alignment
 
 
 class EditorialRendererTests(unittest.TestCase):
+    def test_alignment_retry_requires_current_failed_diagnostics_and_matching_audio(self):
+        voices = {"opening": {"sha256": "same"}, "ending": {"sha256": "rejected"}}
+        report = {"version": editorial_alignment.VERSION, "status": "failed-alignment", "scenes": [
+            {"id": "opening", "audio_sha256": "same", "diagnostics": {"passed": True}},
+            {"id": "ending", "audio_sha256": "rejected", "diagnostics": {"passed": False, "failures": ["Repeated phrase"]}},
+        ]}
+        with patch("processor.editorial_renderer._json", return_value=report):
+            self.assertEqual(_rejected_alignment_scenes("voices", voices), ["ending"])
+            report["scenes"][1]["audio_sha256"] = "stale"
+            self.assertEqual(_rejected_alignment_scenes("voices", voices), [])
+            report["scenes"][1]["audio_sha256"] = "rejected"
+            report["version"] = "old"
+            self.assertEqual(_rejected_alignment_scenes("voices", voices), [])
+
+    def test_rejected_audio_has_only_one_paid_retry_and_infrastructure_errors_have_none(self):
+        with patch("pathlib.Path.is_file", return_value=True), \
+             patch("processor.editorial_renderer._json", return_value={"status": "success"}), \
+             patch("processor.editorial_renderer.validate_voice_bundle", return_value=({}, {}, None)), \
+             patch("processor.editorial_renderer._validate_voice_policy"), \
+             patch("processor.editorial_renderer._effective_overrides", return_value={}), \
+             patch("processor.editorial_renderer.editorial_alignment.align_audio_directory", side_effect=RuntimeError("Rejected")) as align, \
+             patch("processor.editorial_renderer._rejected_alignment_scenes", return_value=["ending"]) as rejected, \
+             patch("processor.editorial_renderer.synthesize_editorial_voice") as synth:
+            with self.assertRaises(RuntimeError):
+                _ensure_voice_bundle({}, "voices", allow_synthesis=True, delivery_overrides=None, asr_model="base")
+            self.assertEqual(align.call_count, 2)
+            synth.assert_called_once_with({}, output_dir="voices", delivery_overrides={}, force_scene_ids=["ending"])
+            synth.reset_mock()
+            rejected.return_value = []
+            with self.assertRaises(RuntimeError):
+                _ensure_voice_bundle({}, "voices", allow_synthesis=True, delivery_overrides=None, asr_model="base")
+            synth.assert_not_called()
+
     def test_timeline_uses_real_audio_never_cuts_tail_and_stays_contiguous(self):
         plan = {"scenes": [{"id": "opening", "kind": "narration"}, {"id": "source", "kind": "clip", "start": 3.1, "end": 5.25}, {"id": "ending", "kind": "narration"}]}
         timeline = build_timeline(plan, {"opening": .991, "ending": 1.013}, fps=30)

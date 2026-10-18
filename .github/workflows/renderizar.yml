@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   voz-autoral:
     runs-on: ubuntu-latest
@@ -16,13 +17,26 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
-          python -m pip install --disable-pip-version-check 'google-genai==2.26.0' 'num2words>=0.5.14,<0.6' 'faster-whisper>=1.2,<2'
-      - name: Gerar somente a voz literal do piloto
+          python -m pip install --disable-pip-version-check Pillow numpy 'google-genai==2.26.0' 'num2words>=0.5.14,<0.6' 'faster-whisper>=1.2,<2'
+      - name: Reutilizar as falas já geradas
+        uses: actions/download-artifact@v4
+        with:
+          name: os4-roberta-grave-preview
+          path: .os4-preview/audio/
+          github-token: ${{ github.token }}
+          run-id: 39147977192
+      - name: Validar e recuperar apenas a fala rejeitada
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python -m processor.editorial_voice --plan .os4-preview/editorial-plan.json --output-dir .os4-preview/audio
-      - name: Alinhar palavras canônicas
-        run: python -m processor.editorial_alignment --audio-dir .os4-preview/audio
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from processor.editorial_renderer import _ensure_voice_bundle
+          plan = json.loads(Path('.os4-preview/editorial-plan.json').read_text(encoding='utf-8'))
+          manifest, voices, aligned = _ensure_voice_bundle(plan, '.os4-preview/audio', allow_synthesis=True, delivery_overrides=None, asr_model='base')
+          print(json.dumps({'status': manifest['status'], 'forced_scene_ids': manifest.get('forced_scene_ids'), 'aligned': aligned['status'], 'scenes': list(voices)}))
+          PY
       - name: Guardar áudio e diagnóstico do piloto
         if: always()
         uses: actions/upload-artifact@v4

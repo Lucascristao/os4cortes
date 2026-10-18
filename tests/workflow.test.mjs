@@ -417,6 +417,15 @@ test('terminal callbacks preserve editorial failure details and partial counters
   assert.equal(job.status,completedCount?'completed':'error');
   assert.equal(job.totalCuts,2);
   assert.deepEqual(job.result,result,'Terminal polling must retain the failure list and both original counters');
+  const folderId=renderBody().folderId;
+  const feed=await (await publisherFolder(new Request(`https://os4.example.test/.netlify/functions/publisher-folder?folderId=${folderId}`,
+   {headers:{Authorization:`Bearer ${publisherToken(callbackSecret,folderId)}`}}),context)).json();
+  assert.equal(feed.requestedCount,2);
+  assert.equal(feed.completedCount,completedCount);
+  assert.equal(feed.failedCount,2-completedCount);
+  assert.equal(feed.readyCount,completedCount);
+  assert.deepEqual(feed.cuts.map(cut=>cut.index),completedCount?[1]:[]);
+  assert.equal(feed.errors,undefined,'Folder capability exposes counts without narration diagnostics');
  }
 });
 

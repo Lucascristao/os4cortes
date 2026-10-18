@@ -160,10 +160,19 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
     return worker, jobs, manifest
 
 
-def synthesize_editorial_voice(raw_plan, *, output_dir, ode_root=None, delivery_overrides=None, preflight_only=False):
+def synthesize_editorial_voice(raw_plan, *, output_dir, ode_root=None, delivery_overrides=None, preflight_only=False, force_scene_ids=None):
     """Execute ODE synthesis/cache checks for the plan, or only local preflight."""
     output = Path(output_dir).resolve()
     worker, jobs, manifest = prepare_voice_jobs(raw_plan, ode_root=ode_root, output_dir=output, delivery_overrides=delivery_overrides)
+    if force_scene_ids is None:
+        force_scene_ids = []
+    identifiers = {job["scene_id"] for job in jobs}
+    if not isinstance(force_scene_ids, list) or any(not isinstance(identifier, str) or identifier not in identifiers for identifier in force_scene_ids):
+        raise ValueError("force_scene_ids deve ser uma lista de IDs de narração presentes no plano.")
+    if len(set(force_scene_ids)) != len(force_scene_ids):
+        raise ValueError("force_scene_ids não pode conter IDs repetidos.")
+    forced = set(force_scene_ids)
+    manifest["forced_scene_ids"] = [job["scene_id"] for job in jobs if job["scene_id"] in forced]
     output.mkdir(parents=True, exist_ok=True)
     manifest_path = output / "narration-manifest.json"
 
@@ -181,6 +190,9 @@ def synthesize_editorial_voice(raw_plan, *, output_dir, ode_root=None, delivery_
     missing = []
     speech_fingerprint = manifest["speech_profile_fingerprint"]
     for job in jobs:
+        if job["scene_id"] in forced:
+            missing.append(job)
+            continue
         duration = worker.cached_duration(job["output_file"], job["narration_hash"], worker.PRIMARY_TTS_MODEL, "Charon", worker.NO_VOICE_TREATMENT, speech_fingerprint, narration=job["narration"], pronunciations=job["direction"].get("pronunciations", {}), direction_fingerprint=job["direction_fingerprint"])
         if duration is None:
             missing.append(job)

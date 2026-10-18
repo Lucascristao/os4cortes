@@ -1375,10 +1375,11 @@ function mostrarResultados(result, autoSend = true) {
       links.append(
         resultLink("Vídeo com legenda", corte.files.videoLegenda.url, true),
         resultLink("Abrir legendado no Drive", corte.files.videoLegenda.url),
-        resultLink("Vídeo sem legenda", corte.files.video.url),
-        resultLink("SRT", corte.files.srt.url),
-        resultLink("Texto da postagem", corte.files.post.url),
       );
+      if (corte.files.video.id !== corte.files.videoLegenda.id) {
+        links.append(resultLink("Vídeo sem legenda", corte.files.video.url));
+      }
+      links.append(resultLink("SRT", corte.files.srt.url), resultLink("Texto da postagem", corte.files.post.url));
       if (corte.files.capa?.url) {
         links.append(resultLink("Capa", corte.files.capa.url));
       }

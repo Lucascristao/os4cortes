@@ -7,7 +7,7 @@ class FolderWatcher extends EventEmitter {
     this.items=queue.get('folder_watchers',[]);this.busy=new Set();this.downloading=new Set();
   }
   save(){this.q.set('folder_watchers',this.items);this.emit('updated',this.status());}
-  status(){return this.items.map(w=>({folderId:w.folderId,enabled:w.enabled,phase:w.phase,detail:w.detail,readyCount:w.readyCount||0,totalCuts:w.totalCuts||0,downloadedCount:(w.ready||[]).filter(c=>w.done?.[this.key(c)]).length,nextCheck:w.nextCheck,lastCheck:w.lastCheck,remoteStatus:w.remoteStatus}));}
+  status(){return this.items.map(w=>({folderId:w.folderId,enabled:w.enabled,phase:w.phase,detail:w.detail,readyCount:w.readyCount||0,totalCuts:w.totalCuts||0,failedCount:w.failedCount||0,downloadedCount:(w.ready||[]).filter(c=>w.done?.[this.key(c)]).length,nextCheck:w.nextCheck,lastCheck:w.lastCheck,remoteStatus:w.remoteStatus}));}
   start(folderUrl){
     const folderId=String(folderUrl).match(/\/folders\/([\w-]+)/)?.[1]||String(folderUrl).trim();
     if(!/^[\w-]{20,200}$/.test(folderId))throw new Error('Link da pasta do Drive inválido.');
@@ -45,6 +45,11 @@ class FolderWatcher extends EventEmitter {
     const feed=await response.json();if(!response.ok||!feed.ok)throw new Error(feed.error||'Servidor temporariamente indisponível.');
     if(feed.folderId!==w.folderId||!Array.isArray(feed.cuts))throw new Error('Resposta da pasta inválida.');
     w.requestId=feed.requestId;w.totalCuts=feed.totalCuts;w.readyCount=feed.readyCount;w.remoteStatus=feed.status;
+    const isCount=value=>Number.isSafeInteger(value)&&value>=0;
+    w.generationComplete=terminal(feed.status)&&[feed.requestedCount,feed.completedCount,feed.failedCount].every(isCount)&&
+      feed.requestedCount===feed.totalCuts&&feed.completedCount===feed.readyCount&&
+      feed.completedCount+feed.failedCount===feed.requestedCount;
+    w.failedCount=w.generationComplete?feed.failedCount:0;
     w.ready=feed.cuts.filter(c=>c.ready&&c.files?.post?.id&&(c.formato==='16:9'?c.files?.video?.id||c.files?.videoLegenda?.id:c.files?.videoLegenda?.id));
     w.phase=terminal(feed.status)?'finishing':'watching';
     w.detail=feed.error|| (feed.stale?'Processamento sem atualização recente; acompanhamento continua.':`${feed.readyCount}/${feed.totalCuts} cortes prontos. ${feed.detail||'Aguardando novos cortes.'}`);
@@ -54,8 +59,11 @@ class FolderWatcher extends EventEmitter {
     if(!terminal(w.remoteStatus)||w.ready.some(c=>!w.done[this.key(c)]))return;
     const pending=this.q.list().filter(j=>j.payload.folderId===w.folderId&&j.state!=='completed'&&j.state!=='cancelled');
     if(pending.length){w.detail=`Geração ${w.remoteStatus==='completed'?'concluída':'interrompida'}; ${pending.length} publicação(ões) pendente(s).`;return;}
-    if(w.remoteStatus==='completed'&&w.readyCount<w.totalCuts){w.detail='Geração terminou com arquivos pendentes. Aguardando confirmação do servidor.';return;}
-    w.enabled=false;w.phase=w.remoteStatus==='completed'?'completed':'error';w.detail=w.remoteStatus==='completed'?'Todos os cortes publicados e confirmados.':w.detail;
+    if(w.remoteStatus==='completed'&&w.readyCount<w.totalCuts&&!w.generationComplete){w.detail='Geração terminou com arquivos pendentes. Aguardando confirmação do servidor.';return;}
+    w.enabled=false;w.phase=w.remoteStatus==='completed'?'completed':'error';
+    if(w.remoteStatus==='completed')w.detail=w.failedCount
+      ?`${w.readyCount}/${w.totalCuts} cortes publicados e confirmados; ${w.failedCount} com falha na geração.`
+      :'Todos os cortes publicados e confirmados.';
   }
   key(c){return `${c.formato}:${c.formato==='16:9'?c.files.video?.id||c.files.videoLegenda?.id:c.files.videoLegenda?.id}`;}
   drain(w){

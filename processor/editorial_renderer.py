@@ -182,7 +182,7 @@ def validate_voice_bundle(plan, voice_dir, *, require_alignment=True, delivery_o
     if require_alignment:
         aligned = _json(voice_dir / "aligned-words.json")
         rows = aligned.get("scenes", [])
-        if aligned.get("status") != "success" or len(rows) != len(expected) or {row.get("id") for row in rows} != set(expected):
+        if aligned.get("version") != editorial_alignment.VERSION or aligned.get("status") != "success" or len(rows) != len(expected) or {row.get("id") for row in rows} != set(expected):
             raise ValueError("Canonical caption alignment has not passed all narration scenes.")
         for row in rows:
             identifier = row["id"]
@@ -226,19 +226,47 @@ def _ensure_voice_bundle(plan, voice_dir, *, allow_synthesis, delivery_overrides
     # Verify integrity first. Only an intact stale policy may trigger the
     # authorized runtime refresh; corrupted audio/text is never paid-repaired.
     manifest, voices, _ = validate_voice_bundle(plan, voice_dir, require_alignment=False, validate_policy=False)
-    refreshed = False
     try:
         _validate_voice_policy(plan, voice_dir, manifest, voices, delivery_overrides)
     except StaleVoicePolicy:
         if not allow_synthesis:
             raise
-        synthesize_editorial_voice(plan, output_dir=voice_dir,
-            delivery_overrides=_effective_overrides(manifest, delivery_overrides, plan))
-        refreshed = True
-    aligned_file = Path(voice_dir) / "aligned-words.json"
-    if refreshed or not aligned_file.is_file() or _json(aligned_file).get("status") != "success":
-        editorial_alignment.main(["--audio-dir", str(voice_dir), "--model", asr_model])
+        delivery_overrides = _effective_overrides(manifest, delivery_overrides, plan)
+        synthesize_editorial_voice(plan, output_dir=voice_dir, delivery_overrides=delivery_overrides)
+        manifest, voices, _ = validate_voice_bundle(plan, voice_dir, require_alignment=False,
+                                                   delivery_overrides=delivery_overrides)
+    # A provider transcript may omit a repetition present in its PCM. The ASR
+    # gate remains strict; permit one fresh performance of only rejected scenes.
+    # Infrastructure/model errors and stale diagnostics must not buy new audio.
+    try:
+        editorial_alignment.align_audio_directory(voice_dir, model=asr_model)
+    except RuntimeError:
+        rejected = _rejected_alignment_scenes(voice_dir, voices)
+        if not allow_synthesis or not rejected:
+            raise
+        print(f"Refazendo uma vez as falas rejeitadas pelo alinhamento: {', '.join(rejected)}", flush=True)
+        overrides = _effective_overrides(manifest, delivery_overrides, plan)
+        synthesize_editorial_voice(plan, output_dir=voice_dir, delivery_overrides=overrides,
+                                  force_scene_ids=rejected)
+        validate_voice_bundle(plan, voice_dir, require_alignment=False, delivery_overrides=delivery_overrides)
+        editorial_alignment.align_audio_directory(voice_dir, model=asr_model)
     return validate_voice_bundle(plan, voice_dir, delivery_overrides=delivery_overrides)
+
+
+def _rejected_alignment_scenes(voice_dir, voices):
+    try:
+        result = _json(Path(voice_dir) / "aligned-words.json")
+        if result.get("version") != editorial_alignment.VERSION or result.get("status") != "failed-alignment":
+            return []
+        rows = result.get("scenes", [])
+        if len(rows) != len(voices) or {row.get("id") for row in rows} != set(voices):
+            return []
+        if any(row.get("audio_sha256") != voices[row["id"]]["sha256"] for row in rows):
+            return []
+        return [row["id"] for row in rows if row.get("diagnostics", {}).get("passed") is False
+                and row.get("diagnostics", {}).get("failures")]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
 
 
 def _wave_stats(path):

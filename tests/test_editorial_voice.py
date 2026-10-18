@@ -3,7 +3,7 @@ import copy
 import json
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from processor import editorial_voice
 from processor.voice_runtime.gemini_live_fidelity import evaluate_transcription
@@ -80,6 +80,44 @@ class EditorialVoiceTests(unittest.TestCase):
         self.assertEqual(first["voice_policy_fingerprint"], second["voice_policy_fingerprint"])
         self.assertEqual(first["speech_profile_fingerprint"], second["speech_profile_fingerprint"])
         self.assertEqual(second["master_pitch_semitones"], 0)
+
+    def test_force_one_scene_preserves_other_valid_cache_jobs(self):
+        plan = example_plan()
+        template = copy.deepcopy(plan["scenes"][0])
+        plan["scenes"] = [
+            {**copy.deepcopy(template), "id": "abertura", "text": "Uma pergunta clara."},
+            plan["scenes"][1],
+            {**copy.deepcopy(template), "id": "comentario", "text": "Ela diz não saber."},
+            {**copy.deepcopy(template), "id": "fechamento", "text": "O contexto muda a leitura."},
+        ]
+        worker, jobs, _ = editorial_voice.prepare_voice_jobs(plan, output_dir="unused-output")
+        narrations = {job["scene_id"]: job["narration"] for job in jobs}
+        original_read = Path.read_text
+
+        def read_sidecar(path, *args, **kwargs):
+            if path.name.endswith(".tts.json"):
+                identifier = path.name.removesuffix(".tts.json")
+                return json.dumps({"output_transcription": narrations[identifier]})
+            return original_read(path, *args, **kwargs)
+
+        synth = AsyncMock(return_value={})
+        with patch.object(Path, "mkdir"), patch.object(Path, "write_text"), patch.object(Path, "read_text", autospec=True, side_effect=read_sidecar), patch.dict("os.environ", {"GEMINI_API_KEY": "offline-test-key"}), patch.object(worker, "cached_duration", return_value=1) as cache, patch.object(worker, "synthesize_missing_jobs", synth), patch.object(worker, "duration_seconds", return_value=1), patch.object(worker, "audio_sha256", return_value="unchanged-or-generated-hash"):
+            manifest = editorial_voice.synthesize_editorial_voice(plan, output_dir="unused-output", force_scene_ids=["fechamento"])
+        self.assertEqual(manifest["status"], "success")
+        self.assertEqual(manifest["forced_scene_ids"], ["fechamento"])
+        self.assertEqual([job["scene_id"] for job in synth.call_args.args[0]], ["fechamento"])
+        self.assertEqual(cache.call_count, 2)
+        self.assertEqual([call.args[0].stem for call in cache.call_args_list], ["abertura", "comentario"])
+        self.assertEqual([scene["narration"] for scene in manifest["scenes"]], [job["narration"] for job in jobs])
+
+    def test_force_unknown_or_non_list_ids_fails_before_cache_or_synthesis(self):
+        worker, _, _ = editorial_voice.prepare_voice_jobs(example_plan(), output_dir="unused-output")
+        for forced in (["unknown"], ["fonte"], "introducao-livre", ["introducao-livre", "introducao-livre"]):
+            with self.subTest(forced=forced), patch.object(worker, "synthesize_missing_jobs", AsyncMock()) as synth, patch.object(worker, "cached_duration") as cache:
+                with self.assertRaisesRegex(ValueError, "force_scene_ids"):
+                    editorial_voice.synthesize_editorial_voice(example_plan(), output_dir="unused-output", force_scene_ids=forced)
+                synth.assert_not_called()
+                cache.assert_not_called()
 
 
 if __name__ == "__main__":
