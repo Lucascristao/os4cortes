@@ -231,3 +231,13 @@ O `VERSION` novo invalida os caches antigos. O cache também confere hashes, tex
 9. O Publicador recebe somente pacotes finais completos com postagem correspondente; callback repetido não cria outro registro de disponibilidade para o mesmo corte no mesmo job. Isso não é deduplicação de uploads entre novos jobs.
 
 Esses testes de contrato podem rodar sem rede, sem secrets reais e sem custo de geração. Uma execução integral com a voz e o workflow de produção continua necessária antes de afirmar que a automação foi liberada.
+
+## Prova real de voz e composição em 18/10/2026
+
+A chave cadastrada no repositório OS4 foi usada no [job isolado de recuperação](https://github.com/Lucascristao/os4cortes/actions/runs/39148541911). As três falas do piloto passaram com cobertura ASR de 100%. O primeiro áudio do fechamento havia sido rejeitado por possível repetição; o motor o gerou novamente uma única vez, conservando byte a byte os WAVs aprovados da abertura e do comentário. A validação do provedor permanece separada da conferência ASR.
+
+Essa recuperação exige diagnóstico `failed-alignment` da versão atual e hashes correspondentes aos WAVs presentes. Só os IDs rejeitados entram em `force_scene_ids`. Falhas de infraestrutura e diagnósticos antigos não autorizam síntese adicional; uma segunda rejeição continua sendo erro do corte. O alinhador sempre verifica versão, modelo, hashes e tempos antes de reutilizar seu cache, mesmo quando o arquivo declara `success`.
+
+O perfil usa Charon com registro confortável mais grave e o mesmo padrão de presença entre intervenções. A referência de tom e o tratamento comum de −1 semitom estão documentados em [DIRECTION.md](../processor/voice_runtime/DIRECTION.md). O compositor aplica essa calibração uma única vez às narrações derivadas, compensando o tempo; preserva os WAVs brutos e o pitch dos entrevistados. O parâmetro e a versão do master participam do cache final.
+
+Os MP4s locais em 1080×1920 e 1920×1080 resultaram em 67,6 segundos. Ambos passaram na decodificação integral, na conferência de legendas e no teste de integridade dos WAVs; o pico final medido ficou em −0,9 dBFS. A evidência dessa prova cobre síntese, alinhamento e composição reais. O job isolado não enviou os arquivos ao Drive nem publicou nas redes; esses caminhos têm validação de contrato e mantêm as autorizações existentes.

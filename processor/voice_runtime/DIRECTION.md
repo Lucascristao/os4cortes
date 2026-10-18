@@ -20,6 +20,8 @@ A implementação efetiva auditada tanto no O Dinheiro Explica quanto no Plotqua
 
 Este perfil preserva a mesma voz Charon, modelo, direção global, timbre solicitado e distância percebida do microfone. Mantém isolamento de sessão, leitura literal e validação de fidelidade. Não promete identidade acústica perfeita entre gerações. Reaproveitar uma sessão sem consumir corretamente o fim de turno poderia misturar eventos ou contexto; o runtime não assume essa segurança sem prova real.
 
-## Próxima amostra
+## Amostra validada em 18/10/2026
 
-Gerar as mesmas três locuções aprovadas com o perfil atual, sem mudar roteiro nem fonte. Conferir fidelidade e alinhamento, montar com um único tratamento tonal comum e comparar as três entradas, suas retomadas e uma pergunta. A leitura do WAV e do MP4 precisa verificar naturalidade e estabilidade percebida; métricas e o ID da voz não substituem essa escuta. Uma síntese única seguida de divisão por palavras alinhadas é uma alternativa futura para comparar continuidade, sem ampliar o fluxo atual por suposição.
+As mesmas três locuções foram geradas com o perfil atual e a chave do OS4, sem mudar roteiro nem fonte. O [job real](https://github.com/Lucascristao/os4cortes/actions/runs/39148541911) recuperou uma vez apenas o fechamento rejeitado por possível repetição e conservou os outros WAVs byte a byte. As três cenas passaram com cobertura ASR integral. Os MP4s vertical e horizontal têm 67,6 segundos e aplicam a calibração tonal comum uma única vez; passaram na decodificação integral e na conferência dos WAVs brutos.
+
+Naturalidade e estabilidade percebida ainda dependem da escuta: métricas e o ID da voz não comprovam identidade acústica perfeita. Uma síntese única seguida de divisão por palavras alinhadas é uma alternativa futura para comparar continuidade, sem ampliar o fluxo atual por suposição.
