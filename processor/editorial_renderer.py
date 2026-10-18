@@ -305,9 +305,11 @@ def _save_cache(record_path, key, artifact):
 
 def scene_fingerprint(scene, *, source_hash, canvas, lower_third, words, voice=None, font_hash=""):
     """Exclude other scenes and master audio gain from silent video cache keys."""
+    from .editorial_visuals import VISUAL_STYLE_VERSION
     return fingerprint({"version": VERSION, "scene": scene, "source": source_hash,
                         "canvas": canvas, "lower_third": lower_third, "words": words,
-                        "voice_timing": voice, "font": font_hash})
+                        "voice_timing": voice, "font": font_hash,
+                        **({"visual_style": VISUAL_STYLE_VERSION} if scene.get("kind") == "narration" else {})})
 
 
 def _font(font_dir):
@@ -378,8 +380,60 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
     return ass, cues
 
 
+def _overlay_animation_entries(stages, *, canvas):
+    """Finite RGBA frames: ease only the changing text; leave branding still."""
+    from PIL import Image, ImageChops, ImageDraw
+    entries, previous, last_image = ["ffconcat version 1.0"], None, None
+
+    def append(path, frames):
+        nonlocal last_image
+        if frames <= 0:
+            return
+        quoted = str(path.resolve()).replace("\\", "/").replace("'", "'\\''")
+        entries.extend([f"file '{quoted}'", f"option framerate {canvas.fps}", f"duration {frames/canvas.fps:.9f}"])
+        last_image = quoted
+
+    for path, frames in stages:
+        with Image.open(path) as source:
+            current = source.convert("RGBA")
+        if previous is None:
+            append(path, frames)
+            previous = current
+            continue
+        difference = ImageChops.difference(previous, current)
+        mask = difference.getchannel("A")
+        for channel in ("R", "G", "B"):
+            mask = ImageChops.lighter(mask, difference.getchannel(channel))
+        box = mask.getbbox()
+        transition_frames = min(frames, max(1, round(canvas.fps*.24))) if box else 0
+        if transition_frames:
+            base = previous.copy()
+            ImageDraw.Draw(base).rectangle((box[0], box[1], box[2]-1, box[3]-1), fill=(0, 0, 0, 0))
+            old, new = previous.crop(box), current.crop(box)
+            for frame in range(1, transition_frames):
+                eased = 1-(1-frame/transition_frames)**3
+                composed = base.copy()
+                outgoing, incoming = old.copy(), new.copy()
+                outgoing.putalpha(old.getchannel("A").point(lambda value: round(value*(1-eased))))
+                incoming.putalpha(new.getchannel("A").point(lambda value: round(value*eased)))
+                composed.alpha_composite(outgoing, (box[0], box[1]))
+                drift = round(18*min(canvas.width, canvas.height)/1080*(1-eased))
+                composed.alpha_composite(incoming, (box[0], box[1]+drift))
+                animated = path.with_name(f"{path.stem}-motion-{frame:02d}.png")
+                composed.save(animated, compress_level=3)
+                append(animated, 1)
+            append(path, frames-transition_frames+1)
+        else:
+            append(path, frames)
+        previous = current
+    if last_image is None:
+        raise ValueError("No visible overlay stage fits the scene duration.")
+    entries.extend([f"file '{last_image}'", f"option framerate {canvas.fps}"])
+    return entries
+
+
 def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, ass, font_path, duration, ffmpeg, shared_dir, source_hash):
-    from .editorial_visuals import EditorialScene, build_background_filter, render_overlay_png, overlay_timeline
+    from .editorial_visuals import EditorialScene, VISUAL_STYLE_VERSION, build_background_filter, render_overlay_png, overlay_timeline
     common = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p",
               "-r", str(canvas.fps), "-frames:v", str(round(duration*canvas.fps)),
               "-threads", "2", "-video_track_timescale", "15360", "-movflags", "+faststart"]
@@ -402,14 +456,14 @@ def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, 
     source_credit = scene["_credit"]
     overlay = EditorialScene(title=visual["title"], kicker=visual.get("kicker", ""), lines=tuple(visual.get("lines", [])), credit=source_credit)
     span = scene["background"]
-    background_key = fingerprint({"version": VERSION, "source": source_hash, "span": span, "canvas": [canvas.width, canvas.height, canvas.fps], "treatment": [treatment.mode, treatment.height_fraction]})
+    background_key = fingerprint({"version": VERSION, "visual_style": VISUAL_STYLE_VERSION, "source": source_hash, "span": span, "canvas": [canvas.width, canvas.height, canvas.fps], "treatment": [treatment.mode, treatment.height_fraction]})
     background = shared_dir / f"background-{background_key[:24]}.mp4"
     background_record = background.with_suffix(".json")
     if not _cache_valid(background_record, background_key, background):
         # Only this bounded source interval enters the cache. Looping cannot
         # spill into other source statements beyond span.end.
         span_duration = span["end"] - span["start"]
-        background_filter = build_background_filter(canvas, lower_third=treatment, darkness=.43, duration=span_duration)
+        background_filter = build_background_filter(canvas, lower_third=treatment, darkness=.68, duration=span_duration)
         _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-filter_threads", "1", "-threads", "1",
               "-ss", str(span["start"]), "-i", video, "-t", str(span_duration), "-an", "-vf", background_filter,
               "-frames:v", str(max(1, round(span_duration*canvas.fps))), "-c:v", "libx264", "-preset", "veryfast",
@@ -419,9 +473,8 @@ def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, 
     # One finite RGBA stream replaces multiple infinite full-resolution PNG
     # inputs. ffconcat decodes each stage once; fps repeats its frames in time.
     overlay_concat = scene_dir / "overlay-stages.ffconcat"
-    image_entries = ["ffconcat version 1.0"]
+    stages = []
     total_frames = max(1, round(duration*canvas.fps))
-    last_image = None
     for index, step in enumerate(timeline):
         image = scene_dir / f"overlay-{step['stage']}.png"
         render_overlay_png(overlay, image, canvas=canvas, stage=step["stage"], font_path=font_path)
@@ -429,12 +482,8 @@ def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, 
         end_frame = min(total_frames, math.ceil(step["end"]*canvas.fps-1e-8))
         if end_frame <= start_frame:
             continue
-        quoted = str(image.resolve()).replace("\\", "/").replace("'", "'\\''")
-        image_entries.extend([f"file '{quoted}'", f"option framerate {canvas.fps}", f"duration {(end_frame-start_frame)/canvas.fps:.9f}"])
-        last_image = quoted
-    if last_image is None:
-        raise ValueError("No visible overlay stage fits the scene duration.")
-    image_entries.extend([f"file '{last_image}'", f"option framerate {canvas.fps}"])
+        stages.append((image, end_frame-start_frame))
+    image_entries = _overlay_animation_entries(stages, canvas=canvas)
     overlay_concat.write_text("\n".join(image_entries)+"\n", encoding="utf-8")
     inputs = ["-threads", "1", "-stream_loop", "-1", "-i", str(background),
               "-threads", "1", "-f", "concat", "-safe", "0", "-i", str(overlay_concat)]
@@ -503,7 +552,7 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                          target_active_dbfs=-18.0, peak_ceiling=.95,
                          narrator_pitch_semitones=DEFAULT_NARRATOR_PITCH_SEMITONES):
     """Return {video,srt,capa,report}; output is the final MP4 file path."""
-    from .editorial_visuals import Canvas
+    from .editorial_visuals import Canvas, VISUAL_STYLE_VERSION
     video, transcript, output = Path(video).resolve(), Path(transcript).resolve(), Path(output).resolve()
     work = Path(work_dir).resolve()
     if output in (video, transcript) or output.suffix.lower() != ".mp4":
@@ -600,6 +649,7 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
             raise RuntimeError("Raw narration WAV changed during rendering.")
         report = {"version": VERSION, "status": "success", "video": str(output), "srt": str(srt), "capa": str(cover),
                   "aspect": aspect, "width": canvas.width, "height": canvas.height, "fps": fps, "duration_seconds": total,
+                  "visual_style": VISUAL_STYLE_VERSION,
                   "source_sha256": source_hash, "plan_fingerprint": fingerprint(normalized), "video_sha256": file_sha256(output),
                   "voice_model": manifest["model"], "voice": manifest["voice"], "raw_voice_byte_identical": True,
                   "literal_tts_fidelity_passed": True, "caption_alignment_passed": True,

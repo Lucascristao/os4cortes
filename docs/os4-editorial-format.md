@@ -66,3 +66,13 @@ O adaptador acrescenta direção global de conversa próxima e questionadora, pr
 O perfil atual acrescenta ressonância suave de peito e registro confortável mais grave, tomando somente o tom do Plotquake como referência. O master aplica −1 semitom comum a todas as narrações, com compensação de duração, sem modificar os WAVs brutos ou as vozes da fonte. A configuração não alterna entre cenas. Veja [a direção vocal e sua proveniência](../processor/voice_runtime/DIRECTION.md).
 
 A prova real do OS4 em 18/10/2026 gerou as três falas, refez automaticamente uma fala rejeitada pela conferência ASR e preservou os áudios já aprovados. Os dois formatos finais do piloto têm 67,6 segundos. Falhas de alinhamento têm uma única recuperação por execução, limitada às cenas rejeitadas e com hashes atuais; o motor não reduz o rigor da conferência para aceitar o áudio.
+
+## Identidade de criador para diferentes assuntos
+
+O formato atende economia, empreendedorismo, política e outros temas com a mesma identidade OS4. A conversa, a pergunta e o raciocínio determinam a montagem; não há linguagem de telejornal, ticker, selo de transmissão ou tarja de manchete. Os créditos permanecem discretos, e o tratamento de tarja na fonte continua independente do formato.
+
+Na revisão visual de 18/10/2026, o fundo de narração passou a ter saturação zero e camada preta de 68%, conservando o vídeo real desfocado em movimento. Isso elimina o tom esverdeado da versão anterior. Títulos maiores em branco usam uma ênfase em âmbar; os apoios se substituem, um por vez. As entradas têm aceleração suave, deslocando somente a área de texto alterada e mantendo marca e elementos persistentes estáveis.
+
+A pesquisa de 2026 tomou como referência o [BFI London Film Festival, da Pentagram](https://www.pentagram.com/work/bfi-london-film-festival), apresentado em 15/10/2026: letras reveladas gradualmente por luz e movimento em superfície escura. A [atualização de motion typography da Adobe, de 20/01/2026](https://blog.adobe.com/en/publish/2026/01/20/new-ai-powered-video-editing-tools-premiere-major-motion-design-upgrades-after-effects), também informa o uso do movimento na tipografia. A aplicação OS4 usa composição, cores e fonte próprias, adaptadas à leitura em celular e ao quadro horizontal.
+
+`VISUAL_STYLE_VERSION` invalida fundos e composições narradas de versões antigas, sem refazer a voz aprovada. A animação usa uma sequência finita de PNGs, com um único input no compositor, para limitar uso de memória em lotes.

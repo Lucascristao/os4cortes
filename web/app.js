@@ -687,7 +687,7 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, 
   const narracao = (id, title, start, end, text, delivery = "explain") => ({
     id, kind: "narration", text,
     background: { start, end },
-    visual: { title, kicker: "[Atribuição ou contexto curto]", lines: ["[Ponto verificável da fala]"] },
+    visual: { title, kicker: "[Tema ou contexto curto]", lines: ["[Ponto verificável da fala]"] },
     tts: { delivery, cues: [] },
     evidence: [{ start, end }],
   });
@@ -709,6 +709,8 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, 
   }];
   return `Você é o editor do OS4 Cortes. Leia toda a transcrição e crie vídeos autorais completos: a fala original deve sustentar uma explicação própria que dê contexto, faça uma análise e entregue uma conclusão.
 
+O canal aborda economia, empreendedorismo, política e outros temas. Use linguagem de criador que conversa e levanta perguntas, sem tom de telejornal, boletim ou manchete. A identidade visual é a mesma entre assuntos; os textos devem se adaptar ao conteúdo e permanecer fiéis à fonte.
+
 Selecione ideias com começo, meio e fim. Conduza cada vídeo por uma pergunta específica e verificável: contexto e pergunta na abertura; excertos completos e comentário no desenvolvimento; conclusão proporcional ao que foi ouvido no fechamento. A narração deve acrescentar informação ou raciocínio, além de anunciar o corte.
 
 Escreva como uma conversa clara e curiosa com uma pessoa, com perguntas naturais e frases curtas. Preserve a atribuição: diferencie o que o entrevistado afirma, a evidência disponível e a sua interpretação. As perguntas devem pedir informação, sem insinuações ou acusações. Não invente falas, datas, participantes, números, fatos ou conclusões. Use apenas o que a fonte permite sustentar; dados externos sem fonte verificada devem ficar fora da locução.
@@ -722,7 +724,7 @@ Contrato editorial obrigatório:
 - narration: id, kind: "narration", text (texto literal que será falado, até 1400 caracteres), background: {start,end}, visual: {title,kicker,lines}, tts: {delivery:"explain",cues:[]}, evidence: [{start,end}].
 - background escolhe vídeo real para o fundo em movimento; evidence traz de 1 a 8 intervalos da transcrição que sustentam a narração. Todos os intervalos precisam ter end > start e caber entre inicio/fim do corte, em segundos absolutos do vídeo original.
 - inicio/fim são o envelope da fonte: use o menor start e o maior end de TODAS as referências em clips, backgrounds e evidence. A duração final é a soma dos áudios narrados e dos clips na montagem; ela não é a duração desse envelope da fonte.
-- Use títulos visuais curtos, até 100 caracteres; kicker até 60; no máximo 3 linhas curtas de apoio. A montagem cuida do blur, escurecimento, entradas do texto, voz e legendas.
+- Use títulos visuais curtos e fortes, preferencialmente de 4 a 8 palavras, até 100 caracteres; kicker temático até 60; no máximo 3 frases curtas de apoio, mostradas uma por vez. Evite rótulos de telejornal e não repita a legenda da voz na tela de apoio. A montagem cuida do vídeo ao fundo, blur, preto neutro, movimento do texto, voz e legendas.
 - Escolha tts.delivery pela intenção de cada cena: hook na abertura que apresenta o assunto, explain ao explicar, question em pergunta direta, contrast para uma distinção e closing ao concluir. Use cues vazio para começar; a direção deve acompanhar a intenção sem mudar a identidade da voz. Não coloque instruções de voz no text. Preserve a fala original nos clips.
 - Nos horizontais inclua descricao e tags; nos verticais legenda_post e hashtags. Os títulos, créditos e descrições também devem ser fiéis à fonte.
 

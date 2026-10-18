@@ -17,6 +17,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .lower_third import LowerThird
 
+VISUAL_STYLE_VERSION = "os4-creator-black-motion-2026-v1"
+
 
 def _number(value: float, name: str, minimum: float, maximum: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -96,7 +98,7 @@ class EditorialScene:
 
 def build_background_filter(
     canvas: Canvas = Canvas(), *, lower_third: LowerThird | None = None,
-    blur_sigma: float | None = None, darkness: float = .40,
+    blur_sigma: float | None = None, darkness: float = .68,
     focus_x: float = .54, focus_y: float = .45,
     subtle_motion: bool = False, duration: float = 8.0,
 ) -> str:
@@ -104,7 +106,9 @@ def build_background_filter(
 
     ``focus_x``/``focus_y`` select a normalized focal point after source banner
     removal. Blur defaults to 0.65% of the output's short dimension, so a face
-    remains recognizable. Subtle motion is useful for still images; moving
+    remains recognizable. Saturation is always zero and the default black
+    layer is 68%, preventing a colored cast from the source footage.
+    Subtle motion is useful for still images; moving
     footage normally supplies its own motion and does not need it.
     """
     darkness = _number(darkness, "darkness", 0, .85)
@@ -136,6 +140,7 @@ def build_background_filter(
             f"s={canvas.width}x{canvas.height}:fps={canvas.fps}")
     if sigma:
         filters.append(f"gblur=sigma={sigma:.4f}:steps=2")
+    filters.append("hue=s=0")
     if darkness:
         filters.append(f"drawbox=x=0:y=0:w=iw:h=ih:color=black@{darkness:.5f}:t=fill")
     filters.extend([f"fps={canvas.fps}", "format=yuv420p"])
@@ -146,7 +151,7 @@ def render_background(
     source: str | Path, output: str | Path, *, start: float = 0,
     duration: float = 8, canvas: Canvas = Canvas(), is_image: bool = False,
     ffmpeg: str | Path = "ffmpeg", lower_third: LowerThird | None = None,
-    blur_sigma: float | None = None, darkness: float = .40,
+    blur_sigma: float | None = None, darkness: float = .68,
     focus_x: float = .54, focus_y: float = .45,
     subtle_motion: bool | None = None,
 ) -> Path:
@@ -181,7 +186,7 @@ def render_background(
 def _font(path: str | Path | None, size: int):
     if path is not None:
         return ImageFont.truetype(str(path), size)
-    for name in ("Arial.ttf", "arial.ttf", "DejaVuSans-Bold.ttf"):
+    for name in ("arialbd.ttf", "DejaVuSans-Bold.ttf", "Arial.ttf", "arial.ttf"):
         try:
             return ImageFont.truetype(name, size)
         except OSError:
@@ -209,10 +214,13 @@ def render_overlay_png(
     stage: int | None = None, font_path: str | Path | None = None,
     body_font_path: str | Path | None = None,
 ) -> Path:
-    """Transparent foreground with no opaque panel or caption-zone content.
+    """Creator typography on a transparent canvas; no news or slide furniture.
 
-    stage 0: kicker/brand/credit; 1: add title; 2: add first line; etc.
-    None reveals everything. Layout is fixed across stages, without text jumps.
+    stage 0: compact brand/kicker/credit; 1: oversized title with an amber
+    emphasis line; 2: title plus first support line; 3: title plus second
+    support line, REPLACING the first. Later stages follow the same rule.
+    None previews the final stage. Persistent elements are pixel-identical
+    between stages so a compositor can animate only the changed region.
     """
     if stage is not None and (isinstance(stage, bool) or not isinstance(stage, int) or stage < 0):
         raise ValueError("stage must be a nonnegative integer or None.")
@@ -223,66 +231,75 @@ def render_overlay_png(
     zones = canvas.safe_zones()
     left, top, right, bottom = (value*scale for value in zones["content"])
     short = min(w, h)
-    title_size = round(short*(.079 if canvas.portrait else .074))
-    body_size = round(short*.044)
-    small_size = round(short*.026)
-    text_width = right-left if canvas.portrait else round((right-left)*.80)
+    title_size = round(short*(.126 if canvas.portrait else .118))
+    body_size = round(short*(.043 if canvas.portrait else .040))
+    small_size = round(short*.023)
+    text_width = right-left-24*scale if canvas.portrait else round(w*.64)
 
-    def paint(xy, value, font, fill=(247, 247, 247, 255), spacing=None):
-        spacing = round(short*.009) if spacing is None else spacing
-        draw.multiline_text((xy[0]+2*scale, xy[1]+2*scale), value, font=font,
-                            fill=(0, 0, 0, 140), spacing=spacing,
-                            stroke_width=2*scale, stroke_fill=(0, 0, 0, 70))
+    def paint(xy, value, font, fill=(247, 247, 247, 255), spacing=None, shadow=True):
+        spacing = round(short*.006) if spacing is None else spacing
+        if shadow:
+            draw.multiline_text((xy[0]+scale, xy[1]+scale), value, font=font,
+                                fill=(0, 0, 0, 110), spacing=spacing)
         draw.multiline_text(xy, value, font=font, fill=fill, spacing=spacing)
 
-    brand_y = round(h*.055)
-    draw.rectangle((left, brand_y, left+4*scale, brand_y+22*scale), fill="#ffc928")
-    paint((left+15*scale, brand_y-3*scale), scene.brand,
-          _font(font_path, round(short*.022)))
+    brand_y = round(h*(.055 if canvas.portrait else .066))
+    paint((left, brand_y), scene.brand, _font(font_path, round(short*.023)))
     kicker_font = _font(body_font_path or font_path, small_size)
     if scene.kicker:
-        kicker = _wrap(draw, scene.kicker, kicker_font, text_width)
+        kicker = _wrap(draw, scene.kicker.upper(), kicker_font, text_width)
         if len(kicker.splitlines()) > 2:
             raise ValueError("The kicker is too long for the overlay safe zone.")
         paint((left, top), kicker, kicker_font, (255, 201, 40, 255))
-    title_y = round(h*(.222 if canvas.portrait else .222))
-    max_title_height = round(h*(.17 if canvas.portrait else .20))
-    title_font, title = None, None
-    for size in range(title_size, round(title_size*.55), -2):
+    title_y = round(h*(.232 if canvas.portrait else .235))
+    max_title_height = round(h*(.27 if canvas.portrait else .30))
+    title_font, title_lines, line_advance = None, [], 0
+    for size in range(title_size, round(title_size*.48), -2):
         candidate_font = _font(font_path, size)
-        candidate = _wrap(draw, scene.title, candidate_font, text_width)
-        bounds = draw.multiline_textbbox((0, 0), candidate, font=candidate_font,
-                                         spacing=round(short*.009))
-        if bounds[2] <= text_width and bounds[3]-bounds[1] <= max_title_height:
-            title_font, title = candidate_font, candidate
+        candidate = _wrap(draw, scene.title.upper(), candidate_font, text_width).splitlines()
+        advance = round(size*.94)
+        boxes = [draw.textbbox((0, index*advance), line, font=candidate_font)
+                 for index, line in enumerate(candidate)]
+        if max(box[2] for box in boxes) <= text_width and boxes[-1][3]-boxes[0][1] <= max_title_height:
+            title_font, title_lines, line_advance = candidate_font, candidate, advance
             break
     if title_font is None:
         raise ValueError("The title is too long to remain readable in the overlay safe zone.")
     if stage is None or stage >= 1:
-        paint((left, title_y), title, title_font)
+        first_top = draw.textbbox((0, 0), title_lines[0], font=title_font)[1]
+        origin = title_y-first_top
+        for index, line in enumerate(title_lines):
+            xy = (left, origin+index*line_advance)
+            if index == len(title_lines)-1:
+                # A fitted emphasis strip, not an opaque card over the source.
+                box = draw.textbbox(xy, line, font=title_font)
+                px, py = round(short*.009), round(short*.009)
+                draw.rectangle((box[0]-px, box[1]-py, box[2]+px, box[3]+py), fill="#ffc928")
+                paint(xy, line, title_font, (8, 8, 8, 255), shadow=False)
+            else:
+                paint(xy, line, title_font)
 
-    body_y = round(h*(.443 if canvas.portrait else .47))
+    body_y = round(h*(.590 if canvas.portrait else .575))
     body_font = _font(body_font_path or font_path, body_size)
+    selected_line = len(scene.lines)-1 if stage is None else min(len(scene.lines)-1, stage-2)
     for index, line in enumerate(scene.lines):
         wrapped = _wrap(draw, line, body_font, text_width)
         bounds = draw.multiline_textbbox((left, body_y), wrapped, font=body_font,
-                                         spacing=round(short*.009))
+                                         spacing=round(short*.006))
         if bounds[3] > bottom or bounds[2] > right:
             raise ValueError("Overlay lines overflow the content zone; shorten the scene text.")
-        if stage is None or stage >= index+2:
-            paint((left, body_y), wrapped, body_font,
-                  (255, 201, 40, 255) if index == 0 else (247, 247, 247, 255))
-        body_y = bounds[3] + round(short*.028)
+        if (stage is None or stage >= 2) and index == selected_line:
+            paint((left, body_y), wrapped, body_font, (229, 229, 229, 255))
 
     if scene.credit:
         credit_left, credit_top, credit_right, credit_bottom = (value*scale for value in zones["credit"])
-        credit_font = _font(body_font_path or font_path, round(short*.021))
+        credit_font = _font(body_font_path or font_path, round(short*.019))
         wrapped = _wrap(draw, scene.credit, credit_font, credit_right-credit_left)
         bounds = draw.multiline_textbbox((credit_left, credit_top), wrapped, font=credit_font,
                                          spacing=round(short*.005))
         if bounds[3] > credit_bottom:
             raise ValueError("Credit is too long for the credit safe zone.")
-        paint((credit_left, credit_top), wrapped, credit_font, (230, 230, 230, 220),
+        paint((credit_left, credit_top), wrapped, credit_font, (180, 180, 180, 220),
               spacing=round(short*.005))
 
     image = image.resize((canvas.width, canvas.height), Image.Resampling.LANCZOS)
@@ -293,11 +310,16 @@ def render_overlay_png(
 
 
 def overlay_timeline(scene: EditorialScene, duration: float) -> list[dict[str, float | int]]:
-    """Suggested staged reveals; caller may replace them with narration cues."""
+    """Spread support changes over narration; the compositor owns entry easing.
+
+    With two support lines they appear at 27% and 64% of the real WAV length.
+    Titles and branding hold steady while support lines replace one another.
+    """
     duration = _number(duration, "duration", .05, 86400)
-    starts = [0.0, min(.18, duration*.08)]
-    starts.extend(min(.80+index*.72, duration*(.20+index*.13))
-                  for index in range(len(scene.lines)))
+    starts = [0.0, min(.32, duration*.06)]
+    count = len(scene.lines)
+    fractions = {0: (), 1: (.35,), 2: (.27, .64), 3: (.24, .49, .74)}[count]
+    starts.extend(duration*fraction for fraction in fractions)
     return [{"stage": stage, "start": start,
              "end": starts[stage+1] if stage+1 < len(starts) else duration}
             for stage, start in enumerate(starts)]
