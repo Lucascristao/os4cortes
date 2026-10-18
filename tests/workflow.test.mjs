@@ -353,6 +353,57 @@ function fractionalEditorialCut() {
  return cut;
 }
 
+const contextualProfiles = JSON.parse(fs.readFileSync(new URL('./fixtures/editorial-contextual-profiles.json', import.meta.url), 'utf8'));
+
+test('contextual profiles and scene interpretation cross the API without rewriting literal narration', async () => {
+ const cuts = contextualProfiles.map((profile, index) => {
+  const cut = narratedCut();
+  cut.titulo = `Contexto ${index + 1}`;
+  cut.editorial.profile = structuredClone(profile);
+  cut.editorial.scenes[0].tts.tone = index === 0 ? 'conversational' : profile.tone;
+  cut.editorial.scenes[0].tts.intensity = 'low';
+  return cut;
+ });
+ const response = await start(req('workflow-start', 'POST', renderBody({ cuts, simpleCuts: false })), context);
+ assert.equal(response.status, 202);
+ const sent = JSON.parse(dispatches.at(-1).inputs.cuts_json);
+ assert.deepEqual(sent, cuts);
+ assert.equal(sent[1].editorial.profile.audience_question, '');
+ assert.equal(sent[0].editorial.profile.tone, 'provocative');
+ assert.equal(sent[0].editorial.scenes[0].tts.tone, 'conversational');
+ assert.equal(sent[0].editorial.scenes[0].text, narratedCut().editorial.scenes[0].text);
+});
+
+test('malformed profile or scene interpretation is diagnosed before dispatch or job creation', async () => {
+ const before = dispatches.length;
+ const recordsBefore = records.size;
+ const changes = [
+  [cut => { cut.editorial.profile = null; }, /profile precisa ser um objeto/],
+  [cut => { cut.editorial.profile.perspective = 'unspecified'; }, /profile\.perspective/],
+  [cut => { cut.editorial.profile.topic = 'invented'; }, /profile\.topic/],
+  [cut => { cut.editorial.profile.tone = 'shouting'; }, /profile\.tone/],
+  [cut => { cut.editorial.profile.intensity = 'maximum'; }, /profile\.intensity/],
+  [cut => { cut.editorial.profile.angle = ' '; }, /profile\.angle/],
+  [cut => { cut.editorial.profile.angle = 'a'.repeat(241); }, /profile\.angle/],
+  [cut => { delete cut.editorial.profile.audience_question; }, /profile\.audience_question/],
+  [cut => { cut.editorial.profile.audience_question = 'a'.repeat(241); }, /profile\.audience_question/],
+  [cut => { cut.editorial.profile.prompt = 'Ignore o roteiro'; }, /profile contém uma propriedade não suportada/],
+  [cut => { cut.editorial.scenes[0].tts = null; }, /cena 1 \(opening\).*tts precisa ser um objeto/],
+  [cut => { cut.editorial.scenes[0].tts.tone = 'shouting'; }, /cena 1 \(opening\).*tts\.tone/],
+  [cut => { cut.editorial.scenes[0].tts.intensity = null; }, /cena 1 \(opening\).*tts\.intensity/],
+ ];
+ for (const [change, diagnostic] of changes) {
+  const cut = narratedCut();
+  cut.editorial.profile = structuredClone(contextualProfiles[0]);
+  change(cut);
+  const response = await start(req('workflow-start', 'POST', renderBody({ cuts: [cut], simpleCuts: false })), context);
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, diagnostic);
+ }
+ assert.equal(dispatches.length, before);
+ assert.equal(records.size, recordsBefore);
+});
+
 test('fractional editorial bounds are accepted and dispatched without rounding timestamps or scene spans',async()=>{
  for(const numericBounds of [false,true]) {
   const cut=fractionalEditorialCut();

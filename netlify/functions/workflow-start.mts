@@ -76,6 +76,10 @@ function validYoutubeUrl(value) {
 
 // Reject unusable plans before starting a runner. Python remains authoritative
 // for voice directions, visual limits, transcript evidence and content checks.
+const EDITORIAL_TOPICS = ["politics", "economy", "business", "humor", "general"];
+const EDITORIAL_TONES = ["conversational", "provocative", "ironic", "playful", "explanatory", "serious"];
+const EDITORIAL_INTENSITIES = ["low", "medium", "high"];
+
 function editorialShapeError(plan, clipStart, clipEnd) {
   const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
   const invalid = (detail) => `plano editorial inválido: ${detail}`;
@@ -95,6 +99,24 @@ function editorialShapeError(plan, clipStart, clipEnd) {
   }
   if (!isObject(plan)) return invalid("editorial precisa ser um objeto.");
   if (plan.version !== 1) return invalid("o campo version precisa ser o número 1.");
+  if (Object.hasOwn(plan, "profile")) {
+    const profile = plan.profile;
+    if (!isObject(profile)) return invalid("o campo profile precisa ser um objeto.");
+    const fields = ["perspective", "topic", "tone", "intensity", "angle", "audience_question"];
+    if (Object.keys(profile).some((field) => !fields.includes(field))) {
+      return invalid("o campo profile contém uma propriedade não suportada.");
+    }
+    if (profile.perspective !== "right") return invalid('o campo profile.perspective precisa ser "right".');
+    if (!EDITORIAL_TOPICS.includes(profile.topic)) return invalid("o campo profile.topic contém um tema desconhecido.");
+    if (!EDITORIAL_TONES.includes(profile.tone)) return invalid("o campo profile.tone contém um tom desconhecido.");
+    if (!EDITORIAL_INTENSITIES.includes(profile.intensity)) return invalid("o campo profile.intensity contém uma intensidade desconhecida.");
+    if (typeof profile.angle !== "string" || !profile.angle.trim() || profile.angle.length > 240) {
+      return invalid("o campo profile.angle precisa descrever a leitura do corte em até 240 caracteres.");
+    }
+    if (typeof profile.audience_question !== "string" || profile.audience_question.length > 240) {
+      return invalid("o campo profile.audience_question precisa ser uma string de até 240 caracteres; use vazia quando não couber pergunta.");
+    }
+  }
   if (!Array.isArray(plan.scenes) || plan.scenes.length < 2 || plan.scenes.length > 12) {
     return invalid("o campo scenes precisa ter entre 2 e 12 cenas.");
   }
@@ -114,6 +136,15 @@ function editorialShapeError(plan, clipStart, clipEnd) {
       if (error) return sceneError(error);
       hasClip = true;
     } else if (scene.kind === "narration") {
+      if (Object.hasOwn(scene, "tts")) {
+        if (!isObject(scene.tts)) return sceneError("o campo tts precisa ser um objeto.");
+        if (Object.hasOwn(scene.tts, "tone") && !EDITORIAL_TONES.includes(scene.tts.tone)) {
+          return sceneError("o campo tts.tone contém um tom desconhecido.");
+        }
+        if (Object.hasOwn(scene.tts, "intensity") && !EDITORIAL_INTENSITIES.includes(scene.tts.intensity)) {
+          return sceneError("o campo tts.intensity contém uma intensidade desconhecida.");
+        }
+      }
       if (typeof scene.text !== "string" || !scene.text.trim() || scene.text.length > 1400) {
         return sceneError("o campo text precisa conter a narração, com até 1400 caracteres.");
       }

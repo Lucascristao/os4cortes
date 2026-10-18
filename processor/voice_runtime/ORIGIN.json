@@ -12,7 +12,8 @@
     "Removed ODE project CLI, project normalization import and visual beat timing helper from synthesize_scenes.py.",
     "Changed runtime imports to relative imports.",
     "Inlined the unchanged tokens function from align_narration.py into gemini_live_fidelity.py, with its Decimal/InvalidOperation/unicodedata imports.",
-    "No changes to Live receive loop, retry policy, lexical fidelity, cache checks, raw WAV writing or voice-policy.json."
+    "No changes to Live receive loop, retry policy, lexical fidelity, cache checks or raw WAV writing.",
+    "Local OS4 contextual acting adaptation in tts_config.py and voice-policy.json: fixed enum instructions for perspective/topic/tone/intensity, scene overrides and updated policy/direction fingerprints; no narration rewriting or raw audio processing. Original source hashes above remain provenance, not checksums of the adapted files."
   ],
   "entry_point": "synthesize_scenes.synthesize_missing_jobs",
   "model": "gemini-3.8-live",

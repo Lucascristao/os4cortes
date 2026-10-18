@@ -1,6 +1,6 @@
 # Automação do minivídeo autoral no OS4
 
-Este documento registra a integração local de minivídeos autorais em 18/10/2026: pacote, transporte, voz, montagem e processamento em lote. O código e os testes locais não confirmam implantação nem uma execução integral de uma sessão real no workflow OS4. A amostra de vídeo também não comprova essas etapas de produção.
+Este documento registra o contrato dos minivídeos autorais: pacote, transporte, voz, montagem e processamento em lote. Após o teste real do usuário, a revisão de 18/10/2026 acrescenta uma direção de comentarista de direita com interpretação por contexto. A validação desta revisão cobre contrato, transporte e instruções de voz; a escuta do novo tom será feita no próximo lote gerado pelo usuário.
 
 ## Implementado nesta alteração
 
@@ -11,7 +11,7 @@ Este documento registra a integração local de minivídeos autorais em 18/10/20
 - `render_batch` usa um modo global por lote: `simple` conserva o render legado e `editorial` exige plano autoral em todos os cortes, sintetiza as cenas narradas e monta sua sequência com os trechos originais.
 - No modo autoral, uma falha de montagem ou upload é registrada por corte, e os seguintes continuam. O resultado contém somente pacotes completos em `cuts`, além de `errors`, `requestedCount` e `completedCount`.
 
-O prompt da nova interface solicita o pacote com narração quando o formato autoral está selecionado. A API valida a estrutura mínima de todas as cenas e seus intervalos antes de iniciar o runner; as políticas completas de voz, visual e evidência continuam validadas pelo Python. O workflow transporta o modo e referencia a chave Gemini. Essas alterações locais de API e workflow não confirmam implantação ou ativação na aplicação publicada.
+O prompt da interface solicita o pacote com narração e perfil por corte quando o formato autoral está selecionado. A API valida o perfil, a interpretação contextual de cada cena e seus intervalos antes de iniciar o runner; as políticas completas de voz, visual e evidência continuam validadas pelo Python. O workflow transporta esses dados no mesmo pacote, sem nova chamada de planejamento.
 
 ## Seleção de modo e compatibilidade
 
@@ -71,6 +71,40 @@ O campo editorial carrega a intenção revisável: versão de formato, IDs de ce
 
 `inicio` e `fim` delimitam o envelope da fonte: o menor início e o maior fim entre clipes, fundos e evidências usados naquele corte. Eles não são a duração final do minivídeo. A duração final resulta dos trechos escolhidos e dos áudios realmente gerados. O pacote especifica `formato` e `destino` de cada corte; a extensão desse envelope não decide o formato autoral por conta própria.
 
+Tempos fracionários são preservados até milissegundos na importação: `101.7` equivale a `00:01:41.7`, sem arredondar para o segundo inteiro. Intervalos fora de início/fim recebem diagnóstico de cena e campo antes da execução; um plano existente não é descrito como ausente por causa de um erro de tempo.
+
+### Perfil editorial e interpretação de cada cena
+
+O novo prompt pede este objeto em cada corte:
+
+```json
+{
+  "perspective": "right",
+  "topic": "politics",
+  "tone": "provocative",
+  "intensity": "medium",
+  "angle": "Cobrar coerência entre as declarações apresentadas na fonte.",
+  "audience_question": "Como você cobraria essa explicação?"
+}
+```
+
+Esse objeto fica em `editorial.profile`. Os seis campos são obrigatórios quando o perfil está presente; propriedades desconhecidas são rejeitadas. O ângulo é uma string não vazia de até 240 caracteres. A pergunta tem até 240 caracteres e pode ser `""` quando não combina com o desfecho.
+
+| Campo | Valores aceitos |
+| --- | --- |
+| `perspective` | `right` |
+| `topic` | `politics`, `economy`, `business`, `humor`, `general` |
+| `tone` | `conversational`, `provocative`, `ironic`, `playful`, `explanatory`, `serious` |
+| `intensity` | `low`, `medium`, `high` |
+
+A cena pode fornecer `tts.tone` e `tts.intensity` para sobrescrever esses dois valores; a ausência herda o perfil do corte. `tts.delivery` mantém sua função de intenção da cena: `hook`, `explain`, `contrast`, `question` ou `closing`. Um corte político pode ter abertura provocativa e encerramento conversado; uma situação sensível pede sobriedade mesmo dentro de outro tema.
+
+Planos v1 anteriores continuam aceitos sem inserir um perfil novo no JSON: a voz usa `right/general/conversational/medium` como padrão. O usuário precisa copiar o novo prompt e gerar outro pacote para receber novos ângulos e falas. O motor interpreta literalmente o roteiro recebido e não transforma um texto antigo em outro posicionamento.
+
+Tema, perspectiva, tom e intensidade são convertidos em instruções fixas e validadas. O texto livre de `angle` e `audience_question` fica como metadado revisável; ele não é inserido como instrução nem improvisado na voz. A pergunta só é falada se também estiver escrita no `text` de uma cena. O perfil e as direções participam dos fingerprints de cache, evitando reutilizar uma interpretação antiga incompatível.
+
+A linha de direita orienta a leitura política; humor e outros assuntos seguem o material. Atribuir relatos e preservar condições relevantes continua obrigatório. Ressalvas não são um fechamento automático: usam-se quando corrigem uma inferência concreta. O formato permite uma ou mais intervenções autorais, sem exigir três blocos de voz, perguntas artificiais ou comentários que revelem a piada antes da hora.
+
 ```json
 {
   "titulo": "O que essa resposta esclarece?",
@@ -116,8 +150,8 @@ Textos visuais devem ser dados, renderizados pelo componente de edição. A IA n
 - Todos os intervalos estão dentro do vídeo-base e do escopo de conteúdo selecionado para o corte; exceções precisam ser explícitas no pacote, não inventadas pelo modelo.
 - Toda afirmação factual tem referência à transcrição. A verificação de referência é mecânica; a referência não transforma uma afirmação em verdadeira nem elimina a necessidade de avaliar sua redação.
 - Cenas originais não são remontadas de modo a atribuir uma resposta a outra pergunta ou eliminar uma ressalva essencial.
-- O roteiro tem uma promessa compreensível no começo, desenvolvimento com evidência e um fechamento que entrega a promessa. A pergunta ao público é específica ao que foi mostrado.
-- A pergunta final não introduz uma acusação, fato novo ou falsa alternativa.
+- O roteiro tem uma proposta compreensível no começo, desenvolvimento apoiado na fonte e um fechamento que entrega a descoberta, opinião ou graça prometida.
+- Quando houver pergunta ao público, ela é específica ao que foi mostrado e não introduz acusação, fato novo ou falsa alternativa.
 - Para cenas narradas, há texto literal não vazio e um fundo de origem resolvível; para cenas originais, há início e fim válidos.
 
 Falhar a validação editorial não deve converter silenciosamente o corte em uma versão publicada sem a contribuição autoral prevista.

@@ -66,11 +66,34 @@ DEFAULT_TTS_PITCH = "0%"
 GLOBAL_PRONUNCIATIONS = {}
 
 DELIVERY_INSTRUCTIONS = {
-    "hook": "Abra com presença e curiosidade real, como quem convida alguém a entender uma descoberta. Mantenha estabilidade vocal constante de afinação (pitch), mesmo volume e cadência conversada.",
-    "explain": "Conduza a explicação como uma conversa: conecte as ideias com fluidez, clareza e ritmo natural. Mantenha estabilidade vocal constante de afinação (pitch), mesmo volume e cadência conversada.",
-    "contrast": "Faça ouvir a diferença entre as duas ideias com naturalidade e clareza. Mantenha estabilidade vocal constante de afinação (pitch), mesmo volume e cadência conversada.",
-    "question": "Dirija a pergunta ao ouvinte com curiosidade natural e tom próximo. Mantenha estabilidade vocal constante de afinação (pitch), mesmo volume e cadência conversada.",
-    "closing": "Retome a ideia central com calor e convicção, mantendo proximidade e estabilidade vocal constante de afinação (pitch), mesmo volume e cadência conversada.",
+    "hook": "Abra com presença e curiosidade, puxando o ouvinte para o trecho. Preserve a surpresa do roteiro e evite anunciar uma manchete.",
+    "explain": "Conecte as ideias como numa conversa, variando ritmo e ênfase para tornar claro o ponto do roteiro.",
+    "contrast": "Faça ouvir a virada entre as ideias; marque o contraste com pausa e articulação, sem fabricar escândalo.",
+    "question": "Dirija a pergunta ao ouvinte com interesse na reação dele. Deixe espaço para pensar, sem tom de interrogatório ou resposta insinuada extra.",
+    "closing": "Conclua a ideia com presença e proximidade, no mesmo estado de espírito do trecho, sem moral da história automática.",
+}
+PERSPECTIVE_INSTRUCTIONS = {
+    "right": "Identidade editorial: comentarista de direita, seguro e bem com a vida. Aplique essa personalidade somente à interpretação do roteiro literal, sem acrescentar posicionamentos ou transformar assuntos cotidianos em disputa política.",
+}
+TOPIC_INSTRUCTIONS = {
+    "politics": "Contexto político: presença firme e perguntas incisivas quando escritas, com conversa próxima; evite defesa jurídica automática e indignação permanente.",
+    "economy": "Contexto de economia: curiosidade prática e clareza nas relações e comparações do roteiro; articule os números sem virar aula solene.",
+    "business": "Contexto de empreendedorismo: interesse nas decisões e energia encorajadora, sem cadência de coach, promessa comercial ou propaganda.",
+    "humor": "Contexto de humor: cumplicidade e leveza. Respeite a preparação e a pausa da surpresa, sem antecipar ou explicar a piada e sem inserir risadas.",
+    "general": "Acompanhe o assunto e o estado de espírito do roteiro, com proximidade e curiosidade de uma conversa.",
+}
+TONE_INSTRUCTIONS = {
+    "conversational": "Tom conversado: espontâneo, próximo e bem disposto, com sorriso discreto na voz quando o conteúdo permitir, sem alegria forçada.",
+    "provocative": "Tom provocativo: dê presença ao ponto incômodo e à pergunta escrita, com confiança e curiosidade; provoque reflexão sem gritar, acusar por conta própria ou encenar revolta.",
+    "ironic": "Tom irônico: leve cumplicidade e contraste na intenção da frase, sem escárnio, caricatura, risada acrescentada ou mudança no sentido literal.",
+    "playful": "Tom brincalhão: ritmo leve, surpresa e cumplicidade, deixando a graça do roteiro respirar; não invente piadas nem force gargalhadas.",
+    "explanatory": "Tom explicativo: raciocínio claro e curioso em linguagem falada, com ênfase no que faz diferença, sem solenidade de professor ou repórter.",
+    "serious": "Tom sério: sóbrio, direto e respeitoso. Em sofrimento ou assunto grave, suspenda sorriso e ironia, sem suspense ou dramatização.",
+}
+INTENSITY_INSTRUCTIONS = {
+    "low": "Intensidade baixa: presença contida, espaço entre ideias e ênfases discretas; mantenha voz audível e próxima, sem sussurrar.",
+    "medium": "Intensidade média: conversa viva, pausas naturais e ênfase seletiva, sem pressa ou monotonia.",
+    "high": "Intensidade alta: maior impulso e contraste no ritmo e nas palavras-chave, preservando clareza, registro de base e volume confortável; não grite nem acelere de forma artificial.",
 }
 CUE_KIND_INSTRUCTIONS = {
     "emphasis": "Dê relevo à ideia principal deste trecho e retome a conversa com fluidez.",
@@ -141,6 +164,11 @@ def scene_voice_direction(scene: dict) -> dict:
         if str(raw.get(field, "0%")) not in ("0%", "+0%", "-0%"):
             raise ValueError(f"Gemini Live raw não aplica {field}; use direção de interpretação.")
     result = {}
+    for field, choices in (("perspective", PERSPECTIVE_INSTRUCTIONS), ("topic", TOPIC_INSTRUCTIONS), ("tone", TONE_INSTRUCTIONS), ("intensity", INTENSITY_INSTRUCTIONS)):
+        if field in raw:
+            if not isinstance(raw[field], str) or raw[field] not in choices:
+                raise ValueError(f"Perfil vocal tem {field} desconhecido.")
+            result[field] = raw[field]
     delivery = raw.get("delivery")
     if delivery:
         if not isinstance(delivery, str) or delivery not in DELIVERY_INSTRUCTIONS:
@@ -202,7 +230,7 @@ def scene_direction_fingerprint(scene: dict) -> str | None:
     direction = scene_voice_direction(scene)
     if not direction:
         return None
-    return hashlib.sha256(json.dumps({"version": "live-scene-direction-v3", "direction": direction, "instruction": live_turn_text("", direction)}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(json.dumps({"version": "live-scene-direction-v4-contextual", "direction": direction, "instruction": live_turn_text("", direction)}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def live_turn_text(
@@ -213,12 +241,18 @@ def live_turn_text(
     if not direction and not previous_context:
         return "ROTEIRO:\n" + narration
     instructions = [
-        "INSTRUÇÕES DE INTERPRETAÇÃO; NÃO LEIA ESTE BLOCO. Aplique esta direção somente ao roteiro abaixo. Preserve a identidade e a estabilidade de afinação e volume da voz definida na configuração da sessão. Leia somente o ROTEIRO e encerre depois da última palavra, sem comentário ou despedida extra."
+        "INSTRUÇÕES DE INTERPRETAÇÃO; NÃO LEIA ESTE BLOCO. Aplique esta direção somente ao roteiro abaixo. Preserve timbre, registro de base, volume confortável e proximidade da voz da sessão; adapte ritmo, energia e entonação ao contexto. Leia somente o ROTEIRO e encerre depois da última palavra, sem comentário ou despedida extra."
     ]
     if previous_context:
         instructions.append(
-            f"CONTINUIDADE VOCAL: Esta cena dá sequência à frase anterior: {json.dumps(previous_context[-120:], ensure_ascii=False)}. Mantenha rigorosamente a mesma afinação (pitch), mesmo volume de locução e mesma cadência ao iniciar o ROTEIRO."
+            f"CONTINUIDADE VOCAL: Esta cena dá sequência à frase anterior: {json.dumps(previous_context[-120:], ensure_ascii=False)}. Retome com o mesmo timbre, registro de base e distância do microfone; ritmo e intenção acompanham a direção desta cena."
         )
+    for field, choices in (("perspective", PERSPECTIVE_INSTRUCTIONS), ("topic", TOPIC_INSTRUCTIONS), ("tone", TONE_INSTRUCTIONS), ("intensity", INTENSITY_INSTRUCTIONS)):
+        if field in direction:
+            value = direction[field]
+            if not isinstance(value, str) or value not in choices:
+                raise ValueError(f"Perfil vocal tem {field} desconhecido.")
+            instructions.append(choices[value])
     if direction.get("delivery"):
         instructions.append(DELIVERY_INSTRUCTIONS[direction["delivery"]])
     if direction.get("pause_ms"):
@@ -260,7 +294,7 @@ def live_system_instruction(pronunciations: dict[str, str] | None = None) -> str
         "antecipações ou qualquer palavra além do roteiro.",
         f"Idioma: português brasileiro ({VOICE_LANGUAGE}).",
         f"Direção de voz: {VOICE_DELIVERY_STYLE}",
-        "Mantenha rigorosa estabilidade vocal: mesma afinação base (pitch), mesmo volume de locução e mesmo timbre conversado natural em todas as falas.",
+        "Preserve a identidade vocal: mesmo timbre, registro de base, volume confortável e distância percebida do microfone. Varie ritmo, energia, pausas e entonação conforme a direção de cada cena, sem trocar de personagem.",
         "Use a pontuação do roteiro para criar pausas naturais. Preserve números, "
         "nomes e sentido. Não leia instruções, rótulos ou delimitadores.",
     ]

@@ -1,20 +1,24 @@
 # Formato editorial do OS4 Cortes
 
-O usuário escolhe o vídeo e pode selecionar, editar ou excluir qualquer corte. A automação prepara propostas, organiza evidências, produz a voz aprovada e monta os arquivos. Cada proposta precisa acrescentar uma leitura própria que possa ser conferida nos trechos originais.
+O usuário escolhe o vídeo e pode selecionar, editar ou excluir qualquer corte. A automação prepara propostas, organiza evidências, produz a voz aprovada e monta os arquivos. O OS4 tem uma linha editorial de direita e um comentarista de bem com a vida, próximo e incisivo. Cada proposta acrescenta uma leitura própria sustentada pela fonte e adapta sua linguagem ao assunto.
 
 ## Uma ideia completa por vídeo
 
-Antes de escrever a locução, definir uma pergunta central, a descoberta que o público receberá e os trechos que permitem demonstrá-la. O começo identifica pessoas, situação e motivo para continuar. O desenvolvimento apresenta a fala relevante e explica uma distinção, consequência ou contexto verificável. O fim entrega a descoberta prometida e reconhece o limite do que foi mostrado.
+Antes de escrever a locução, definir o ângulo do comentário, a descoberta ou reação que o público receberá e os trechos que a sustentam. O começo dá motivo para continuar; o desenvolvimento preserva a fala relevante e acrescenta uma leitura; o fim entrega a descoberta, opinião ou graça prometida. Essa estrutura não exige três blocos de narração nem uma pergunta em todos os vídeos.
 
 O alvo de duração é uma decisão editorial. Para o piloto v2, a faixa é 65–85 segundos, com estimativa de voz a 155 palavras por minuto. A montagem final usa a duração dos WAVs. Não repetir uma explicação, prolongar silêncio, desacelerar a voz ou alongar uma cartela para atingir um minuto. Uma fala precisa continuar até completar a ideia, inclusive condições, negativas e ressalvas que mudem o sentido.
 
-## Narrador conversado e questionador
+## Comentarista de direita com interpretação contextual
 
-Escrever como quem explica algo concreto a uma pessoa. Usar frases curtas, verbos claros e conexões naturais. A curiosidade deve nascer de uma diferença real entre afirmações, do funcionamento de algo ou de uma consequência demonstrável. O gancho faz uma promessa pequena que o próprio vídeo consegue cumprir.
+Escrever como quem conversa com uma pessoa, com frases curtas, opinião e ritmo. Em política, assumir a perspectiva de direita e desenvolver a cobrança ou o contraste que a fonte permite: coerência, responsabilidade no uso do dinheiro público, liberdade e limites do poder quando pertinentes. Firmeza pode vir com leveza; não exige raiva, grito ou sermão. Em economia, aproximar a consequência da vida do público; em empreendedorismo, destacar a decisão e o resultado concreto.
 
-Uma pergunta também transmite pressupostos. “Quem se beneficiou do esquema?” afirma implicitamente que houve um esquema; não serve quando isso não foi estabelecido. “O que essa resposta esclarece?” permite comparar as próprias falas. Não usar tom irônico, música ou edição para insinuar a conclusão que o roteiro não consegue sustentar.
+Humor pode começar diretamente na fala original. Preservar preparação, surpresa e desfecho; o comentário entra no momento em que acrescenta uma reação, sem antecipar nem explicar a piada. Não impor política a uma história sem assunto político, nem piada a sofrimento. Assuntos sensíveis pedem sobriedade. O número e o tamanho das intervenções seguem o contexto, sem alongar a voz para simular autoria.
 
-No fechamento, primeiro entregar a conclusão. Depois fazer **uma** pergunta ligada à informação apresentada, com um objeto claro: qual ponto da resposta merece uma pergunta seguinte, que condição muda a explicação ou que detalhe falta para entender a sequência. Evitar “o que você acha?” sem assunto e evitar pedir ao público um veredito sobre culpa ou honestidade. A pergunta final já é um convite à conversa; não encadear novos pedidos de comentário, curtida e compartilhamento.
+Provocação e ironia devem nascer das palavras, situações e contrastes mostrados. Uma pergunta também transmite pressupostos: “Quem se beneficiou do esquema?” pressupõe um esquema e não serve quando isso não foi estabelecido. Uma ressalva cabe quando corrige um salto concreto na conclusão. A atribuição curta, como “ela afirma”, costuma bastar para apresentar um depoimento; não inserir automaticamente defesas jurídicas ou repetir que uma declaração não prova crime.
+
+O fechamento entrega a observação, opinião ou desfecho prometido. Quando houver uma pergunta ao público, ela deve ser específica, natural e ligada ao ponto mostrado. Pode ficar ausente quando estraga o tempo da piada ou enfraquece o fim. Evitar “o que você acha?” sem assunto e sequências de pedidos de comentário, curtida e compartilhamento.
+
+O pacote registra `editorial.profile`: perspectiva `right`, tema, tom, intensidade, ângulo e pergunta opcional em string vazia. Cada cena pode sobrescrever `tts.tone` e `tts.intensity`; os demais parâmetros herdam o perfil do corte. A intenção da cena (`hook`, `explain`, `contrast`, `question`, `closing`) continua separada do tom. Perfil e direções são metadados; somente `text` vira fala. Consulte o [contrato de automação](editorial-automation-contract.md).
 
 ## Atribuição e evidência
 
@@ -31,13 +35,13 @@ Cada corte deve trazer, antes da geração:
 1. Fonte escolhida pelo usuário, pergunta central, título proporcional ao conteúdo e conclusão que será entregue.
 2. Trechos com início/fim, palavras de entrada/saída, ideia completa e evidências associadas. Marcar limites novos ou duvidosos para revisão.
 3. Roteiro autoral por cena e frases com alegações atribuídas. As instruções de voz ficam fora do texto falado.
-4. Uma pergunta final específica e uma verificação de que ela não depende de pressuposto sem evidência.
+4. Um desfecho que entregue a proposta e, quando couber, uma pergunta específica sem pressuposto factual inventado.
 5. Estimativa de duração com palavras/minuto declaradas e separação entre tempo de narrador e tempo de fonte.
 6. Status editorial e pendências reais. Proposta pronta não equivale a áudio gerado, vídeo revisado ou publicação feita.
 
 A seleção em lote não deve devolver várias versões do mesmo argumento com títulos diferentes. Comparar a pergunta, a descoberta e os intervalos de fonte entre candidatos. Não impor uma quantidade de cortes que force trechos incompletos ou repetitivos. O usuário conserva a escolha do conteúdo e o controle das propostas antes de gerar.
 
-A síntese reutiliza Gemini Live/Charon conforme a integração aprovada, com leitura literal, identidade vocal estável e direção por sentido. Perguntas podem receber intenção de curiosidade; contrastes podem apoiar as palavras que mudam o significado. Não alternar voz, pitch ou intensidade para simular espontaneidade. A transcrição do provedor verifica fidelidade do texto; a revisão do áudio verifica dicção e naturalidade. O alinhamento local fornece tempos e deve distinguir palavras medidas de fronteiras estimadas.
+A síntese reutiliza Gemini Live/Charon conforme a integração aprovada, com leitura literal e identidade vocal estável. Tema, tom e intensidade dirigem a interpretação: ritmo, ênfase, leveza e ironia podem variar com o contexto, conservando timbre, registro confortável, presença e volume. A intensidade é direção expressiva, não ganho, pitch ou efeito aleatório. A transcrição do provedor verifica fidelidade do texto; a revisão do áudio verifica dicção e naturalidade. O alinhamento local fornece tempos e deve distinguir palavras medidas de fronteiras estimadas.
 
 Uma correção explícita de alinhamento pode resolver um caso conhecido, documentando palavra, limites, motivo e origem da estimativa. Não transformar esse caso em aprovação geral de grupos ausentes nem alterar o áudio para esconder a falha. Mudança no roteiro exige narração compatível com o texto novo; alteração somente visual preserva cache de voz válido.
 

@@ -698,27 +698,42 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, 
     editorial: {
       version: 1,
       source: { label: fonte, date: "" },
+      profile: {
+        perspective: "right", topic: "politics", tone: "provocative", intensity: "medium",
+        angle: "[Leitura crítica específica sustentada pelas falas deste corte]",
+        audience_question: "[Pergunta concreta sobre este assunto que convida à conversa]",
+      },
       scenes: [
-        narracao("abertura", "[Pergunta específica]", 75.4, 82, "[Contexto atribuído e pergunta que o vídeo vai esclarecer.]", "hook"),
+        narracao("abertura", "[Gancho específico]", 75.4, 82, "[Observação provocativa e contexto atribuído que despertam interesse no trecho.]", "hook"),
         { id: "entrevista-1", kind: "clip", start: 75.4, end: 93 },
-        narracao("comentario", "[Distinção central]", 94, 103, "[Comentário próprio que explica ou compara as falas com base na evidência.]"),
+        narracao("comentario", "[Ponto central]", 94, 103, "[Comentário próprio com personalidade, que desenvolve o ângulo com base nas falas.]"),
         { id: "entrevista-2", kind: "clip", start: 119, end: 132 },
-        narracao("fechamento", "[Conclusão proporcional]", 125, 140.2, "[Resposta à pergunta inicial, limite da evidência e próxima pergunta concreta, se pertinente.]", "closing"),
+        narracao("fechamento", "[Fechamento com personalidade]", 125, 140.2, "[Conclusão sustentada pelo trecho e pergunta concreta, se ela acrescentar à conversa.]", "closing"),
       ],
     },
   }];
-  return `Você é o editor do OS4 Cortes. Leia toda a transcrição e crie vídeos autorais completos: a fala original deve sustentar uma explicação própria que dê contexto, faça uma análise e entregue uma conclusão.
+  return `Você é o editor do OS4 Cortes. Leia toda a transcrição e crie vídeos autorais completos: a fala original deve sustentar um comentário próprio com personalidade, contexto, desenvolvimento e fechamento.
 
-O canal aborda economia, empreendedorismo, política e outros temas. Use linguagem de criador que conversa e levanta perguntas, sem tom de telejornal, boletim ou manchete. A identidade visual é a mesma entre assuntos; os textos devem se adaptar ao conteúdo e permanecer fiéis à fonte.
+Identidade do OS4: um comentarista de direita, de bem com a vida, espirituoso e provocativo, que conversa com o público. Em política, assuma uma leitura editorial de direita e escolha um ângulo crítico sustentado pelo trecho. Posição editorial é interpretação atribuível e argumentada; não autoriza inventar fatos, tratar suspeita como certeza ou insinuar culpa por associação. Evite locução de advogado, telejornal, sermão ou acusação sem fonte. A mesma voz reconhecível acompanha o contexto com naturalidade.
 
-Selecione ideias com começo, meio e fim. Conduza cada vídeo por uma pergunta específica e verificável: contexto e pergunta na abertura; excertos completos e comentário no desenvolvimento; conclusão proporcional ao que foi ouvido no fechamento. A narração deve acrescentar informação ou raciocínio, além de anunciar o corte.
+Adapte cada corte ao tema e à emoção do material:
+- Política: comentário firme, curioso, provocativo e, quando couber, irônico; explore declarações, contradições demonstráveis e consequências políticas. Formule uma pergunta específica que abra discussão.
+- Economia: aproxime a fala de escolhas, incentivos e efeitos concretos na vida de quem assiste, apenas quando sustentados pela fonte; clareza e curiosidade, sem palestra automática.
+- Empreendedorismo e negócios: destaque decisões, riscos, incentivos e aprendizados do trecho, com conversa direta e personalidade.
+- Humor: preserve a preparação, a surpresa, o tempo da piada e a reação. Não antecipe a graça nem a explique depois; use poucas intervenções estratégicas, leves e brincalhonas ou irônicas. Não force partidarismo onde o assunto não pede.
+- Outros temas: acompanhe a intenção e a emoção reais. Contexto grave ou sensível pede tone serious, respeito e intensidade proporcional; a identidade bem-humorada não obriga piadas. Não use o mesmo tom sério em tudo.
 
-Escreva como uma conversa clara e curiosa com uma pessoa, com perguntas naturais e frases curtas. Preserve a atribuição: diferencie o que o entrevistado afirma, a evidência disponível e a sua interpretação. As perguntas devem pedir informação, sem insinuações ou acusações. Não invente falas, datas, participantes, números, fatos ou conclusões. Use apenas o que a fonte permite sustentar; dados externos sem fonte verificada devem ficar fora da locução.
+Selecione ideias com começo, meio e fim. Um gancho específico abre a história; excertos completos e comentário próprio desenvolvem a ideia; o fechamento entrega uma leitura clara, uma descoberta ou o efeito cômico. Ajuste a quantidade e o tamanho da narração ao corte: uma ou mais intervenções breves e realmente autorais podem ser suficientes, especialmente no humor. Começo, desenvolvimento e fim não significam três blocos de narração. Não interrompa o melhor momento só para cumprir uma fórmula. O exemplo de cinco cenas não é quantidade obrigatória; perguntas na abertura ou no fechamento também não são obrigatórias.
+
+Escreva como uma conversa brasileira, espontânea e acessível, com frases que soem bem em voz alta. A provocação nasce do que aconteceu na fonte; evite perguntas genéricas, clichês como “e aí, o que você acha?” e pedidos artificiais de comentário ou compartilhamento. Uma pergunta de engajamento deve ser específica, natural e pertinente, sem pressupor fatos ausentes ou transformar uma acusação sem base em pergunta. Compartilhamento deve vir de uma observação boa, uma surpresa, uma contradição real ou uma frase memorável, sem fabricar indignação.
+
+Preserve a atribuição: “ela diz”, “segundo o relato”, quando isso bastar para distinguir fala de fato estabelecido. Separe fato da fonte e sua interpretação, sem insinuações ou acusações sem fundamento. Não transforme toda fala em defesa preventiva: não repita “isso não prova nada”, “não significa crime” ou ressalvas equivalentes na abertura, no comentário e no final. Quando uma ressalva factual for necessária para impedir uma conclusão enganosa, faça-a uma vez, no ponto relevante, e desenvolva o assunto. Não há obrigação de encerrar com limite de evidência. Não invente falas, datas, participantes, números, fatos ou conclusões; dados externos sem fonte verificada ficam fora da locução.
 
 Entregue somente um array JSON válido. Mantenha os campos normais de cada corte e inclua editorial em TODOS os objetos, com version: 1. Proponha os DOIS destinos quando a fonte sustentar boas ideias, sem forçar quantidade: formato 9:16/destino reels_tiktok para verticais e 16:9/youtube para horizontais. No YouTube, use a mesma lógica autoral para aprofundar uma explicação completa; a versão horizontal não deve apenas alongar o vertical. Selecione apenas vídeos com uma ideia completa; recalcule o ritmo pela história, sem esticar silêncio ou repetir conteúdo para atingir duração.
 
 Contrato editorial obrigatório:
 - source.label identifica a fonte; source.date usa AAAA-MM-DD somente se a data estiver confirmada, ou string vazia se desconhecida. Credite a fonte na legenda_post/descricao. URL da fonte: ${urlAtual || "[URL fornecida]"}.
+- Inclua profile completo em TODOS os editoriais: perspective: "right"; topic: "politics", "economy", "business", "humor" ou "general"; tone: "conversational", "provocative", "ironic", "playful", "explanatory" ou "serious"; intensity: "low", "medium" ou "high"; angle: leitura editorial específica deste corte (texto não vazio, até 240 caracteres); audience_question: pergunta concreta ao público (até 240 caracteres, ou string vazia quando atrapalharia a graça ou o fechamento). Use somente esses seis campos em profile. Escolha tema, tom e intensidade por corte; perspective mantém a identidade, sem impor comentário político a todos os temas. O ângulo precisa aparecer no comentário efetivamente escrito; quando escolher uma pergunta ao público, escreva-a naturalmente no text da cena adequada. O motor interpreta a direção, mas não reescreve nem acrescenta falas à narração.
 - scenes contém de 2 a 12 cenas na ordem final, combinando narration e clip. Use ids únicos com letras, números, hífen ou sublinhado, começando por letra ou número (até 40 caracteres).
 - clip: id, kind: "clip", start e end numéricos em segundos da fonte original.
 - narration: id, kind: "narration", text (texto literal que será falado, até 1400 caracteres), background: {start,end}, visual: {title,kicker,lines}, tts: {delivery:"explain",cues:[]}, evidence: [{start,end}].
@@ -726,7 +741,7 @@ Contrato editorial obrigatório:
 - inicio/fim são o envelope da fonte: use o menor start e o maior end de TODAS as referências em clips, backgrounds e evidence. A duração final é a soma dos áudios narrados e dos clips na montagem; ela não é a duração desse envelope da fonte.
 - Preserve as frações de segundo: 101.7 segundos corresponde a "00:01:41.7". Não arredonde inicio/fim para dentro dos intervalos usados nas cenas.
 - Use títulos visuais curtos e fortes, preferencialmente de 4 a 8 palavras, até 100 caracteres; kicker temático até 60; no máximo 3 frases curtas de apoio, mostradas uma por vez. Evite rótulos de telejornal e não repita a legenda da voz na tela de apoio. A montagem cuida do vídeo ao fundo, blur, preto neutro, movimento do texto, voz e legendas.
-- Escolha tts.delivery pela intenção de cada cena: hook na abertura que apresenta o assunto, explain ao explicar, question em pergunta direta, contrast para uma distinção e closing ao concluir. Use cues vazio para começar; a direção deve acompanhar a intenção sem mudar a identidade da voz. Não coloque instruções de voz no text. Preserve a fala original nos clips.
+- Escolha tts.delivery pela intenção de cada cena: hook na abertura que apresenta o assunto, explain ao explicar, question em pergunta direta, contrast para uma distinção e closing ao concluir. Cada cena herda tone e intensity do profile. Opcionalmente inclua tts.tone e/ou tts.intensity usando os mesmos valores permitidos no profile para adaptar uma cena ao momento. Use cues vazio para começar. A direção acompanha o contexto sem mudar a identidade e a região grave confortável da voz; intensidade alta significa mais energia e ênfase, sem gritar. Não coloque comandos de interpretação, instruções de voz ou marcações entre colchetes no text: ele contém somente a fala literal. Preserve a fala original nos clips.
 - Nos horizontais inclua descricao e tags; nos verticais legenda_post e hashtags. Os títulos, créditos e descrições também devem ser fiéis à fonte.
 
 O exemplo abaixo ilustra o schema. Substitua TODOS os textos entre colchetes, tema, números e tempos por escolhas reais da transcrição. Não copie esses tempos como se tivessem sido encontrados na fonte.
@@ -976,6 +991,39 @@ function adicionarRotuloEditorial(cabecalho, metadados) {
   cabecalho.appendChild(badge);
 }
 
+const TEMAS_EDITORIAIS = { politics: "Política", economy: "Economia", business: "Empreendedorismo e negócios", humor: "Humor", general: "Geral" };
+const TONS_EDITORIAIS = { conversational: "Conversado", provocative: "Provocativo", ironic: "Irônico", playful: "Brincalhão", explanatory: "Explicativo", serious: "Sério" };
+const INTENSIDADES_EDITORIAIS = { low: "Leve", medium: "Média", high: "Alta" };
+const rotuloDirecao = (opcoes, valor) => typeof valor === "string" && Object.hasOwn(opcoes, valor) ? opcoes[valor] : "Inválido";
+
+function criarResumoEditorial(plano) {
+  const detalhes = document.createElement("details");
+  detalhes.className = "editorial-direction";
+  const titulo = document.createElement("summary");
+  titulo.textContent = "Direção do comentarista";
+  detalhes.appendChild(titulo);
+  const perfil = plano?.profile;
+  const tema = perfil?.topic ?? "general";
+  const tom = perfil?.tone ?? "conversational";
+  const intensidade = perfil?.intensity ?? "medium";
+  const linha = (texto) => {
+    const paragrafo = document.createElement("p");
+    paragrafo.textContent = texto;
+    detalhes.appendChild(paragrafo);
+  };
+  linha(`Comentarista de direita • ${rotuloDirecao(TEMAS_EDITORIAIS, tema)} • ${rotuloDirecao(TONS_EDITORIAIS, tom)} • Intensidade ${rotuloDirecao(INTENSIDADES_EDITORIAIS, intensidade)}`);
+  if (perfil?.angle) linha(`Ângulo: ${typeof perfil.angle === "string" ? perfil.angle : "Inválido"}`);
+  if (perfil?.audience_question) linha(`Pergunta ao público: ${typeof perfil.audience_question === "string" ? perfil.audience_question : "Inválida"}`);
+  if (!perfil) linha("Pacote anterior: direção padrão conversada. Para adaptar o comentário a cada tema, copie o prompt atualizado e gere um novo pacote.");
+  for (const cena of Array.isArray(plano?.scenes) ? plano.scenes : []) {
+    if (!cena || cena.kind !== "narration") continue;
+    const tomCena = cena.tts?.tone ?? tom;
+    const intensidadeCena = cena.tts?.intensity ?? intensidade;
+    linha(`${typeof cena.id === "string" ? cena.id : "Narração"}: ${rotuloDirecao(TONS_EDITORIAIS, tomCena)}; intensidade ${rotuloDirecao(INTENSIDADES_EDITORIAIS, intensidadeCena)}${cena.tts?.tone == null && cena.tts?.intensity == null ? " (acompanha o corte)" : ""}.`);
+  }
+  return detalhes;
+}
+
 function renderizarEditor(cortes) {
   cutsEditor.innerHTML = "";
   cortes.forEach((corte, index) => {
@@ -1112,6 +1160,7 @@ function renderizarEditor(cortes) {
     });
 
     card.append(top, titulo.wrap, tempos, legenda.wrap, hashtags.wrap);
+    if (Object.hasOwn(corte, "editorial")) card.appendChild(criarResumoEditorial(corte.editorial));
     cutsEditor.appendChild(card);
   });
 
@@ -1184,6 +1233,8 @@ function erroPlanoAutoral(corte) {
   if (!planoAutoralValido(corte)) {
     return "o modo autoral precisa de um plano editorial version: 1 com narração, evidências e trechos da fonte. Use “Copiar Prompt para IA” para gerar um pacote novo ou marque “Usar corte simples (formato antigo)”.";
   }
+  const erroDirecao = erroDirecaoEditorial(corte.editorial);
+  if (erroDirecao) return erroDirecao;
   const inicio = converterTempoSegundos(corte.inicio);
   const fim = converterTempoSegundos(corte.fim);
   for (const cena of corte.editorial.scenes) {
@@ -1194,6 +1245,30 @@ function erroPlanoAutoral(corte) {
         return `a cena “${cena.id}”, campo ${campo}, usa ${intervalo.start}–${intervalo.end} segundos, fora de Início/Fim (${inicio}–${fim}). Ajuste os limites para incluir as referências do plano, preservando as frações de segundo.`;
       }
     }
+  }
+  return null;
+}
+
+function erroDirecaoEditorial(plano) {
+  const objeto = valor => valor && typeof valor === "object" && !Array.isArray(valor);
+  if (Object.hasOwn(plano, "profile")) {
+    const perfil = plano.profile;
+    if (!objeto(perfil)) return "a direção do comentarista (editorial.profile) precisa ser um objeto JSON.";
+    const campos = ["perspective", "topic", "tone", "intensity", "angle", "audience_question"];
+    if (Object.keys(perfil).some(campo => !campos.includes(campo))) return "a direção do comentarista contém um campo desconhecido em editorial.profile. Corrija o pacote antes de gerar.";
+    if (campos.some(campo => !Object.hasOwn(perfil, campo))) return "a direção do comentarista está incompleta em editorial.profile. Informe perspectiva, tema, tom, intensidade, ângulo e pergunta (que pode ser vazia).";
+    if (perfil.perspective !== "right") return "a perspectiva editorial precisa ser right (comentarista de direita).";
+    if (typeof perfil.topic !== "string" || !Object.hasOwn(TEMAS_EDITORIAIS, perfil.topic)) return "o tema editorial é inválido. Use politics, economy, business, humor ou general.";
+    if (typeof perfil.tone !== "string" || !Object.hasOwn(TONS_EDITORIAIS, perfil.tone)) return "o tom editorial é inválido. Use conversational, provocative, ironic, playful, explanatory ou serious.";
+    if (typeof perfil.intensity !== "string" || !Object.hasOwn(INTENSIDADES_EDITORIAIS, perfil.intensity)) return "a intensidade editorial é inválida. Use low, medium ou high.";
+    if (typeof perfil.angle !== "string" || !perfil.angle.trim() || perfil.angle.length > 240) return "o ângulo editorial precisa ser um texto não vazio com até 240 caracteres.";
+    if (typeof perfil.audience_question !== "string" || perfil.audience_question.length > 240) return "a pergunta ao público precisa ser um texto com até 240 caracteres, ou string vazia.";
+  }
+  for (const cena of plano.scenes) {
+    if (cena.kind !== "narration" || !Object.hasOwn(cena, "tts")) continue;
+    if (!objeto(cena.tts)) return `a direção de voz da cena “${cena.id}” precisa ser um objeto JSON.`;
+    if (Object.hasOwn(cena.tts, "tone") && (typeof cena.tts.tone !== "string" || !Object.hasOwn(TONS_EDITORIAIS, cena.tts.tone))) return `o tom da voz da cena “${cena.id}” é inválido. Use os mesmos tons permitidos no corte.`;
+    if (Object.hasOwn(cena.tts, "intensity") && (typeof cena.tts.intensity !== "string" || !Object.hasOwn(INTENSIDADES_EDITORIAIS, cena.tts.intensity))) return `a intensidade da voz da cena “${cena.id}” é inválida. Use low, medium ou high.`;
   }
   return null;
 }

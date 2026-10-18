@@ -1,0 +1,50 @@
+[
+  {
+    "perspective": "right",
+    "topic": "politics",
+    "tone": "provocative",
+    "intensity": "high",
+    "angle": "Cobrar coerência entre a proposta e a decisão descritas na fonte.",
+    "audience_question": "Como você cobraria essa explicação?"
+  },
+  {
+    "perspective": "right",
+    "topic": "humor",
+    "tone": "playful",
+    "intensity": "medium",
+    "angle": "Reagir depois da surpresa, preservando a preparação e o desfecho da piada.",
+    "audience_question": ""
+  },
+  {
+    "perspective": "right",
+    "topic": "business",
+    "tone": "ironic",
+    "intensity": "medium",
+    "angle": "Comentar a diferença entre a expectativa e o resultado mostrado.",
+    "audience_question": "Você já viveu uma situação parecida?"
+  },
+  {
+    "perspective": "right",
+    "topic": "economy",
+    "tone": "explanatory",
+    "intensity": "medium",
+    "angle": "Explicar a consequência prática da escolha apresentada.",
+    "audience_question": "Qual dessas escolhas pesa mais no seu orçamento?"
+  },
+  {
+    "perspective": "right",
+    "topic": "general",
+    "tone": "conversational",
+    "intensity": "low",
+    "angle": "Compartilhar uma observação específica sobre a história.",
+    "audience_question": ""
+  },
+  {
+    "perspective": "right",
+    "topic": "general",
+    "tone": "serious",
+    "intensity": "low",
+    "angle": "Explicar o contexto sensível com clareza e respeito.",
+    "audience_question": ""
+  }
+]

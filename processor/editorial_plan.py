@@ -7,6 +7,59 @@ import math
 import re
 
 
+EDITORIAL_TOPICS = ("politics", "economy", "business", "humor", "general")
+EDITORIAL_TONES = ("conversational", "provocative", "ironic", "playful", "explanatory", "serious")
+EDITORIAL_INTENSITIES = ("low", "medium", "high")
+DEFAULT_EDITORIAL_PROFILE = {
+    "perspective": "right", "topic": "general", "tone": "conversational",
+    "intensity": "medium", "angle": "", "audience_question": "",
+}
+
+
+def _choice(value, name, choices):
+    if not isinstance(value, str) or value not in choices:
+        raise ValueError(f"{name}: use {', '.join(choices)}.")
+    return value
+
+
+def _editorial_profile(raw):
+    if not isinstance(raw, dict):
+        raise ValueError("editorial.profile: objeto obrigatório.")
+    if set(raw) - set(DEFAULT_EDITORIAL_PROFILE):
+        raise ValueError("editorial.profile: campo desconhecido.")
+    question = raw.get("audience_question")
+    if not isinstance(question, str) or len(question) > 240:
+        raise ValueError("editorial.profile.audience_question: texto de até 240 caracteres.")
+    return {
+        "perspective": _choice(raw.get("perspective"), "editorial.profile.perspective", ("right",)),
+        "topic": _choice(raw.get("topic"), "editorial.profile.topic", EDITORIAL_TOPICS),
+        "tone": _choice(raw.get("tone"), "editorial.profile.tone", EDITORIAL_TONES),
+        "intensity": _choice(raw.get("intensity"), "editorial.profile.intensity", EDITORIAL_INTENSITIES),
+        "angle": _text(raw.get("angle"), "editorial.profile.angle", 240),
+        "audience_question": question.strip(),
+    }
+
+
+def effective_editorial_profile(plan, scene=None):
+    """Resolve interpretation without adding metadata to legacy packages.
+
+    Free-form angle/question describe the script; only validated enum fields may
+    be translated into fixed voice instructions. Scene overrides affect acting,
+    never the narrator's identity or the literal narration.
+    """
+    profile = dict(DEFAULT_EDITORIAL_PROFILE)
+    if "profile" in plan:
+        profile.update(_editorial_profile(plan["profile"]))
+    if scene is not None:
+        tts = scene.get("tts", {})
+        if not isinstance(tts, dict):
+            raise ValueError("editorial.scenes.tts: objeto obrigatório.")
+        for key, choices in (("tone", EDITORIAL_TONES), ("intensity", EDITORIAL_INTENSITIES)):
+            if key in tts:
+                profile[key] = _choice(tts[key], f"editorial.scenes.tts.{key}", choices)
+    return profile
+
+
 def _text(value, name, maximum):
     if not isinstance(value, str) or not value.strip() or len(value) > maximum:
         raise ValueError(f"{name}: texto obrigatório, até {maximum} caracteres.")
@@ -42,6 +95,8 @@ def normalize_editorial_plan(raw, *, clip_start=None, clip_end=None):
     if not isinstance(scenes, list) or not 2 <= len(scenes) <= 12:
         raise ValueError("editorial.scenes deve conter de 2 a 12 cenas.")
     result = {"version": 1, "source": {"label": label, "date": date}, "scenes": []}
+    if "profile" in raw:
+        result["profile"] = _editorial_profile(raw["profile"])
     identifiers = set()
     for index, scene in enumerate(scenes):
         name = f"editorial.scenes[{index}]"
@@ -73,6 +128,9 @@ def normalize_editorial_plan(raw, *, clip_start=None, clip_end=None):
             tts = scene.get("tts", {"delivery": "explain"})
             if not isinstance(tts, dict) or tts.get("delivery", "explain") not in ("hook", "explain", "contrast", "question", "closing"):
                 raise ValueError(f"{name}.tts: direção vocal inválida.")
+            for field, choices in (("tone", EDITORIAL_TONES), ("intensity", EDITORIAL_INTENSITIES)):
+                if field in tts:
+                    _choice(tts[field], f"{name}.tts.{field}", choices)
             cues = tts.get("cues", [])
             if not isinstance(cues, list) or len(cues) > 6:
                 raise ValueError(f"{name}.tts.cues: até seis indicações vocais.")

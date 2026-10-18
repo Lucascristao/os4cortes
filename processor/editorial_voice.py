@@ -1,7 +1,7 @@
 """OS4 editorial narration using the local port of the ODE Gemini Live runtime.
 
 The local voice_runtime package is the production default. --ode-root optionally
-selects the original worker for compatibility/proof. Both require the pinned SDK,
+selects a compatible external worker with the same contextual contract. Both require the pinned SDK,
 ffprobe, and GEMINI_API_KEY in the environment. No credential files are loaded or
 printed; the original ODE checkout is never modified.
 """
@@ -18,12 +18,12 @@ from pathlib import Path
 import sys
 
 if __package__:
-    from .editorial_plan import normalize_editorial_plan
+    from .editorial_plan import effective_editorial_profile, normalize_editorial_plan
 else:  # Portable cloud bundle: editorial_plan.py resides beside this file.
-    from editorial_plan import normalize_editorial_plan
+    from editorial_plan import effective_editorial_profile, normalize_editorial_plan
 
 
-VOICE_ADAPTER_VERSION = "os4-editorial-live-adapter-v2-warm-baritone"
+VOICE_ADAPTER_VERSION = "os4-editorial-live-adapter-v3-contextual-commentator"
 MASTER_PITCH_SEMITONES = -1.0
 VOICE_TONE_REFERENCE = {
     "repository": "https://github.com/Lucascristao/Plotquake",
@@ -32,22 +32,26 @@ VOICE_TONE_REFERENCE = {
     "scope": "Warm chest resonance and a uniform derived-master tonal calibration; no music, effects, language or format copied.",
 }
 OS4_GLOBAL_DIRECTION = (
-    "Direção OS4 Cortes: fale como numa conversa espontânea com uma pessoa, "
-    "com presença, curiosidade e disposição para perguntar e entender. "
+    "Direção OS4 Cortes: interprete como um comentarista de direita bem com a vida, "
+    "próximo de quem escuta, com personalidade, curiosidade e provocação na medida do roteiro. "
+    "Em política, a presença pode ser incisiva; em humor, leve e brincalhona; "
+    "em economia e negócios, curiosa e clara. O tom e a intensidade de cada cena "
+    "definem ritmo, pausas, ênfase e intenção, respeitando a preparação e a surpresa. "
     "Use a própria voz Charon com ressonância de peito suave, quente e um "
     "registro confortável discretamente mais grave, sem forçar voz grossa. "
     "Comece nesse registro já na primeira palavra e mantenha-o ao retomar "
     "cada fala. Todas as cenas pertencem à mesma conversa: conserve timbre, "
-    "cadência, energia e distância percebida do microfone, sem recomeçar "
-    "cada cena como um anúncio novo. A curiosidade aparece na articulação "
-    "e na intenção das perguntas, sem trocar de registro ou projetar a voz. "
+    "registro de base, volume confortável e distância percebida do microfone. "
+    "Adapte naturalmente energia, ritmo e entonação ao contexto, sem reiniciar "
+    "cada cena como um anúncio novo ou trocar de personagem. "
     "Espontaneidade significa somente interpretação natural: leia literalmente "
-    "o roteiro e nunca improvise ou acrescente falas. Evite cadência de repórter, "
-    "voz de manchete, locução publicitária e dramatização. As perguntas devem "
-    "soar como perguntas específicas dirigidas à pessoa que escuta, sem ironia "
-    "insinuante. Conecte o raciocínio com fluidez e contraste proporcional ao "
-    "sentido. Preserve a identidade Charon, o mesmo timbre, registro médio-grave confortável, "
-    "volume e presença entre todas as cenas. Direção e cues não são texto falado."
+    "o roteiro; não invente fatos, perguntas, piadas, acusações, ressalvas ou qualquer fala extra. "
+    "Ironia e humor são intenção de leitura quando solicitados: não acrescente risadas, "
+    "deboche automático ou caricatura. Evite cadência de repórter, advogado, "
+    "voz de manchete, locução publicitária, solenidade automática e dramatização. "
+    "As perguntas devem soar dirigidas à pessoa que escuta, com vontade de ouvir sua reação. "
+    "A perspectiva orienta a personalidade, nunca autoriza mudar o roteiro ou sugerir "
+    "certezas que ele não contém. Direção, perfil e cues não são texto falado."
 )
 V2_DELIVERY_OVERRIDES = {"abertura": "hook", "comentario": "explain", "fechamento": "question"}
 
@@ -98,9 +102,10 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
 
     Returns (worker, jobs, manifest). Any number of narration scenes permitted by
     normalize_editorial_plan is supported; source clips never become TTS jobs.
-    Scene directions are validated by the unchanged ODE voice-policy functions.
+    Scene directions are validated by the local contextual voice-policy functions.
     """
     normalized = normalize_editorial_plan(raw_plan)
+    profile = effective_editorial_profile(normalized)
     worker, worker_dir = _load_worker(ode_root)
     output = Path(output_dir).resolve()
     overrides = dict(delivery_overrides or {})
@@ -110,18 +115,25 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
     global_direction_fingerprint = fingerprint({"version": VOICE_ADAPTER_VERSION, "channel": "OS4 Cortes", "system_instruction": worker.live_session_config("Charon")["system_instruction"]})
     # Also isolate the speech profile explicitly, in addition to ODE's voice
     # policy fingerprint, so old ODE/pilot caches cannot pass accidentally.
-    speech_fingerprint = fingerprint({"ode_speech_profile": worker.project_speech_fingerprint({"speech": {"pronunciations": {}}}), "os4_global_direction": global_direction_fingerprint})
+    speech_fingerprint = fingerprint({"ode_speech_profile": worker.project_speech_fingerprint({"speech": {"pronunciations": {}}}), "os4_global_direction": global_direction_fingerprint, "editorial_profile": profile})
     jobs = []
     for position, scene in enumerate(normalized["scenes"]):
         if scene["kind"] != "narration":
             continue
         tts = copy.deepcopy(scene["tts"])
+        scene_profile = effective_editorial_profile(normalized, scene)
+        # Never pass free-form editorial angle/question to the model. Interpretation
+        # is a fixed translation of these validated enums, plus existing literal cues.
+        for field in ("perspective", "topic", "tone", "intensity"):
+            tts[field] = scene_profile[field]
         if scene["id"] in overrides:
             tts["delivery"] = overrides[scene["id"]]
         ode_scene = {"id": scene["id"], "narration": scene["text"], "tts": tts}
         direction = worker.scene_voice_direction(ode_scene)
+        if any(direction.get(field) != scene_profile[field] for field in ("perspective", "topic", "tone", "intensity")):
+            raise RuntimeError("Runtime de voz sem suporte ao perfil contextual OS4; use o runtime local atualizado.")
         worker.canonical_tokens(scene["text"], direction.get("pronunciations", {}))
-        jobs.append({"scene": ode_scene, "scene_index": position, "scene_id": scene["id"], "narration": scene["text"], "narration_hash": hashlib.sha256(scene["text"].encode("utf-8")).hexdigest(), "output_file": output / f"{scene['id']}.wav", "direction": direction, "direction_fingerprint": worker.scene_direction_fingerprint(ode_scene)})
+        jobs.append({"scene": ode_scene, "scene_index": position, "scene_id": scene["id"], "narration": scene["text"], "narration_hash": hashlib.sha256(scene["text"].encode("utf-8")).hexdigest(), "output_file": output / f"{scene['id']}.wav", "editorial_profile": scene_profile, "direction": direction, "direction_fingerprint": worker.scene_direction_fingerprint(ode_scene)})
     if not jobs:
         raise ValueError("Plano sem cenas de narração.")
     manifest = {
@@ -130,6 +142,7 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
         "engine": worker.ENGINE, "model": worker.PRIMARY_TTS_MODEL,
         "voice": "Charon", "presenter_name": "Roberto", "channel_identity": "OS4 Cortes",
         "global_direction": OS4_GLOBAL_DIRECTION,
+        "editorial_profile": profile,
         "global_direction_fingerprint": global_direction_fingerprint,
         "direction_overrides_in_memory": overrides,
         "ode_worker_sha256": hashlib.sha256((worker_dir / "synthesize_scenes.py").read_bytes()).hexdigest(),
@@ -155,7 +168,7 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
         "fallback_models": [], "sdk_required": worker.GOOGLE_GENAI_REQUIRED_VERSION,
         "sdk_installed": worker.installed_google_genai_version(),
         "credential_present": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
-        "scenes": [{"id": job["scene_id"], "file": job["output_file"].name, "narration": job["narration"], "narration_sha256": job["narration_hash"], "scene_direction": job["direction"], "scene_direction_fingerprint": job["direction_fingerprint"]} for job in jobs],
+        "scenes": [{"id": job["scene_id"], "file": job["output_file"].name, "narration": job["narration"], "narration_sha256": job["narration_hash"], "editorial_profile": job["editorial_profile"], "scene_direction": job["direction"], "scene_direction_fingerprint": job["direction_fingerprint"]} for job in jobs],
     }
     return worker, jobs, manifest
 

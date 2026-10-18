@@ -181,6 +181,17 @@ test('importação inválida informa o erro e não cria cartões nem dispara pro
   assert.equal(h.requests.length, 0);
 });
 
+test('resumo da direção tolera cena nula e a validação bloqueia o plano sem iniciar processamento', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao({ folderId: 'folder', videoFileId: 'video', transcriptJsonFileId: 'transcript' });
+  await h.import([cut({ editorial: { version: 1, scenes: [null, { id: 'fonte', kind: 'clip', start: 10, end: 20 }] } })]);
+  assert.equal(h.cards().length, 1);
+  assert.equal(h.alerts.length, 0);
+  await h.get('#btnGerarCortes').fire('click');
+  assert.match(h.alerts[0], /plano editorial/);
+  assert.equal(h.requests.length, 0);
+});
+
 const originalUrl = 'https://www.youtube.com/watch?v=PMGxFRAea_I';
 const sessionKey = 'os4_transcription_session';
 const jobKey = 'os4_current_job';
@@ -230,6 +241,135 @@ test('modo simples preserva o prompt anterior sem incluir plano editorial', asyn
   assert.match(h.copied[0], /GRUPO 2: CORTES LONGOS/);
   assert.match(h.copied[0], /Diretriz Anti-Bloqueio/);
   assert.doesNotMatch(h.copied[0], /"editorial"/);
+});
+
+test('prompt autoral dá personalidade e adapta comentário e interpretação a cada contexto', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao(session());
+  await h.get('#btnCopiarPromptIA').fire('click');
+  const prompt = h.copied[0];
+  assert.match(prompt, /comentarista de direita, de bem com a vida/);
+  assert.match(prompt, /leitura editorial de direita/);
+  assert.match(prompt, /Não force partidarismo onde o assunto não pede/);
+  assert.match(prompt, /preparação, a surpresa, o tempo da piada/);
+  assert.match(prompt, /três blocos de narração/);
+  assert.match(prompt, /perguntas na abertura ou no fechamento também não são obrigatórias/);
+  assert.match(prompt, /Não há obrigação de encerrar com limite de evidência/);
+  assert.match(prompt, /quando atrapalharia a graça ou o fechamento/);
+  assert.match(prompt, /Contexto grave ou sensível pede tone serious/);
+  assert.match(prompt, /Cada cena herda tone e intensity do profile/);
+  assert.match(prompt, /tts\.tone e\/ou tts\.intensity/);
+  assert.match(prompt, /somente a fala literal/);
+  assert.match(prompt, /Não invente falas, datas, participantes/);
+  assert.doesNotMatch(prompt, /\[Resposta à pergunta inicial, limite da evidência/);
+  const example = JSON.parse(prompt.match(/(\[\n  \{\n    "titulo"[\s\S]+?\n\])\n/)[1]);
+  const profile = example[0].editorial.profile;
+  assert.deepEqual(Object.keys(profile).sort(), ['angle', 'audience_question', 'intensity', 'perspective', 'tone', 'topic']);
+  assert.equal(profile.perspective, 'right');
+  assert.equal(profile.topic, 'politics');
+  assert.equal(profile.tone, 'provocative');
+});
+
+const contextualProfile = extra => ({
+  perspective: 'right', topic: 'politics', tone: 'provocative', intensity: 'medium',
+  angle: 'O peso político da resposta que ouvimos.', audience_question: 'Qual resposta faltou nesta conversa?', ...extra,
+});
+
+test('perfil e direção por cena sobrevivem edição, exclusão, restauração e envio sem alteração', async () => {
+  const h = harness();
+  const editorial = validPlan();
+  editorial.profile = contextualProfile({ topic: 'humor', tone: 'playful', intensity: 'low', audience_question: '' });
+  editorial.scenes[0].tts = { delivery: 'hook', cues: [], tone: 'ironic', intensity: 'medium' };
+  await h.import([cut({ titulo: 'Excluir' }), cut({ editorial })]);
+  h.cards()[1].querySelector('[data-field="titulo"]').value = 'Humor revisado';
+  await h.cards()[0].querySelector('.btn-delete-cut').fire('click');
+  const saved = JSON.parse(h.storage.get(packageKey));
+  assert.deepEqual(saved[0].editorial, editorial);
+  const restored = harness({ [packageKey]: JSON.stringify(saved), [sessionKey]: JSON.stringify(session()) });
+  restored.context.restaurarSessao();
+  await restored.get('#btnImportar').fire('click');
+  await restored.get('#btnGerarCortes').fire('click');
+  assert.equal(restored.alerts.length, 0);
+  assert.equal(starts(restored)[0].body.cuts[0].titulo, 'Humor revisado');
+  assert.deepEqual(starts(restored)[0].body.cuts[0].editorial, editorial);
+});
+
+test('cartão permite revisar tema, tom, intensidade, ângulo, pergunta e herança da voz sem HTML', async () => {
+  const h = harness();
+  const editorial = validPlan();
+  const literal = '<img src=x onerror=alert(1)>';
+  editorial.profile = contextualProfile({ angle: literal });
+  await h.import([cut({ editorial })]);
+  const details = h.cards()[0].querySelector('.editorial-direction');
+  assert.match(details.textContent, /Comentarista de direita.*Política.*Provocativo.*Média/);
+  assert.ok(details.textContent.includes(`Ângulo: ${literal}`));
+  assert.match(details.textContent, /Pergunta ao público: Qual resposta faltou/);
+  assert.match(details.textContent, /abertura: Provocativo; intensidade Média \(acompanha o corte\)/);
+  assert.equal(details.querySelector('img'), null);
+  assert.ok(details.querySelectorAll('p').some(line => line.textContent === `Ângulo: ${literal}`));
+});
+
+test('todos os perfis contextuais compartilhados passam pelo gate e seguem intactos ao motor', async () => {
+  const profiles = JSON.parse(fs.readFileSync(new URL('./fixtures/editorial-contextual-profiles.json', import.meta.url), 'utf8'));
+  assert.equal(new Set(profiles.map(profile => profile.tone)).size, 6);
+  for (const profile of profiles) {
+    const h = harness();
+    const editorial = validPlan();
+    editorial.profile = profile;
+    editorial.scenes[0].tts.tone = profile.tone;
+    editorial.scenes[0].tts.intensity = profile.intensity;
+    h.context.mostrarTranscricao(session());
+    await h.import([cut({ editorial })]);
+    await h.get('#btnGerarCortes').fire('click');
+    assert.equal(h.alerts.length, 0, JSON.stringify(profile));
+    assert.deepEqual(starts(h)[0].body.cuts[0].editorial, editorial);
+  }
+});
+
+test('pacote autoral anterior mantém direção padrão e não ganha metadados ao enviar', async () => {
+  const h = harness();
+  const editorial = validPlan();
+  h.context.mostrarTranscricao(session());
+  await h.import([cut({ editorial })]);
+  assert.match(h.cards()[0].textContent, /Comentarista de direita.*Geral.*Conversado.*Média/);
+  assert.match(h.cards()[0].textContent, /Pacote anterior/);
+  await h.get('#btnGerarCortes').fire('click');
+  assert.equal(h.alerts.length, 0);
+  assert.deepEqual(starts(h)[0].body.cuts[0].editorial, editorial);
+  assert.equal(Object.hasOwn(starts(h)[0].body.cuts[0].editorial, 'profile'), false);
+});
+
+test('direção desconhecida, inválida ou incompleta bloqueia geração antes da rede sem descartar campos', async () => {
+  const invalidProfiles = [null, [], 'right', {},
+    contextualProfile({ perspective: 'neutral' }), contextualProfile({ topic: 'sports' }),
+    contextualProfile({ tone: 'angry' }), contextualProfile({ intensity: 'maximum' }),
+    contextualProfile({ angle: ' ' }), contextualProfile({ angle: 'x'.repeat(241) }),
+    contextualProfile({ audience_question: null }), contextualProfile({ audience_question: 'x'.repeat(241) }),
+    contextualProfile({ unknown: true }), contextualProfile({ topic: 'toString' }),
+  ];
+  for (const profile of invalidProfiles) {
+    const h = harness();
+    const editorial = validPlan();
+    editorial.profile = profile;
+    h.context.mostrarTranscricao(session());
+    await h.import([cut({ editorial })]);
+    assert.deepEqual(plain(h.context.lerCortesEditor()[0].editorial.profile), profile);
+    await h.get('#btnGerarCortes').fire('click');
+    assert.equal(starts(h).length, 0, JSON.stringify(profile));
+    assert.equal(h.alerts.length, 1, JSON.stringify(profile));
+    assert.match(h.alerts[0], /Corte 1:/);
+  }
+  for (const tts of [{ tone: 'angry' }, { tone: null }, { intensity: 'loud' }, { intensity: null }, null]) {
+    const h = harness();
+    const editorial = validPlan();
+    editorial.profile = contextualProfile();
+    editorial.scenes[0].tts = tts;
+    h.context.mostrarTranscricao(session());
+    await h.import([cut({ editorial })]);
+    await h.get('#btnGerarCortes').fire('click');
+    assert.equal(starts(h).length, 0, JSON.stringify(tts));
+    assert.match(h.alerts[0], /cena “abertura”/);
+  }
 });
 
 test('modo simples persiste por sessão e por vídeo sem acoplar a marcação de tarja', async () => {
