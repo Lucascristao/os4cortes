@@ -320,22 +320,65 @@ test('malformed or out-of-bounds editorial scenes are rejected before starting a
  const before=dispatches.length;
  const recordsBefore=records.size;
  const changes=[
-  cut=>{cut.editorial=null;},
-  cut=>{cut.editorial.version='1';},
-  cut=>{cut.editorial.scenes.push(null);},
-  cut=>{cut.editorial.scenes.push({id:'unknown',kind:'command'});},
-  cut=>{cut.editorial.scenes[1].id='opening';},
-  cut=>{cut.editorial.scenes[1].end=31;},
-  cut=>{cut.editorial.scenes[0].background.start=9;},
-  cut=>{cut.editorial.scenes[0].evidence=[];},
-  cut=>{cut.editorial.scenes[0].evidence[0].end=31;},
-  cut=>{cut.editorial.scenes[0].visual.title='';},
+  [cut=>{cut.editorial=null;},/precisa de um plano editorial.*Importe o pacote/],
+  [cut=>{cut.editorial.version='1';},/plano editorial inválido: o campo version/],
+  [cut=>{cut.editorial.scenes.push(null);},/cena 3: o campo id/],
+  [cut=>{cut.editorial.scenes.push({id:'unknown',kind:'command'});},/cena 3 \(unknown\): o campo kind/],
+  [cut=>{cut.editorial.scenes[1].id='opening';},/cena 2 \(opening\): o campo id está repetido/],
+  [cut=>{cut.editorial.scenes[1].end=31;},/cena 2 \(answer\): o campo start\/end \(15s a 31s\).*início 10s; fim 30s/],
+  [cut=>{cut.editorial.scenes[0].background.start=9;},/cena 1 \(opening\): o campo background \(9s a 15s\).*início 10s; fim 30s/],
+  [cut=>{cut.editorial.scenes[0].evidence=[];},/cena 1 \(opening\): o campo evidence precisa ter entre 1 e 8/],
+  [cut=>{cut.editorial.scenes[0].evidence[0].end=31;},/cena 1 \(opening\): o campo evidence\[0\] \(15s a 31s\).*início 10s; fim 30s/],
+  [cut=>{cut.editorial.scenes[0].visual.title='';},/cena 1 \(opening\): o campo visual\.title/],
  ];
- for(const change of changes) {
+ for(const [change,diagnostic] of changes) {
   const cut=narratedCut();change(cut);
   const response=await start(req('workflow-start','POST',renderBody({cuts:[cut],simpleCuts:false})),context);
   assert.equal(response.status,400);
-  assert.match((await response.json()).error,/Corte 1:.*plano editorial/);
+  const {error}=await response.json();
+  assert.match(error,/Corte 1:.*plano editorial/);
+  assert.match(error,diagnostic);
+  if(cut.editorial!==null) assert.doesNotMatch(error,/Importe o pacote|marque corte simples/);
+ }
+ assert.equal(dispatches.length,before);
+ assert.equal(records.size,recordsBefore);
+});
+
+function fractionalEditorialCut() {
+ const cut=narratedCut();
+ cut.inicio='01:41.7';cut.fim='04:54.7';
+ cut.editorial.scenes[0].background={start:101.7,end:120.45};
+ cut.editorial.scenes[0].evidence=[{start:250.25,end:294.7}];
+ Object.assign(cut.editorial.scenes[1],{start:250.25,end:294.7});
+ return cut;
+}
+
+test('fractional editorial bounds are accepted and dispatched without rounding timestamps or scene spans',async()=>{
+ for(const numericBounds of [false,true]) {
+  const cut=fractionalEditorialCut();
+  if(numericBounds) {cut.inicio=101.7;cut.fim=294.7;}
+  const response=await start(req('workflow-start','POST',renderBody({cuts:[cut],simpleCuts:false})),context);
+  assert.equal(response.status,202);
+  assert.deepEqual(JSON.parse(dispatches.at(-1).inputs.cuts_json),[cut]);
+ }
+});
+
+test('out-of-bounds fractional scenes identify the scene, field and actual cut interval rather than a missing plan',async()=>{
+ const before=dispatches.length;
+ const recordsBefore=records.size;
+ const changes=[
+  [cut=>{cut.inicio='01:42';cut.fim='04:55';},/cena 1 \(opening\): o campo background \(101\.7s a 120\.45s\).*início 102s; fim 295s/],
+  [cut=>{cut.editorial.scenes[0].background.start=101.698;},/cena 1 \(opening\): o campo background \(101\.698s a 120\.45s\).*início 101\.7s; fim 294\.7s/],
+  [cut=>{cut.editorial.scenes[0].evidence[0].end=294.702;},/cena 1 \(opening\): o campo evidence\[0\] \(250\.25s a 294\.702s\).*início 101\.7s; fim 294\.7s/],
+  [cut=>{cut.editorial.scenes[1].end=294.702;},/cena 2 \(answer\): o campo start\/end \(250\.25s a 294\.702s\).*início 101\.7s; fim 294\.7s/],
+ ];
+ for(const [change,diagnostic] of changes) {
+  const cut=fractionalEditorialCut();change(cut);
+  const response=await start(req('workflow-start','POST',renderBody({cuts:[cut],simpleCuts:false})),context);
+  assert.equal(response.status,400);
+  const {error}=await response.json();
+  assert.match(error,diagnostic);
+  assert.doesNotMatch(error,/precisa de um plano editorial|Importe o pacote|marque corte simples/);
  }
  assert.equal(dispatches.length,before);
  assert.equal(records.size,recordsBefore);

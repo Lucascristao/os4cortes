@@ -76,34 +76,66 @@ function validYoutubeUrl(value) {
 
 // Reject unusable plans before starting a runner. Python remains authoritative
 // for voice directions, visual limits, transcript evidence and content checks.
-function validEditorialShape(plan, clipStart, clipEnd) {
+function editorialShapeError(plan, clipStart, clipEnd) {
   const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
-  const validSpan = (value) => isObject(value) && Number.isFinite(value.start) && Number.isFinite(value.end) &&
-    value.start >= 0 && value.end > value.start && value.start >= clipStart - 0.001 && value.end <= clipEnd + 0.001;
-  if (!isObject(plan) || plan.version !== 1 || !Array.isArray(plan.scenes) ||
-      plan.scenes.length < 2 || plan.scenes.length > 12) return false;
+  const invalid = (detail) => `plano editorial inválido: ${detail}`;
+  const spanError = (value, field) => {
+    if (!isObject(value) || !Number.isFinite(value.start) || !Number.isFinite(value.end) ||
+        value.start < 0 || value.end <= value.start) {
+      return `o campo ${field} precisa ter start e end numéricos, com start ≥ 0 e end maior que start.`;
+    }
+    if (value.start < clipStart - 0.001 || value.end > clipEnd + 0.001) {
+      return `o campo ${field} (${value.start}s a ${value.end}s) está fora do intervalo do corte ` +
+        `(início ${clipStart}s; fim ${clipEnd}s). Corrija início/fim ou os tempos da cena.`;
+    }
+    return null;
+  };
+  if (plan == null) {
+    return "o formato autoral precisa de um plano editorial. Importe o pacote com narração ou marque corte simples.";
+  }
+  if (!isObject(plan)) return invalid("editorial precisa ser um objeto.");
+  if (plan.version !== 1) return invalid("o campo version precisa ser o número 1.");
+  if (!Array.isArray(plan.scenes) || plan.scenes.length < 2 || plan.scenes.length > 12) {
+    return invalid("o campo scenes precisa ter entre 2 e 12 cenas.");
+  }
   const identifiers = new Set();
   let hasNarration = false;
   let hasClip = false;
-  for (const scene of plan.scenes) {
-    if (!isObject(scene) || typeof scene.id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(scene.id) ||
-        identifiers.has(scene.id)) return false;
+  for (const [index, scene] of plan.scenes.entries()) {
+    const location = `cena ${index + 1}${typeof scene?.id === "string" ? ` (${scene.id})` : ""}`;
+    const sceneError = (detail) => invalid(`${location}: ${detail}`);
+    if (!isObject(scene) || typeof scene.id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(scene.id)) {
+      return sceneError("o campo id precisa ter entre 1 e 40 letras, números, hífens ou sublinhados, começando com letra ou número.");
+    }
+    if (identifiers.has(scene.id)) return sceneError("o campo id está repetido no plano.");
     identifiers.add(scene.id);
     if (scene.kind === "clip") {
-      if (!validSpan(scene)) return false;
+      const error = spanError(scene, "start/end");
+      if (error) return sceneError(error);
       hasClip = true;
     } else if (scene.kind === "narration") {
-      if (typeof scene.text !== "string" || !scene.text.trim() || scene.text.length > 1400 ||
-          !validSpan(scene.background) || !Array.isArray(scene.evidence) || scene.evidence.length < 1 ||
-          scene.evidence.length > 8 || !scene.evidence.every(validSpan) ||
-          !isObject(scene.visual) || typeof scene.visual.title !== "string" ||
-          !scene.visual.title.trim() || scene.visual.title.length > 100) return false;
+      if (typeof scene.text !== "string" || !scene.text.trim() || scene.text.length > 1400) {
+        return sceneError("o campo text precisa conter a narração, com até 1400 caracteres.");
+      }
+      const backgroundError = spanError(scene.background, "background");
+      if (backgroundError) return sceneError(backgroundError);
+      if (!Array.isArray(scene.evidence) || scene.evidence.length < 1 || scene.evidence.length > 8) {
+        return sceneError("o campo evidence precisa ter entre 1 e 8 trechos de referência.");
+      }
+      for (const [evidenceIndex, evidence] of scene.evidence.entries()) {
+        const error = spanError(evidence, `evidence[${evidenceIndex}]`);
+        if (error) return sceneError(error);
+      }
+      if (!isObject(scene.visual) || typeof scene.visual.title !== "string" ||
+          !scene.visual.title.trim() || scene.visual.title.length > 100) {
+        return sceneError("o campo visual.title precisa conter um título de até 100 caracteres.");
+      }
       hasNarration = true;
     } else {
-      return false;
+      return sceneError('o campo kind precisa ser "clip" ou "narration".');
     }
   }
-  return hasNarration && hasClip;
+  return hasNarration && hasClip ? null : invalid("inclua pelo menos uma cena de narração e uma cena do vídeo original.");
 }
 
 export default safeHandler(async (request, context) => {
@@ -209,8 +241,9 @@ export default safeHandler(async (request, context) => {
         return json(400, { ok: false, error: `Corte ${index + 1}: informe início e fim válidos, com fim maior que início.` });
       }
       if (!simpleCuts) {
-        if (!validEditorialShape(cut?.editorial, start, end)) {
-          return json(400, { ok: false, error: `Corte ${index + 1}: o formato autoral precisa de um plano editorial. Importe o pacote com narração ou marque corte simples.` });
+        const error = editorialShapeError(cut?.editorial, start, end);
+        if (error) {
+          return json(400, { ok: false, error: `Corte ${index + 1}: ${error}` });
         }
       }
     }

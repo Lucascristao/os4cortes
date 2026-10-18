@@ -332,6 +332,76 @@ test('modo autoral envia planos válidos intactos e modo false explícito', asyn
   assert.equal(starts(h)[0].body.cuts[0].titulo, 'Título revisado');
 });
 
+test('timestamps conservam milissegundos em strings, vírgulas e segundos numéricos', () => {
+  const h = harness();
+  for (const [value, expected] of [
+    ['00:01:41.7', '00:01:41.7'], ['00:06:02.2', '00:06:02.2'],
+    ['01:41,700', '00:01:41.7'], [101.7, '00:01:41.7'],
+    ['00:59.999', '00:00:59.999'], ['59:59.999', '00:59:59.999'],
+    ['60', '00:01:00'], ['3600', '01:00:00'], ['59.9996', '00:01:00'],
+  ]) {
+    assert.equal(h.context.normalizarTimestamp(value), expected);
+  }
+});
+
+test('importar, editar, excluir, restaurar e enviar conserva limites fracionários e cenas intactas', async () => {
+  const h = harness();
+  const editorial = validPlan();
+  editorial.scenes[0].background = { start: 101.7, end: 110.2 };
+  editorial.scenes[0].evidence = [{ start: 101.7, end: 294.7 }];
+  editorial.scenes[1].start = 265.2;
+  editorial.scenes[1].end = 294.7;
+  await h.import([cut({ titulo: 'Excluir' }), cut({ inicio: '00:01:41.7', fim: '00:04:54.7', editorial })]);
+  h.cards()[1].querySelector('[data-field="titulo"]').value = 'Título revisado';
+  await h.cards()[0].querySelector('.btn-delete-cut').fire('click');
+  const saved = JSON.parse(h.storage.get(packageKey));
+  assert.equal(saved[0].inicio, '00:01:41.7');
+  assert.equal(saved[0].fim, '00:04:54.7');
+  assert.deepEqual(saved[0].editorial, editorial);
+  const restored = harness({ [packageKey]: JSON.stringify(saved), [sessionKey]: JSON.stringify(session()) });
+  restored.context.restaurarSessao();
+  await restored.get('#btnImportar').fire('click');
+  await restored.get('#btnGerarCortes').fire('click');
+  assert.equal(restored.alerts.length, 0);
+  const sent = starts(restored)[0].body.cuts[0];
+  assert.equal(sent.titulo, 'Título revisado');
+  assert.equal(sent.inicio, '00:01:41.7');
+  assert.equal(sent.fim, '00:04:54.7');
+  assert.deepEqual(sent.editorial, editorial);
+});
+
+test('fim fracionário menor que meio segundo não é encurtado ao importar e enviar', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao(session());
+  const editorial = validPlan();
+  editorial.scenes[0].background = { start: 301.4, end: 308.6 };
+  editorial.scenes[0].evidence = [{ start: 301.4, end: 338.8 }];
+  editorial.scenes[1].start = 352.1;
+  editorial.scenes[1].end = 362.2;
+  await h.import([cut({ inicio: 301.4, fim: 362.2, editorial })]);
+  await h.get('#btnGerarCortes').fire('click');
+  assert.equal(h.alerts.length, 0);
+  assert.equal(starts(h)[0].body.cuts[0].fim, '00:06:02.2');
+});
+
+test('limite editado que exclui clip, fundo ou evidência informa a cena antes de iniciar processamento', async () => {
+  for (const field of ['clip', 'background', 'evidence']) {
+    const h = harness();
+    h.context.mostrarTranscricao(session());
+    const editorial = validPlan();
+    if (field === 'clip') editorial.scenes[1].start = 9.7;
+    if (field === 'background') editorial.scenes[0].background.start = 9.7;
+    if (field === 'evidence') editorial.scenes[0].evidence[0].end = 20.2;
+    await h.import([cut({ editorial })]);
+    await h.get('#btnGerarCortes').fire('click');
+    assert.equal(starts(h).length, 0);
+    assert.match(h.alerts[0], /Corte 1: a cena/);
+    assert.match(h.alerts[0], new RegExp(`campo ${field}`));
+    assert.match(h.alerts[0], /fora de Início\/Fim/);
+    assert.doesNotMatch(h.alerts[0], /precisa de um plano editorial/);
+  }
+});
+
 const readyCut = () => ({
   index: 2, titulo: 'Corte pronto', formato: '9:16',
   files: Object.fromEntries(['video', 'videoLegenda', 'srt', 'post'].map(name => [name, { id: `file-${name}`, url: `https://drive.google.com/file/d/file-${name}/view` }])),

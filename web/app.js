@@ -692,18 +692,18 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, 
     evidence: [{ start, end }],
   });
   const exemplo = [{
-    titulo: "[Título fiel à ideia completa]", inicio: "00:01:15", fim: "00:02:20",
+    titulo: "[Título fiel à ideia completa]", inicio: "00:01:15.4", fim: "00:02:20.2",
     formato: "9:16", destino: "reels_tiktok", saida_suave: true,
     legenda_post: "[Reflexão breve e crédito da fonte]", hashtags: ["#tema"],
     editorial: {
       version: 1,
       source: { label: fonte, date: "" },
       scenes: [
-        narracao("abertura", "[Pergunta específica]", 75, 82, "[Contexto atribuído e pergunta que o vídeo vai esclarecer.]", "hook"),
-        { id: "entrevista-1", kind: "clip", start: 75, end: 93 },
+        narracao("abertura", "[Pergunta específica]", 75.4, 82, "[Contexto atribuído e pergunta que o vídeo vai esclarecer.]", "hook"),
+        { id: "entrevista-1", kind: "clip", start: 75.4, end: 93 },
         narracao("comentario", "[Distinção central]", 94, 103, "[Comentário próprio que explica ou compara as falas com base na evidência.]"),
         { id: "entrevista-2", kind: "clip", start: 119, end: 132 },
-        narracao("fechamento", "[Conclusão proporcional]", 125, 140, "[Resposta à pergunta inicial, limite da evidência e próxima pergunta concreta, se pertinente.]", "closing"),
+        narracao("fechamento", "[Conclusão proporcional]", 125, 140.2, "[Resposta à pergunta inicial, limite da evidência e próxima pergunta concreta, se pertinente.]", "closing"),
       ],
     },
   }];
@@ -724,6 +724,7 @@ Contrato editorial obrigatório:
 - narration: id, kind: "narration", text (texto literal que será falado, até 1400 caracteres), background: {start,end}, visual: {title,kicker,lines}, tts: {delivery:"explain",cues:[]}, evidence: [{start,end}].
 - background escolhe vídeo real para o fundo em movimento; evidence traz de 1 a 8 intervalos da transcrição que sustentam a narração. Todos os intervalos precisam ter end > start e caber entre inicio/fim do corte, em segundos absolutos do vídeo original.
 - inicio/fim são o envelope da fonte: use o menor start e o maior end de TODAS as referências em clips, backgrounds e evidence. A duração final é a soma dos áudios narrados e dos clips na montagem; ela não é a duração desse envelope da fonte.
+- Preserve as frações de segundo: 101.7 segundos corresponde a "00:01:41.7". Não arredonde inicio/fim para dentro dos intervalos usados nas cenas.
 - Use títulos visuais curtos e fortes, preferencialmente de 4 a 8 palavras, até 100 caracteres; kicker temático até 60; no máximo 3 frases curtas de apoio, mostradas uma por vez. Evite rótulos de telejornal e não repita a legenda da voz na tela de apoio. A montagem cuida do vídeo ao fundo, blur, preto neutro, movimento do texto, voz e legendas.
 - Escolha tts.delivery pela intenção de cada cena: hook na abertura que apresenta o assunto, explain ao explicar, question em pergunta direta, contrast para uma distinção e closing ao concluir. Use cues vazio para começar; a direção deve acompanhar a intenção sem mudar a identidade da voz. Não coloque instruções de voz no text. Preserve a fala original nos clips.
 - Nos horizontais inclua descricao e tags; nos verticais legenda_post e hashtags. Os títulos, créditos e descrições também devem ser fiéis à fonte.
@@ -892,11 +893,14 @@ function converterTempoSegundos(valor) {
 
 function formatarSegundosParaTimestamp(totalSegundos) {
   if (!Number.isFinite(totalSegundos) || totalSegundos < 0) return "";
-  const sTotal = Math.round(totalSegundos);
+  // Keep source references inside their envelope when importing fractional times.
+  const milissegundos = Math.round(totalSegundos * 1000);
+  const sTotal = Math.floor(milissegundos / 1000);
   const h = Math.floor(sTotal / 3600);
   const m = Math.floor((sTotal % 3600) / 60);
   const s = sTotal % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  const fracao = String(milissegundos % 1000).padStart(3, "0").replace(/0+$/, "");
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}${fracao ? `.${fracao}` : ""}`;
 }
 
 function normalizarTimestamp(valor) {
@@ -1176,6 +1180,24 @@ function planoAutoralValido(corte) {
   return tipos.has("narration") && tipos.has("clip");
 }
 
+function erroPlanoAutoral(corte) {
+  if (!planoAutoralValido(corte)) {
+    return "o modo autoral precisa de um plano editorial version: 1 com narração, evidências e trechos da fonte. Use “Copiar Prompt para IA” para gerar um pacote novo ou marque “Usar corte simples (formato antigo)”.";
+  }
+  const inicio = converterTempoSegundos(corte.inicio);
+  const fim = converterTempoSegundos(corte.fim);
+  for (const cena of corte.editorial.scenes) {
+    const referencias = cena.kind === "clip" ? [["clip", cena]]
+      : [["background", cena.background], ...cena.evidence.map((evidencia, i) => [`evidence[${i}]`, evidencia])];
+    for (const [campo, intervalo] of referencias) {
+      if (intervalo.start < inicio - 0.001 || intervalo.end > fim + 0.001) {
+        return `a cena “${cena.id}”, campo ${campo}, usa ${intervalo.start}–${intervalo.end} segundos, fora de Início/Fim (${inicio}–${fim}). Ajuste os limites para incluir as referências do plano, preservando as frações de segundo.`;
+      }
+    }
+  }
+  return null;
+}
+
 btnGerarCortes?.addEventListener("click", async () => {
   if (!sessaoTranscricao) {
     alert("Primeiro transcreva um vídeo.");
@@ -1231,13 +1253,14 @@ btnGerarCortes?.addEventListener("click", async () => {
   const cuts = lerCortesEditor();
   const simpleCuts = sessaoTranscricao.simpleCuts === true;
   if (!simpleCuts) {
-    const invalido = cuts.findIndex((corte) => !planoAutoralValido(corte));
+    const erros = cuts.map(erroPlanoAutoral);
+    const invalido = erros.findIndex(Boolean);
     if (invalido !== -1) {
-      const mensagem = `Corte ${invalido + 1}: o modo autoral precisa de um plano editorial version: 1 com narração, evidências e trechos da fonte. Use “Copiar Prompt para IA” para gerar um pacote novo ou marque “Usar corte simples (formato antigo)”.`;
+      const mensagem = `Corte ${invalido + 1}: ${erros[invalido]}`;
       cards[invalido].classList.add("has-error");
       cards[invalido].scrollIntoView({ behavior: "smooth", block: "center" });
-      setStatus("cortes", "Plano autoral necessário", "error");
-      atualizarProgresso({ percent: 0, title: "Complete o pacote autoral", detail: mensagem });
+      setStatus("cortes", "Revise o plano autoral", "error");
+      atualizarProgresso({ percent: 0, title: "O pacote autoral precisa de ajuste", detail: mensagem });
       alert(mensagem);
       return;
     }
