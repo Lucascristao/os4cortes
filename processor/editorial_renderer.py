@@ -433,7 +433,7 @@ def _overlay_animation_entries(stages, *, canvas):
 
 
 def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, ass, font_path, duration, ffmpeg, shared_dir, source_hash):
-    from .editorial_visuals import EditorialScene, VISUAL_STYLE_VERSION, build_background_filter, render_overlay_png, overlay_timeline
+    from .editorial_visuals import EditorialScene, BACKGROUND_STYLE_VERSION, build_background_filter, render_overlay_png, overlay_timeline
     common = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p",
               "-r", str(canvas.fps), "-frames:v", str(round(duration*canvas.fps)),
               "-threads", "2", "-video_track_timescale", "15360", "-movflags", "+faststart"]
@@ -456,7 +456,7 @@ def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, 
     source_credit = scene["_credit"]
     overlay = EditorialScene(title=visual["title"], kicker=visual.get("kicker", ""), lines=tuple(visual.get("lines", [])), credit=source_credit)
     span = scene["background"]
-    background_key = fingerprint({"version": VERSION, "visual_style": VISUAL_STYLE_VERSION, "source": source_hash, "span": span, "canvas": [canvas.width, canvas.height, canvas.fps], "treatment": [treatment.mode, treatment.height_fraction]})
+    background_key = fingerprint({"version": VERSION, "visual_style": BACKGROUND_STYLE_VERSION, "source": source_hash, "span": span, "canvas": [canvas.width, canvas.height, canvas.fps], "treatment": [treatment.mode, treatment.height_fraction]})
     background = shared_dir / f"background-{background_key[:24]}.mp4"
     background_record = background.with_suffix(".json")
     if not _cache_valid(background_record, background_key, background):

@@ -17,7 +17,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .lower_third import LowerThird
 
-VISUAL_STYLE_VERSION = "os4-creator-black-motion-2026-v1"
+VISUAL_STYLE_VERSION = "os4-creator-black-motion-2026-v2"
+BACKGROUND_STYLE_VERSION = "os4-creator-black-motion-2026-v1"
 
 
 def _number(value: float, name: str, minimum: float, maximum: float) -> float:
@@ -257,7 +258,13 @@ def render_overlay_png(
     for size in range(title_size, round(title_size*.48), -2):
         candidate_font = _font(font_path, size)
         candidate = _wrap(draw, scene.title.upper(), candidate_font, text_width).splitlines()
+        if len(candidate) > 1 and any(line.strip("?!.,:") in {"A", "O", "AS", "OS", "E", "É", "DE", "DO", "DA", "UM", "UMA"} for line in candidate):
+            continue
         advance = round(size*.94)
+        raw_boxes = [draw.textbbox((0, 0), line, font=candidate_font) for line in candidate]
+        for index in range(len(raw_boxes)-1):
+            emphasis_padding = round(short*.009) if index == len(raw_boxes)-2 else 0
+            advance = max(advance, raw_boxes[index][3]-raw_boxes[index+1][1]+emphasis_padding+round(short*.004))
         boxes = [draw.textbbox((0, index*advance), line, font=candidate_font)
                  for index, line in enumerate(candidate)]
         if max(box[2] for box in boxes) <= text_width and boxes[-1][3]-boxes[0][1] <= max_title_height:
