@@ -30,6 +30,10 @@ on:
         description: "Fração da altura da tarja na origem"
         required: false
         default: "0"
+      cut_mode:
+        description: "Modelo: editorial com narração ou simple legado"
+        required: false
+        default: "simple"
 
 permissions:
   contents: read
@@ -52,6 +56,8 @@ jobs:
       OS4_CUTS_JSON: ${{ inputs.cuts_json }}
       OS4_LOWER_THIRD_MODE: ${{ inputs.lower_third_mode }}
       OS4_LOWER_THIRD_HEIGHT: ${{ inputs.lower_third_height }}
+      OS4_CUT_MODE: ${{ inputs.cut_mode }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
       - name: Baixar código
@@ -74,6 +80,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-render.txt
 
+      # Áudio/roteiro não entram em cache compartilhado de repositório público.
+      # Em repo público, há reuso local durante o job; retomada entre execuções
+      # ainda exige armazenamento privado, que este workflow não implementa.
+      - name: Restaurar vozes autorais (somente repositório privado)
+        if: ${{ inputs.cut_mode == 'editorial' && github.event.repository.private == true }}
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: .editorial-cache
+          key: ${{ runner.os }}-os4-editorial-v1-${{ inputs.video_file_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-os4-editorial-v1-${{ inputs.video_file_id }}-
+
       - name: Gerar todos os cortes
         run: |
           python -m processor.render_batch \
@@ -84,8 +103,17 @@ jobs:
             --cuts-json "$OS4_CUTS_JSON" \
             --lower-third-mode "$OS4_LOWER_THIRD_MODE" \
             --lower-third-height "$OS4_LOWER_THIRD_HEIGHT" \
+            --cut-mode "$OS4_CUT_MODE" \
             --workdir ".work" \
             --output "output"
+
+      - name: Preservar vozes aceitas mesmo com falha (somente repositório privado)
+        if: ${{ always() && inputs.cut_mode == 'editorial' && github.event.repository.private == true && hashFiles('.editorial-cache/**') != '' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .editorial-cache
+          key: ${{ runner.os }}-os4-editorial-v1-${{ inputs.video_file_id }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Reportar falha ao front
         if: failure() || cancelled()
@@ -93,19 +121,26 @@ jobs:
         run: |
           python - <<'PY'
           import hashlib, hmac, json, os, urllib.request
+          from pathlib import Path
           url = os.environ.get("OS4_PROGRESS_URL", "")
           rid = os.environ.get("OS4_REQUEST_ID", "")
           secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
           if url and rid and secret:
               token = hmac.new(secret.encode(), f"os4-progress:{rid}".encode(), hashlib.sha256).hexdigest()
+              result_path = Path("output/render-batch-result.json")
+              result = json.loads(result_path.read_text(encoding="utf-8")) if result_path.is_file() else None
+              detail = "A geração dos cortes falhou no GitHub Actions."
+              if result:
+                  detail = f"{result.get('completedCount', 0)}/{result.get('requestedCount', 0)} cortes autorais salvos; {len(result.get('errors', []))} falhou/falharam."
               payload = json.dumps({
                   "request_id": rid,
                   "token": token,
                   "status": "cancelled" if "${{ job.status }}" == "cancelled" else "error",
                   "stage": "erro",
                   "percent": 100,
-                  "detail": "A geração dos cortes falhou no GitHub Actions.",
-                  "error": "Falha no workflow de geração de cortes"
+                  "detail": detail,
+                  "error": detail if result else "Falha no workflow de geração de cortes",
+                  **({"result": result} if result else {})
               }).encode("utf-8")
               try:
                   urllib.request.urlopen(urllib.request.Request(url, data=payload, method="POST", headers={"Content-Type":"application/json"}), timeout=8).read()

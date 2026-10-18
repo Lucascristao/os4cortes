@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -13,8 +14,11 @@ from .captions import (
     escrever_post,
     escrever_post_youtube,
     gerar_capa_16x9,
+    garantir_archivo_black,
 )
 from .drive import uploader_por_env
+from .cut_transport import decode_cuts_json
+from .editorial_plan import editorial_fingerprint, normalize_editorial_plan
 from .progress import completed, emit, failed, start_heartbeat
 from .publisher import save_publisher_manifest
 from .lower_third import LowerThird
@@ -24,6 +28,48 @@ except ImportError:
     render_cinematic_16x9 = None
     render_tracking_9x16 = None
 from .utils import nome_seguro, tempo_para_segundos
+
+
+def render_editorial_cut(*args, **kwargs):
+    # The legacy path never imports the voice/compositor runtime.
+    from .editorial_renderer import render_editorial_cut as renderer
+    return renderer(*args, **kwargs)
+
+
+def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_third):
+    aspect = corte["formato"]
+    prefix = f"corte_{index:02d}_{nome_seguro(corte['titulo'])}"
+    if aspect == "16:9":
+        prefix += "_16x9"
+    # The local publisher recognizes the captioned vertical by this suffix.
+    output = out / (f"{prefix}.mp4" if aspect == "16:9" else f"{prefix}_legenda.mp4")
+    voice_dir = cache / editorial_fingerprint(corte["editorial"]) / "voice"
+    voice_dir.mkdir(parents=True, exist_ok=True)
+    font = garantir_archivo_black()
+    rendered = render_editorial_cut(
+        video, transcript, corte["editorial"], output,
+        work_dir=work / f"editorial-{index:02d}", aspect=aspect,
+        lower_third=lower_third, voice_dir=voice_dir, font_dir=Path(font).parent,
+    )
+    video_path, srt_path = Path(rendered["video"]), Path(rendered["srt"])
+    cover = Path(rendered["capa"]) if rendered.get("capa") else None
+    report = Path(rendered["report"]) if rendered.get("report") else None
+    if aspect == "16:9":
+        post = escrever_post_youtube(out / f"{prefix}_post.txt", corte["titulo"], corte["descricao"], corte["tags"])
+    else:
+        post = escrever_post(out / f"{prefix}_post.txt", corte["titulo"], corte["legenda_post"], corte["hashtags"])
+    assets = [("video", video_path), ("srt", srt_path), ("post", post)]
+    if cover and cover.exists():
+        assets.append(("capa", cover))
+    # Reports and synthesis caches stay local; they are not publisher uploads.
+    cleanup = [video_path, srt_path, post, cover, report, output.with_suffix(".render-cache.json")]
+    return assets, cleanup
+
+
+def _cut_error(errors, corte, index, total, progress, exc):
+    error = {"index": index, "titulo": corte["titulo"], "error": str(exc)}
+    errors.append(error)
+    emit("cortes", progress, f"Corte {index}/{total} falhou: {exc}", cut=index, total_cuts=total)
 
 
 def ajustar_inicio_sem_silencio(palavras: list[dict], inicio_corte: float, fim_corte: float) -> float:
@@ -43,7 +89,7 @@ def ajustar_inicio_sem_silencio(palavras: list[dict], inicio_corte: float, fim_c
 
 
 def normalizar_cortes(raw: str) -> list[dict]:
-    data = json.loads(raw)
+    data = json.loads(decode_cuts_json(raw))
     cortes = data if isinstance(data, list) else data.get("cortes", [])
     if not isinstance(cortes, list) or not cortes:
         raise ValueError("Nenhum corte encontrado no pacote.")
@@ -78,6 +124,12 @@ def normalizar_cortes(raw: str) -> list[dict]:
         else:
             tags_formatadas = str(tags or "").strip()
 
+        if "editorial" in corte:
+            try:
+                editorial = normalize_editorial_plan(corte["editorial"], clip_start=inicio, clip_end=fim)
+            except ValueError as exc:
+                raise ValueError(f"Corte {idx}: {exc}") from exc
+
         saida.append(
             {
                 "titulo": titulo,
@@ -90,6 +142,7 @@ def normalizar_cortes(raw: str) -> list[dict]:
                 "hashtags": tags_formatadas,
                 "tags": tags,
                 "saida_suave": bool(corte.get("saida_suave", True)),
+                **({"editorial": editorial} if "editorial" in corte else {}),
             }
         )
     return saida
@@ -104,6 +157,8 @@ def main() -> int:
     parser.add_argument("--cuts-json", required=True)
     parser.add_argument("--workdir", default=".work")
     parser.add_argument("--output", default="output")
+    parser.add_argument("--cut-mode", choices=("simple", "editorial"), default="simple")
+    parser.add_argument("--editorial-cache-root", default=".editorial-cache")
     parser.add_argument("--lower-third-mode", choices=("off", "cover", "crop"), default="off")
     parser.add_argument("--lower-third-height", type=float, default=0.0)
     args = parser.parse_args()
@@ -114,10 +169,23 @@ def main() -> int:
     work.mkdir(parents=True, exist_ok=True)
     out.mkdir(parents=True, exist_ok=True)
 
+    cleanup_work = True
     heartbeat = start_heartbeat()
     try:
         cortes = normalizar_cortes(args.cuts_json)
         total = len(cortes)
+        cache = Path(args.editorial_cache_root).resolve()
+        if args.cut_mode == "editorial":
+            # Validate the entire package before looking for a key or touching Drive.
+            for index, corte in enumerate(cortes, 1):
+                if "editorial" not in corte:
+                    raise ValueError(f"Corte {index}: o modo editorial exige um plano editorial version: 1 em todos os cortes.")
+            if cache == work or work in cache.parents:
+                # A rejected path must not delete already accepted voice files.
+                cleanup_work = False
+                raise ValueError("O cache editorial deve ficar fora do diretório temporário de trabalho.")
+            if not os.environ.get("GEMINI_API_KEY", "").strip():
+                raise RuntimeError("GEMINI_API_KEY precisa estar configurada para gerar cortes autorais.")
         uploader = uploader_por_env()
         if uploader is None:
             raise RuntimeError("Google Drive não está configurado no GitHub Actions.")
@@ -144,6 +212,7 @@ def main() -> int:
 
         palavras_globais = carregar_palavras(transcricao_json)
         resultados: list[dict] = []
+        errors: list[dict] = []
         faixa = 85.0 / total
 
         for i, corte in enumerate(cortes, start=1):
@@ -153,14 +222,23 @@ def main() -> int:
             destino = corte.get("destino", "reels_tiktok")
 
             # Ajuste dinâmico para o som coincidir rigorosamente com os primeiros ~100ms do corte
-            inicio_efetivo = ajustar_inicio_sem_silencio(
+            inicio_efetivo = corte["inicio"] if args.cut_mode == "editorial" else ajustar_inicio_sem_silencio(
                 palavras_globais, corte["inicio"], corte["fim"]
             )
             usar_fade_visual = not corte.get("saida_suave", True)
 
             limpar_arquivos = []
 
-            if formato == "16:9":
+            if args.cut_mode == "editorial":
+                emit("tracking", base_inicio, f"Montando vídeo autoral {i}/{total}: {corte['titulo']}", cut=i, total_cuts=total)
+                try:
+                    arquivos, limpar_arquivos = _editorial_assets(
+                        video, transcricao_json, corte, i, out, work, cache, lower_third,
+                    )
+                except Exception as exc:
+                    _cut_error(errors, corte, i, total, base_inicio + faixa, exc)
+                    continue
+            elif formato == "16:9":
                 prefixo = f"corte_{i:02d}_{titulo_arquivo}_16x9"
                 video_16x9 = out / f"{prefixo}.mp4"
 
@@ -279,16 +357,22 @@ def main() -> int:
 
             ids: dict[str, str] = {}
 
-            for pos, (chave, arquivo) in enumerate(arquivos, start=1):
-                file_id = uploader.upload(arquivo, folder_id=args.folder_id)
-                ids[chave] = file_id
-                emit(
-                    "drive",
-                    base_inicio + faixa * (0.68 + 0.30 * (pos / len(arquivos))),
-                    f"Corte {i}/{total}: arquivo {pos}/{len(arquivos)} salvo",
-                    cut=i,
-                    total_cuts=total,
-                )
+            try:
+                for pos, (chave, arquivo) in enumerate(arquivos, start=1):
+                    file_id = uploader.upload(arquivo, folder_id=args.folder_id)
+                    ids[chave] = file_id
+                    emit(
+                        "drive",
+                        base_inicio + faixa * (0.68 + 0.30 * (pos / len(arquivos))),
+                        f"Corte {i}/{total}: arquivo {pos}/{len(arquivos)} salvo",
+                        cut=i,
+                        total_cuts=total,
+                    )
+            except Exception as exc:
+                if args.cut_mode == "simple":
+                    raise
+                _cut_error(errors, corte, i, total, base_inicio + faixa, exc)
+                continue
 
             files_dict = {
                 "video": {
@@ -348,7 +432,18 @@ def main() -> int:
             "driveFolderUrl": f"https://drive.google.com/drive/folders/{args.folder_id}",
             "cuts": resultados,
         }
-        completed(f"{total} cortes concluídos e salvos no Drive", result)
+        if args.cut_mode == "editorial":
+            result.update(errors=errors, requestedCount=total, completedCount=len(resultados))
+            (out / "render-batch-result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+            detail = f"{len(resultados)}/{total} cortes autorais salvos no Drive"
+            if errors:
+                detail += f"; {len(errors)} falhou/falharam"
+            if not resultados:
+                emit("erro", 100.0, detail, status="error", result=result, error=detail)
+                return 1
+            completed(detail, result)
+        else:
+            completed(f"{total} cortes concluídos e salvos no Drive", result)
         return 0
     except Exception as exc:
         failed("Falha ao gerar os cortes", str(exc))
@@ -356,7 +451,8 @@ def main() -> int:
     finally:
         heartbeat.set()
         try:
-            shutil.rmtree(work, ignore_errors=True)
+            if cleanup_work:
+                shutil.rmtree(work, ignore_errors=True)
         except Exception:
             pass
 

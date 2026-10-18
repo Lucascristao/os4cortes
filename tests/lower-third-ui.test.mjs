@@ -11,7 +11,7 @@ const originalUrl = 'https://www.youtube.com/watch?v=PMGxFRAea_I';
 const otherUrl = 'https://youtu.be/X3HOegrwb8U';
 const session = (extra = {}) => ({
   folderId: 'folder', videoFileId: 'video', transcriptJsonFileId: 'transcript',
-  transcript: 'Texto de teste', videoUrl: originalUrl, hasLowerThird: true, ...extra,
+  transcript: 'Texto de teste', videoUrl: originalUrl, hasLowerThird: true, simpleCuts: true, ...extra,
 });
 
 class Element {
@@ -162,4 +162,30 @@ test('recarregar durante a transcrição mantém a configuração do vídeo pend
   assert.equal(h.get('#videoUrl').value, originalUrl);
   assert.equal(h.get('#hasLowerThird').checked, true);
   await flush();
+});
+
+test('recarregar transcrição restaura o modo simples salvo no job sem mudar a tarja', async () => {
+  const h = harness({ [JOB]: JSON.stringify({ id: 'request', kind: 'transcribe', videoUrl: originalUrl, hasLowerThird: false, simpleCuts: true, timestamp: Date.now() }) });
+  h.context.retomarJob();
+  assert.equal(h.get('#simpleCuts').checked, true);
+  assert.equal(h.get('#hasLowerThird').checked, false);
+  await flush();
+});
+
+test('conclusão mantém o modo escolhido no job local quando servidor não o informa', async () => {
+  const h = harness({ [JOB]: JSON.stringify({ id: 'request', kind: 'transcribe', videoUrl: originalUrl, simpleCuts: true }) });
+  h.state.job = { status: 'completed', stage: 'concluido', result: session({ simpleCuts: undefined }) };
+  h.context.acompanharJob('request', 'transcribe');
+  await flush();
+  assert.equal(h.saved().simpleCuts, true);
+  assert.equal(h.get('#simpleCuts').checked, true);
+});
+
+test('modo autoral explícito no job concluído prevalece sobre modo simples local', async () => {
+  const h = harness({ [JOB]: JSON.stringify({ id: 'request', kind: 'transcribe', videoUrl: originalUrl, simpleCuts: true }) });
+  h.state.job = { status: 'completed', stage: 'concluido', simpleCuts: false, result: session() };
+  h.context.acompanharJob('request', 'transcribe');
+  await flush();
+  assert.equal(h.saved().simpleCuts, false);
+  assert.equal(h.get('#simpleCuts').checked, false);
 });

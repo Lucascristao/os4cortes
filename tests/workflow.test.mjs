@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { setEnvironmentContext, connectLambda } from '@netlify/blobs';
 import setup from '../netlify/functions/github-setup.mts';
 import start from '../netlify/functions/workflow-start.mts';
@@ -26,6 +28,33 @@ function cookie(email='owner@example.test') {
 }
 function req(path,method='GET',body,session=cookie()) {
  return new Request('https://os4.example.test/.netlify/functions/'+path,{method,headers:{cookie:session,'content-type':'application/json'},...(body!==undefined?{body:JSON.stringify(body)}:{})});
+}
+
+function narratedCut() {
+ return {
+  titulo:'O que essa resposta esclarece?',inicio:'00:10',fim:'00:30',formato:'9:16',saida_suave:false,
+  editorial:{
+   version:1,source:{label:'Entrevista original',date:'2026-10-18'},
+   scenes:[
+    {id:'opening',kind:'narration',text:'O que essa resposta esclarece?',background:{start:10,end:15},
+     visual:{title:'O que foi dito?',kicker:'SEGUNDO A FONTE',lines:['Veja a resposta']},
+     tts:{delivery:'question',cues:[]},evidence:[{start:15,end:25}]},
+    {id:'answer',kind:'clip',start:15,end:25},
+   ],
+   extension:{reviewed:true},
+  },
+ };
+}
+function renderBody(extra={}) {
+ return {kind:'render',folderId:'editorial-mode-folder',videoFileId:'source',transcriptJsonFileId:'transcript',
+  cuts:[{titulo:'Corte legado',inicio:'00:10',fim:'00:30',formato:'9:16'}],...extra};
+}
+const transportFixture=JSON.parse(fs.readFileSync(new URL('./fixtures/editorial-transport-40.json',import.meta.url),'utf8'));
+function fortyEditorialCuts() {
+ return Array.from({length:transportFixture.count},(_,index)=>({
+  ...structuredClone(transportFixture.template),
+  titulo:`Corte ${String(index+1).padStart(2,'0')}: ${transportFixture.template.titulo}`,
+ }));
 }
 globalThis.fetch=async (input,options={})=>{
  const url=new URL(String(input));
@@ -213,6 +242,209 @@ test('render lower-third mode and height are derived exclusively from the video 
  assert.equal(response.status,202);
  assert.equal(dispatches.at(-1).inputs.lower_third_mode,'crop');
  assert.equal(dispatches.at(-1).inputs.lower_third_height,'0.30');
+});
+
+test('simple-cut flag accepts only booleans and invalid values never dispatch or create jobs',async()=>{
+ const before=dispatches.length;
+ const recordsBefore=records.size;
+ for(const body of [renderBody(),{kind:'transcribe',videoUrl:'https://youtu.be/PMGxFRAea_I'}]) {
+  for(const simpleCuts of ['true','false','editorial','',1,0,null,{},[]]) {
+   const response=await start(req('workflow-start','POST',{...body,simpleCuts}),context);
+   assert.equal(response.status,400,`${body.kind}: ${JSON.stringify(simpleCuts)}`);
+   assert.match((await response.json()).error,/corte simples/);
+  }
+ }
+ assert.equal(dispatches.length,before);
+ assert.equal(records.size,recordsBefore);
+});
+
+test('explicit editorial mode rejects a legacy package before dispatch',async()=>{
+ const before=dispatches.length;
+ const recordsBefore=records.size;
+ const response=await start(req('workflow-start','POST',renderBody({simpleCuts:false})),context);
+ assert.equal(response.status,400);
+ assert.match((await response.json()).error,/Corte 1:.*plano editorial/);
+ assert.equal(dispatches.length,before);
+ assert.equal(records.size,recordsBefore);
+});
+
+test('editorial mode preserves the full plan and sends its mode independently of source lower thirds',async()=>{
+ const cuts=[narratedCut()];
+ for(const hasLowerThird of [false,true]) {
+  const response=await start(req('workflow-start','POST',renderBody({cuts,simpleCuts:false,hasLowerThird})),context);
+  assert.equal(response.status,202);
+  const {requestId}=await response.json();
+  const {inputs}=dispatches.at(-1);
+  assert.equal(inputs.cut_mode,'editorial');
+  assert.equal(inputs.lower_third_mode,hasLowerThird?'crop':'off');
+  assert.equal(inputs.lower_third_height,hasLowerThird?'0.30':'0');
+  assert.deepEqual(JSON.parse(inputs.cuts_json),cuts);
+  const job=await blobStore('os4-jobs',context).get(requestId,{type:'json'});
+  assert.equal(job.simpleCuts,false);
+  assert.equal(job.hasLowerThird,hasLowerThird);
+  assert.equal(job.totalCuts,1);
+ }
+});
+
+test('simple mode accepts legacy cuts and removes supplied editorial data without changing other fields',async()=>{
+ const legacy=renderBody().cuts[0];
+ const original=narratedCut();
+ const expected={...original};delete expected.editorial;
+ for(const cuts of [[legacy],[original],[{...original,editorial:null}]]) {
+  const response=await start(req('workflow-start','POST',renderBody({cuts,simpleCuts:true})),context);
+  assert.equal(response.status,202);
+  const {requestId}=await response.json();
+  const {inputs}=dispatches.at(-1);
+  assert.equal(inputs.cut_mode,'simple');
+  assert.deepEqual(JSON.parse(inputs.cuts_json),cuts[0]===legacy?[legacy]:[expected]);
+  assert.equal(Object.hasOwn(JSON.parse(inputs.cuts_json)[0],'editorial'),false);
+  assert.equal((await blobStore('os4-jobs',context).get(requestId,{type:'json'})).simpleCuts,true);
+ }
+ assert.equal(Object.hasOwn(original,'editorial'),true,'Request objects must not be mutated when stripping plans');
+});
+
+test('omitted mode remains compatible with old clients and never enables narration from the plan alone',async()=>{
+ const narrated=narratedCut();
+ const cuts=[renderBody().cuts[0],narrated];
+ const response=await start(req('workflow-start','POST',renderBody({cuts})),context);
+ assert.equal(response.status,202);
+ const {requestId}=await response.json();
+ const {inputs}=dispatches.at(-1);
+ const expected=narratedCut();delete expected.editorial;
+ assert.equal(inputs.cut_mode,'simple');
+ assert.deepEqual(JSON.parse(inputs.cuts_json),[cuts[0],expected]);
+ assert.equal((await blobStore('os4-jobs',context).get(requestId,{type:'json'})).simpleCuts,true);
+});
+
+test('malformed or out-of-bounds editorial scenes are rejected before starting a runner',async()=>{
+ const before=dispatches.length;
+ const recordsBefore=records.size;
+ const changes=[
+  cut=>{cut.editorial=null;},
+  cut=>{cut.editorial.version='1';},
+  cut=>{cut.editorial.scenes.push(null);},
+  cut=>{cut.editorial.scenes.push({id:'unknown',kind:'command'});},
+  cut=>{cut.editorial.scenes[1].id='opening';},
+  cut=>{cut.editorial.scenes[1].end=31;},
+  cut=>{cut.editorial.scenes[0].background.start=9;},
+  cut=>{cut.editorial.scenes[0].evidence=[];},
+  cut=>{cut.editorial.scenes[0].evidence[0].end=31;},
+  cut=>{cut.editorial.scenes[0].visual.title='';},
+ ];
+ for(const change of changes) {
+  const cut=narratedCut();change(cut);
+  const response=await start(req('workflow-start','POST',renderBody({cuts:[cut],simpleCuts:false})),context);
+  assert.equal(response.status,400);
+  assert.match((await response.json()).error,/Corte 1:.*plano editorial/);
+ }
+ assert.equal(dispatches.length,before);
+ assert.equal(records.size,recordsBefore);
+});
+
+test('transcription ignores render mode for workflow inputs while preserving the selected boolean in the job',async()=>{
+ const response=await start(req('workflow-start','POST',{kind:'transcribe',videoUrl:'https://youtu.be/PMGxFRAea_I',simpleCuts:false}),context);
+ assert.equal(response.status,202);
+ const {requestId}=await response.json();
+ assert.deepEqual(Object.keys(dispatches.at(-1).inputs).sort(),['callback_url','request_id','video_url']);
+ assert.equal((await blobStore('os4-jobs',context).get(requestId,{type:'json'})).simpleCuts,false);
+});
+
+test('forty editorial plans cross dispatch losslessly through the shared Python gzip transport fixture',async()=>{
+ const cuts=fortyEditorialCuts();
+ const raw=JSON.stringify(cuts);
+ assert.ok(raw.length>60000);
+ assert.ok(Buffer.byteLength(raw,'utf8')<512000);
+ const response=await start(req('workflow-start','POST',renderBody({cuts,simpleCuts:false})),context);
+ assert.equal(response.status,202);
+ const {requestId}=await response.json();
+ const {inputs}=dispatches.at(-1);
+ assert.equal(inputs.cut_mode,'editorial');
+ assert.ok(inputs.cuts_json.startsWith('gzip-base64:'));
+ assert.ok(inputs.cuts_json.length<=60000);
+ const unpack=value=>gunzipSync(Buffer.from(value.slice('gzip-base64:'.length),'base64')).toString('utf8');
+ assert.equal(unpack(inputs.cuts_json),raw);
+ assert.equal(unpack(inputs.cuts_json),unpack(transportFixture.transport));
+ assert.deepEqual(JSON.parse(unpack(inputs.cuts_json)),cuts);
+ const job=await blobStore('os4-jobs',context).get(requestId,{type:'json'});
+ assert.equal(job.totalCuts,40,'Counting cuts must not parse compressed workflow input as JSON');
+});
+
+test('editorial size limits count UTF-8 bytes and reject transport that stays too large after gzip',async()=>{
+ const before=dispatches.length;
+ const recordsBefore=records.size;
+ const overRaw=narratedCut();overRaw.legenda_post='á'.repeat(260000);
+ assert.ok(JSON.stringify([overRaw]).length<512000);
+ assert.ok(Buffer.byteLength(JSON.stringify([overRaw]),'utf8')>512000);
+ let response=await start(req('workflow-start','POST',renderBody({cuts:[overRaw],simpleCuts:false})),context);
+ assert.equal(response.status,400);
+ assert.match((await response.json()).error,/512000 bytes/);
+ const overTransport=narratedCut();
+ overTransport.legenda_post=crypto.randomBytes(50000).toString('base64');
+ response=await start(req('workflow-start','POST',renderBody({cuts:[overTransport],simpleCuts:false})),context);
+ assert.equal(response.status,400);
+ assert.match((await response.json()).error,/60000 caracteres após compressão/);
+ assert.equal(dispatches.length,before);
+ assert.equal(records.size,recordsBefore);
+});
+
+test('editorial Unicode below the character limit is compressed when UTF-8 bytes exceed the safe argument size',async()=>{
+ const cut=narratedCut();cut.legenda_post='漢'.repeat(50000);
+ const raw=JSON.stringify([cut]);
+ assert.ok(raw.length<60000);
+ assert.ok(Buffer.byteLength(raw,'utf8')>128*1024);
+ const response=await start(req('workflow-start','POST',renderBody({cuts:[cut],simpleCuts:false})),context);
+ assert.equal(response.status,202);
+ const transport=dispatches.at(-1).inputs.cuts_json;
+ assert.ok(transport.startsWith('gzip-base64:'));
+ assert.ok(transport.length<=60000);
+ assert.equal(gunzipSync(Buffer.from(transport.slice('gzip-base64:'.length),'base64')).toString('utf8'),raw);
+ // The legacy mode deliberately retains its original character-based limit.
+ const simple=await start(req('workflow-start','POST',renderBody({cuts:[cut],simpleCuts:true})),context);
+ assert.equal(simple.status,202);
+ const expected={...cut};delete expected.editorial;
+ assert.deepEqual(JSON.parse(dispatches.at(-1).inputs.cuts_json),[expected]);
+});
+
+test('simple cuts keep the original 60000-character limit without automatic compression',async()=>{
+ const before=dispatches.length;
+ const recordsBefore=records.size;
+ const cut=renderBody().cuts[0];cut.legenda_post='texto '.repeat(11000);
+ for(const flag of [{simpleCuts:true},{}]) {
+  const response=await start(req('workflow-start','POST',renderBody({cuts:[cut],...flag})),context);
+  assert.equal(response.status,400);
+  assert.equal((await response.json()).error,'O pacote de cortes ficou grande demais. Reduza os textos do pacote.');
+ }
+ assert.equal(dispatches.length,before);
+ assert.equal(records.size,recordsBefore);
+});
+
+test('terminal callbacks preserve editorial failure details and partial counters through authenticated polling',async()=>{
+ for(const completedCount of [1,0]) {
+  const cuts=[narratedCut(),narratedCut()];
+  const response=await start(req('workflow-start','POST',renderBody({cuts,simpleCuts:false})),context);
+  assert.equal(response.status,202);
+  const {requestId}=await response.json();
+  const ready={index:1,titulo:cuts[0].titulo,formato:'9:16',files:{videoLegenda:{id:'final-editorial'},post:{id:'post-editorial'}}};
+  const result={cuts:completedCount?[ready]:[],requestedCount:2,completedCount,
+   errors:cuts.slice(completedCount).map((cut,index)=>({index:index+completedCount+1,titulo:cut.titulo,error:'Falha controlada no áudio deste corte'}))};
+  const callback={request_id:requestId,token:crypto.createHmac('sha256',callbackSecret).update('os4-progress:'+requestId).digest('hex'),
+   status:completedCount?'completed':'error',stage:completedCount?'concluido':'erro',percent:100,result};
+  assert.equal((await progress(req('workflow-progress','POST',callback),context)).status,200);
+  await progress(req('workflow-progress','POST',{...callback,status:'running',result:{cuts:[]}}),context);
+  const job=(await (await status(req('workflow-status?id='+requestId),context)).json()).job;
+  assert.equal(job.status,completedCount?'completed':'error');
+  assert.equal(job.totalCuts,2);
+  assert.deepEqual(job.result,result,'Terminal polling must retain the failure list and both original counters');
+  const folderId=renderBody().folderId;
+  const feed=await (await publisherFolder(new Request(`https://os4.example.test/.netlify/functions/publisher-folder?folderId=${folderId}`,
+   {headers:{Authorization:`Bearer ${publisherToken(callbackSecret,folderId)}`}}),context)).json();
+  assert.equal(feed.requestedCount,2);
+  assert.equal(feed.completedCount,completedCount);
+  assert.equal(feed.failedCount,2-completedCount);
+  assert.equal(feed.readyCount,completedCount);
+  assert.deepEqual(feed.cuts.map(cut=>cut.index),completedCount?[1]:[]);
+  assert.equal(feed.errors,undefined,'Folder capability exposes counts without narration diagnostics');
+ }
 });
 
 
