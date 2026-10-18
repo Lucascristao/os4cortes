@@ -88,7 +88,7 @@ def ajustar_inicio_sem_silencio(palavras: list[dict], inicio_corte: float, fim_c
     return inicio_corte
 
 
-def normalizar_cortes(raw: str) -> list[dict]:
+def normalizar_cortes(raw: str, *, cut_mode: str | None = None) -> list[dict]:
     data = json.loads(decode_cuts_json(raw))
     cortes = data if isinstance(data, list) else data.get("cortes", [])
     if not isinstance(cortes, list) or not cortes:
@@ -105,12 +105,23 @@ def normalizar_cortes(raw: str) -> list[dict]:
         if fim <= inicio:
             raise ValueError(f"Corte {idx}: fim precisa ser maior que início.")
 
-        duracao = fim - inicio
+        if "editorial" in corte:
+            try:
+                editorial = normalize_editorial_plan(corte["editorial"], clip_start=inicio, clip_end=fim)
+            except ValueError as exc:
+                raise ValueError(f"Corte {idx}: {exc}") from exc
+        if "editorial" in corte and cut_mode != "simple":
+            # Only source excerpts count toward the OS4 vertical limit, not voice,
+            # backgrounds, evidence, or the source envelope. Replays count again.
+            duracao = round(sum(scene["end"] - scene["start"] for scene in editorial["scenes"]
+                                if scene["kind"] == "clip"), 6)
+        else:
+            duracao = round(fim - inicio, 6)
         formato = str(corte.get("formato") or "").strip().lower()
         destino = str(corte.get("destino") or corte.get("plataforma") or "").strip().lower()
 
         # Roteamento automático de formato
-        if destino == "youtube" or formato == "16:9" or (duracao >= 180 and formato != "9:16"):
+        if destino == "youtube" or formato == "16:9" or duracao > 180:
             formato = "16:9"
             destino = "youtube"
         else:
@@ -123,12 +134,6 @@ def normalizar_cortes(raw: str) -> list[dict]:
             tags_formatadas = " ".join(str(x).strip() for x in tags if str(x).strip())
         else:
             tags_formatadas = str(tags or "").strip()
-
-        if "editorial" in corte:
-            try:
-                editorial = normalize_editorial_plan(corte["editorial"], clip_start=inicio, clip_end=fim)
-            except ValueError as exc:
-                raise ValueError(f"Corte {idx}: {exc}") from exc
 
         saida.append(
             {
@@ -172,7 +177,7 @@ def main() -> int:
     cleanup_work = True
     heartbeat = start_heartbeat()
     try:
-        cortes = normalizar_cortes(args.cuts_json)
+        cortes = normalizar_cortes(args.cuts_json, cut_mode=args.cut_mode)
         total = len(cortes)
         cache = Path(args.editorial_cache_root).resolve()
         if args.cut_mode == "editorial":

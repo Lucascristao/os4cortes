@@ -244,6 +244,106 @@ test('modo simples preserva o prompt anterior sem incluir plano editorial', asyn
   assert.doesNotMatch(h.copied[0], /"editorial"/);
 });
 
+test('prompts delegam seleção à IA e pedem ideia completa com apelo sem faixas de duração', async () => {
+  for (const simpleCuts of [false, true]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session({ simpleCuts }));
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const prompt = h.copied[0];
+    assert.match(prompt, /automaticamente/);
+    assert.match(prompt, /apelo viral ou curioso sustentado pelo material/);
+    assert.match(prompt, /frase solta/);
+    assert.match(prompt, /história (?:completa, mas banal|banal)/);
+    assert.match(prompt, /180 segundos/);
+    assert.match(prompt, /duração mínima numérica/);
+    assert.doesNotMatch(prompt, /25 a 60|60 a 120|120 a 175|limite máximo: 175|65[–-]85|4 a 20 minutos|25 a 30 minutos/);
+    assert.equal(h.confirmations.length, 0);
+    assert.equal(h.requests.some(request => /review|editorial-check|generate-script/.test(request.path)), false);
+    if (!simpleCuts) {
+      assert.match(prompt, /A narração acrescentada NÃO entra nesse limite/);
+      assert.match(prompt, /vídeo vertical pronto pode passar de 3 minutos/);
+      assert.match(prompt, /some end - start somente das cenas kind: "clip"/);
+      assert.match(prompt, /scenes pertence ao objeto editorial/);
+    }
+  }
+});
+
+test('roteamento usa apenas clips: até 180 segundos vertical, acima YouTube, com envelope e narração à parte', async () => {
+  for (const [seconds, expected] of [[179.9, '9:16'], [180, '9:16'], [180.1, '16:9']]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session());
+    const editorial = validPlan();
+    editorial.scenes[0].text = 'Uma observação própria sobre a fala, com contexto e desenvolvimento. '.repeat(10);
+    editorial.scenes[0].background = { start: 300, end: 400 };
+    editorial.scenes[0].evidence = [{ start: 10, end: 590 }];
+    editorial.scenes[1] = { id: 'fala', kind: 'clip', start: 10, end: 10 + seconds };
+    await h.import([cut({ inicio: 0, fim: 600, destino: 'reels_tiktok', editorial,
+      legenda_post: 'Crédito e comentário.', hashtags: ['#assunto'] })]);
+    assert.equal(h.cards()[0].dataset.formato, expected);
+    await h.get('#btnGerarCortes').fire('click');
+    assert.equal(h.alerts.length, 0);
+    const sent = starts(h)[0].body.cuts[0];
+    assert.equal(sent.formato, expected);
+    assert.equal(sent.destino, expected === '16:9' ? 'youtube' : 'reels_tiktok');
+    assert.equal(sent.legenda_post, 'Crédito e comentário.');
+    assert.equal(sent.hashtags, '#assunto');
+    assert.deepEqual(sent.editorial, editorial);
+  }
+});
+
+test('clips descontínuos conservam 180 segundos e repetições contam novamente sem inferir pelo envelope', () => {
+  const h = harness();
+  const editorial = validPlan();
+  editorial.scenes[1] = { id: 'fala-1', kind: 'clip', start: 101.7, end: 201.7 };
+  editorial.scenes.push({ id: 'fala-2', kind: 'clip', start: 265.2, end: 345.2 });
+  const raw = cut({ inicio: 0, fim: 600, formato: undefined, editorial });
+  assert.equal(h.context.normalizarPacote([raw])[0].formato, '9:16');
+  editorial.scenes[2] = { id: 'reprise', kind: 'clip', start: 101.7, end: 201.7 };
+  assert.equal(h.context.normalizarPacote([raw])[0].formato, '16:9');
+  assert.equal(h.context.normalizarPacote([cut({ inicio: 0, fim: 600, formato: '16:9', editorial: validPlan() })])[0].formato, '16:9');
+});
+
+test('corte simples usa o trecho original e inclui exatamente três minutos no vertical', () => {
+  const h = harness();
+  for (const [end, expected] of [[189.9, '9:16'], [190, '9:16'], [190.1, '16:9']]) {
+    const normalized = h.context.normalizarPacote([cut({ inicio: 10, fim: end })])[0];
+    assert.equal(normalized.formato, expected);
+    assert.equal(Object.hasOwn(normalized, 'editorial'), false);
+  }
+});
+
+test('trocar para simples sem reimportar usa o intervalo inteiro e atualiza o destino no envio', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao(session());
+  const editorial = validPlan();
+  await h.import([cut({ inicio: 0, fim: 600, editorial, legenda_post: 'Texto e crédito.' })]);
+  assert.equal(h.cards()[0].dataset.formato, '9:16');
+  h.get('#simpleCuts').checked = true;
+  await h.get('#simpleCuts').fire('change');
+  await h.get('#btnGerarCortes').fire('click');
+  assert.equal(h.alerts.length, 0);
+  const sent = starts(h)[0].body;
+  assert.equal(sent.simpleCuts, true);
+  assert.equal(sent.cuts[0].formato, '16:9');
+  assert.equal(sent.cuts[0].destino, 'youtube');
+  assert.equal(sent.cuts[0].descricao, 'Texto e crédito.');
+  assert.equal(h.cards()[0].dataset.formato, '16:9');
+});
+
+test('editar o intervalo simples recalcula o destino sem alterar os tempos digitados', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao(session({ simpleCuts: true }));
+  await h.import([cut({ inicio: 10, fim: 170, legenda_post: 'Texto e crédito.' })]);
+  h.cards()[0].querySelector('[data-field="fim"]').value = '03:20';
+  await h.get('#btnGerarCortes').fire('click');
+  assert.equal(h.alerts.length, 0);
+  const sent = starts(h)[0].body.cuts[0];
+  assert.equal(sent.fim, '03:20');
+  assert.equal(sent.formato, '16:9');
+  assert.equal(sent.destino, 'youtube');
+  assert.equal(sent.descricao, 'Texto e crédito.');
+});
+
 test('prompt autoral dá personalidade e adapta comentário e interpretação a cada contexto', async () => {
   const h = harness();
   h.context.mostrarTranscricao(session());

@@ -31,7 +31,7 @@ O workflow também usa `simple` quando `cut_mode` é omitido em um disparo manua
 Vídeo escolhido pelo usuário
   -> transcrição e vídeo-base no Drive
   -> prompt do modo escolhido copiado pelo usuário para uma IA
-  -> pacote JSON importado e editado no navegador
+  -> pacote JSON pronto importado no navegador (edição opcional)
   -> workflow-start valida modo, plano e limite do pacote
   -> renderizar.yml / cuts_json JSON ou gzip-base64 / cut_mode
   -> render_batch decodifica e valida o pacote inteiro
@@ -42,6 +42,8 @@ Vídeo escolhido pelo usuário
 ```
 
 O usuário já mantém controle sobre o vídeo de origem, títulos e intervalos. Gerar automaticamente o roteiro e a montagem de cada corte não exige delegar a escolha desses assuntos a uma plataforma externa.
+
+A IA externa escolhe automaticamente pauta, ângulo, trechos e contribuição a partir da transcrição, com ideia completa e apelo viral ou curioso. Uma frase solta ou história banal sem gancho não preenche o lote. Não é necessário um briefing, uma escolha manual de alvo ou aprovação editorial por corte.
 
 | Passagem | Comportamento implementado localmente |
 | --- | --- |
@@ -70,6 +72,8 @@ Manter os campos legados e acrescentar um objeto editorial por corte no modo aut
 O campo editorial carrega a intenção revisável: versão de formato, IDs de cenas, tom de narração, falas, intervalos de áudio original, textos visuais e referências na transcrição. O contrato inicial em `processor/editorial_plan.py` usa `editorial.version: 1` e os tipos `kind: narration` e `kind: clip`:
 
 `inicio` e `fim` delimitam o envelope da fonte: o menor início e o maior fim entre clipes, fundos e evidências usados naquele corte. Eles não são a duração final do minivídeo. A duração final resulta dos trechos escolhidos e dos áudios realmente gerados. O pacote especifica `formato` e `destino` de cada corte; a extensão desse envelope não decide o formato autoral por conta própria.
+
+A regra editorial do OS4 não impõe mínimo numérico, alvo ou faixas de duração. O mínimo é uma ideia completa com contexto, desenvolvimento e desfecho. O limite vertical é de 180 segundos de conteúdo original: somar `end - start` somente das cenas `kind: clip`, incluindo repetições reproduzidas. A narração acrescentada, fundos, evidências e envelope ficam fora desse limite; o vertical pronto pode ultrapassar três minutos. No simples, contar `fim - inicio`. O navegador e `normalizar_cortes` encaminham automaticamente conteúdo original acima de 180 segundos para `16:9`/`youtube`, inclusive se a IA tiver indicado vertical. Exatamente 180 segundos ainda pode permanecer vertical, e uma escolha explícita de horizontal permanece horizontal. A decisão ocorre antes da montagem, mantendo nomes de arquivos, geometria, post e destino do Publicador coerentes; a duração medida dos WAVs não reclassifica o corte.
 
 Tempos fracionários são preservados até milissegundos na importação: `101.7` equivale a `00:01:41.7`, sem arredondar para o segundo inteiro. Intervalos fora de início/fim recebem diagnóstico de cena e campo antes da execução; um plano existente não é descrito como ausente por causa de um erro de tempo.
 

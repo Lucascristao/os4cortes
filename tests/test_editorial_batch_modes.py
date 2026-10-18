@@ -163,6 +163,28 @@ class EditorialBatchModesTests(unittest.TestCase):
             self.assertNotIn("errors", h.completed.call_args.args[1])
             self.assertIn("2 cortes concluídos", h.completed.call_args.args[0])
 
+    def test_selected_mode_controls_routing_when_a_simple_package_contains_an_incidental_plan(self):
+        value = cut()
+        value.update(inicio=0, fim=600)
+        for mode in (None, "simple", "editorial"):
+            is_editorial = mode == "editorial"
+            with self.subTest(mode=mode), Harness([value], mode=mode, key="unit-test-key" if is_editorial else "") as h:
+                self.assertEqual(batch.main(), 0)
+                result = h.completed.call_args.args[1]["cuts"][0]
+                if is_editorial:
+                    h.renderer.assert_called_once()
+                    h.cinematic.assert_not_called()
+                    self.assertEqual(h.renderer.call_args.kwargs["aspect"], "9:16")
+                    self.assertEqual((result["formato"], result["destino"]), ("9:16", "reels_tiktok"))
+                else:
+                    h.renderer.assert_not_called()
+                    h.cinematic.assert_called_once()
+                    self.assertEqual(h.cinematic.call_args.args[1:3], (0.0, 600.0))
+                    batch.garantir_archivo_black.assert_not_called()
+                    self.assertFalse(list(h.cache.rglob("accepted.wav")))
+                    self.assertEqual((result["formato"], result["destino"]), ("16:9", "youtube"))
+                h.tracking.assert_not_called()
+
     def test_explicit_simple_keeps_legacy_fail_fast(self):
         with Harness([cut(editorial=False), cut(editorial=False)], mode="simple", key="") as h:
             h.tracking.side_effect = RuntimeError("legacy render failed")
@@ -204,6 +226,57 @@ class EditorialBatchModesTests(unittest.TestCase):
             self.assertEqual(result["errors"], [])
             for row in result["cuts"]:
                 self.assertEqual(row["files"]["videoLegenda"], row["files"]["video"])
+
+    def test_original_duration_routes_render_posts_uploads_and_ready_results_together(self):
+        cuts = []
+        for index, duration in enumerate((179.9, 180, 180.1), 1):
+            value = cut()
+            value.update(titulo=f"História completa {index}", inicio=0, fim=900,
+                         destino="reels_tiktok", legenda_post=f"Legenda vertical {index}.",
+                         descricao=f"Descrição YouTube {index}.", tags=[f"palavra {index}"])
+            value["editorial"]["scenes"][0].update(
+                text="Uma contribuição própria completa que acompanha o contexto da fala. " * 18,
+                background={"start": 800, "end": 900}, evidence=[{"start": 800, "end": 900}],
+            )
+            value["editorial"]["scenes"][1].update(start=10, end=10 + duration)
+            cuts.append(value)
+
+        with Harness(cuts, mode="editorial") as h:
+            self.assertEqual(batch.main(), 0)
+            self.assertEqual(h.renderer.call_count, 3)
+            h.tracking.assert_not_called()
+            h.cinematic.assert_not_called()
+            result = h.completed.call_args.args[1]
+            self.assertEqual(result["errors"], [])
+            self.assertEqual(result["completedCount"], 3)
+            expected_aspects = ("9:16", "9:16", "16:9")
+            for index, (call, row, aspect) in enumerate(zip(h.renderer.call_args_list, result["cuts"], expected_aspects), 1):
+                self.assertEqual(call.kwargs["aspect"], aspect)
+                self.assertEqual(row["formato"], aspect)
+                self.assertEqual(row["destino"], "youtube" if aspect == "16:9" else "reels_tiktok")
+                self.assertEqual(row["files"]["videoLegenda"], row["files"]["video"])
+
+                def uploaded_file(kind):
+                    upload_index = int(row["files"][kind]["id"].removeprefix("file-")) - 1
+                    return h.uploader.uploads[upload_index]
+
+                video = uploaded_file("video")
+                self.assertEqual(video["name"], Path(call.args[3]).name)
+                self.assertTrue(video["name"].endswith("_16x9.mp4" if aspect == "16:9" else "_legenda.mp4"))
+                self.assertEqual(video["folder"], "folder")
+                post = uploaded_file("post")
+                self.assertTrue(post["name"].endswith("_16x9_post.txt" if aspect == "16:9" else "_post.txt"))
+                post_text = post["data"].decode("utf-8")
+                self.assertIn(cuts[index - 1]["titulo"], post_text)
+                self.assertIn(f"Descrição YouTube {index}." if aspect == "16:9" else f"Legenda vertical {index}.", post_text)
+                if aspect == "16:9":
+                    self.assertIn(f"Tags / Palavras-chave: palavra {index}", post_text)
+                    self.assertNotIn(f"Legenda vertical {index}.", post_text)
+
+            ready_rows = [call.kwargs["ready_cut"] for call in h.emit.call_args_list if "ready_cut" in call.kwargs]
+            self.assertEqual(ready_rows, result["cuts"])
+            persisted = json.loads((h.out/"render-batch-result.json").read_text(encoding="utf-8"))
+            self.assertEqual(persisted["cuts"], result["cuts"])
 
     def test_one_editorial_failure_preserves_accepted_voice_and_continues_batch(self):
         with Harness([cut(label="Falha"), cut(label="Aceita")], mode="editorial") as h:

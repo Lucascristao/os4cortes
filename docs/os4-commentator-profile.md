@@ -2,6 +2,8 @@
 
 Direção fixada em 18/10/2026 conforme as preferências do canal. Este perfil acompanha o prompt autoral, a intenção no pacote e as instruções de interpretação. A conferência de calibração é inicial; não há aprovação humana obrigatória nem uma chamada adicional de revisão semântica por vídeo.
 
+A IA escolhe automaticamente os cortes, a pauta, o ângulo, a relação com a fonte e a contribuição de cada roteiro. O fluxo continua vídeo → prompt → IA externa → JSON → geração; o usuário não precisa elaborar um briefing por corte. A seleção exige uma ideia completa e apelo viral ou curioso sustentado pela fonte. Uma frase solta ou uma história banal sem gancho deve ser descartada, sem inventar fatos ou forçar uma quantidade de cortes.
+
 ## Personalidade constante
 
 Comentarista de direita, de bem com a vida, próximo, seguro, espirituoso e incisivo. Conversa com uma pessoa e acrescenta uma leitura própria. Mantém a voz Charon grave já configurada; ritmo, ênfase, leveza e intensidade acompanham a cena. Convicção política não exige gritos, indignação permanente ou solenidade.
@@ -29,6 +31,7 @@ O novo JSON declara `editorial.intent` com quatro campos: `mode`, `source_point`
 - Apoiar cada afirmação factual nos intervalos de evidência do próprio corte. Um fato de outra parte da transcrição exige referência correspondente e envelope ajustado.
 - No humor, deixar a preparação e a surpresa acontecerem; comentar depois quando a reação acrescentar algo.
 - No horizontal, aprofundar pontos diferentes e bem encadeados. Cada intervenção precisa acrescentar raciocínio; uma conclusão não precisa recontar o vídeo inteiro.
+- Sem duração mínima numérica ou alvo. Até 180 segundos de trechos originais cabe no vertical, inclusive acima de dois minutos; narração acrescentada fica fora desse limite. Acima de 180 segundos de trechos originais, encaminhar como horizontal/YouTube. Fundos, evidências e envelope não determinam essa conta.
 - Perguntar ao público quando a pergunta for específica e natural. Encerrar numa observação ou graça também é válido.
 
 ## Exemplos de calibração
@@ -43,6 +46,6 @@ Os três cenários abaixo são fictícios e não descrevem os participantes do v
 
 ## Como o padrão é executado
 
-O prompt pede à IA uma conferência interna de intenção, foco, contribuição, contexto e ritmo antes de devolver somente o JSON. Isso ocorre na geração externa que o usuário já utiliza. O site e o processador validam o contrato e os intervalos; o sintetizador aplica as direções fixas e lê apenas `text`.
+O prompt pede à IA uma conferência interna de intenção, foco, contribuição, contexto, apelo e ritmo antes de devolver somente o JSON, incluindo coerência do título, textos de tela e legenda com a pauta escolhida. Isso ocorre na geração externa que o usuário já utiliza. O site e o processador validam o contrato e os intervalos; o sintetizador aplica as direções fixas e lê apenas `text`.
 
 Não há treinamento ou garantia de que qualquer modelo sempre produzirá o melhor roteiro. Também não há um classificador semântico secreto, bloqueio por palavras como “mas” ou “prova”, aprovação editorial recorrente ou reescrita silenciosa durante a síntese. O padrão fica no prompt e na política versionada; novos lotes seguem o fluxo normal.

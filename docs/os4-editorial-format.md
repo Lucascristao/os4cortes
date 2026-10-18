@@ -1,12 +1,16 @@
 # Formato editorial do OS4 Cortes
 
-O usuário escolhe o vídeo e pode selecionar, editar ou excluir qualquer corte. A automação prepara propostas, organiza evidências, produz a voz aprovada e monta os arquivos. O OS4 tem uma linha editorial de direita e um comentarista de bem com a vida, próximo e incisivo. Cada proposta acrescenta uma leitura própria sustentada pela fonte e adapta sua linguagem ao assunto.
+O usuário escolhe o vídeo e recebe o prompt para enviar à IA que já utiliza. A IA seleciona os cortes, escolhe pauta, ângulo e contribuição, organiza evidências e devolve o JSON pronto para importar e gerar. Editar ou excluir cortes é opcional; não há briefing nem aprovação humana obrigatória por vídeo. A automação produz a voz e monta os arquivos. O OS4 tem uma linha editorial de direita e um comentarista de bem com a vida, próximo e incisivo. Cada proposta acrescenta uma leitura própria sustentada pela fonte e adapta sua linguagem ao assunto.
 
 ## Uma ideia completa por vídeo
 
-Antes de escrever a locução, definir o ângulo do comentário, a descoberta ou reação que o público receberá e os trechos que a sustentam. O começo dá motivo para continuar; o desenvolvimento preserva a fala relevante e acrescenta uma leitura; o fim entrega a descoberta, opinião ou graça prometida. Essa estrutura não exige três blocos de narração nem uma pergunta em todos os vídeos.
+Antes de escrever a locução, a própria IA define o ângulo do comentário, a descoberta ou reação que o público receberá e os trechos que a sustentam. O começo dá motivo para continuar; o desenvolvimento preserva a fala relevante e acrescenta uma leitura; o fim entrega a descoberta, opinião ou graça prometida. Essa estrutura não exige três blocos de narração nem uma pergunta em todos os vídeos. O mínimo é de conteúdo: contexto, desenvolvimento e desfecho. Uma frase solta, um bordão ou uma reação isolada não bastam, mesmo com narração acrescentada em volta.
 
-O alvo de duração é uma decisão editorial. Para o piloto v2, a faixa é 65–85 segundos, com estimativa de voz a 155 palavras por minuto. A montagem final usa a duração dos WAVs. Não repetir uma explicação, prolongar silêncio, desacelerar a voz ou alongar uma cartela para atingir um minuto. Uma fala precisa continuar até completar a ideia, inclusive condições, negativas e ressalvas que mudem o sentido.
+Uma ideia completa também precisa de apelo viral ou curioso sustentado pela fonte: surpresa, contraste, humor, fala marcante, tensão com desfecho ou aprendizado interessante. Uma história banal deve ser descartada mesmo se estiver completa. A IA não inventa conflito ou indignação nem força uma quantidade mínima de cortes para preencher o lote.
+
+Não há duração mínima numérica, duração-alvo ou faixas de curtos, médios e longos. Verticais podem passar de dois minutos e usam até 180 segundos de conteúdo original. No autoral, a conta é a soma de `end - start` de cada cena `kind: clip`, incluindo repetições reproduzidas. Narração, fundos, evidências e envelope da fonte não entram nesse limite; o vertical pronto pode ultrapassar três minutos. No simples, a duração do trecho original é `fim - inicio`. Exatamente 180 segundos ainda cabe no vertical; acima disso, o corte é encaminhado como horizontal/YouTube antes da montagem. Uma escolha explícita de horizontal permanece horizontal.
+
+A montagem final usa a duração real dos WAVs, sem usá-la para reclassificar o destino. Não repetir uma explicação, prolongar silêncio, desacelerar a voz ou alongar uma cartela para atingir um minuto. Uma fala precisa continuar até completar a ideia, inclusive condições, negativas e ressalvas que mudem o sentido.
 
 ## Comentarista de direita com interpretação contextual
 
@@ -32,14 +36,14 @@ O vídeo original permanece audível sozinho nos excertos. Durante o comentário
 
 ## Contrato para automação em lote
 
-Cada corte deve trazer, antes da geração:
+O pacote produzido pela IA deve trazer, antes da geração, sem exigir preenchimento manual:
 
 1. Fonte escolhida pelo usuário, pergunta central, título proporcional ao conteúdo e conclusão que será entregue.
-2. Trechos com início/fim, palavras de entrada/saída, ideia completa e evidências associadas. Marcar limites novos ou duvidosos para revisão.
+2. Trechos com início/fim, ideia completa e evidências associadas, com os limites resolvidos pela IA antes de devolver o pacote.
 3. Roteiro autoral por cena e frases com alegações atribuídas. As instruções de voz ficam fora do texto falado.
 4. Um desfecho que entregue a proposta e, quando couber, uma pergunta específica sem pressuposto factual inventado.
-5. Estimativa de duração com palavras/minuto declaradas e separação entre tempo de narrador e tempo de fonte.
-6. Status editorial e pendências reais. Proposta pronta não equivale a áudio gerado, vídeo revisado ou publicação feita.
+5. Formato e destino coerentes com o tempo de conteúdo original, separado da narração e do envelope da fonte.
+6. Perfil e intenção coerentes entre fala, título, textos de tela e legenda do post. A conferência interna ocorre na própria geração, sem uma etapa adicional de aprovação por vídeo.
 
 A seleção em lote não deve devolver várias versões do mesmo argumento com títulos diferentes. Comparar a pergunta, a descoberta e os intervalos de fonte entre candidatos. Não impor uma quantidade de cortes que force trechos incompletos ou repetitivos. O usuário conserva a escolha do conteúdo e o controle das propostas antes de gerar.
 
