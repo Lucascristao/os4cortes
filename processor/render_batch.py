@@ -17,6 +17,7 @@ from .captions import (
 from .drive import uploader_por_env
 from .progress import completed, emit, failed, start_heartbeat
 from .publisher import save_publisher_manifest
+from .lower_third import LowerThird
 try:
     from .tracking import render_cinematic_16x9, render_tracking_9x16
 except ImportError:
@@ -103,7 +104,10 @@ def main() -> int:
     parser.add_argument("--cuts-json", required=True)
     parser.add_argument("--workdir", default=".work")
     parser.add_argument("--output", default="output")
+    parser.add_argument("--lower-third-mode", choices=("off", "cover", "crop"), default="off")
+    parser.add_argument("--lower-third-height", type=float, default=0.0)
     args = parser.parse_args()
+    lower_third = LowerThird(args.lower_third_mode, args.lower_third_height)
 
     work = Path(args.workdir).resolve()
     out = Path(args.output).resolve()
@@ -174,6 +178,7 @@ def main() -> int:
                     video_16x9,
                     work_dir=work,
                     fade_out_visual=usar_fade_visual,
+                    lower_third=lower_third,
                 )
 
                 emit(
@@ -227,6 +232,7 @@ def main() -> int:
                     video_corte,
                     work_dir=work,
                     fade_out_visual=usar_fade_visual,
+                    lower_third=lower_third,
                 )
 
                 emit(

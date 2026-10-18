@@ -14,6 +14,7 @@ const githubSetupCard = $("#githubSetupCard");
 const githubToken = $("#githubToken");
 const githubSetupMsg = $("#githubSetupMsg");
 const videoUrl = $("#videoUrl");
+const hasLowerThirdInput = $("#hasLowerThird");
 const pacote = $("#pacote");
 const cutsEditor = $("#cutsEditor");
 const transcriptSection = $("#transcriptSection");
@@ -34,11 +35,49 @@ let githubConnected = false;
 let sessaoTranscricao = null;
 let pollTimer = null;
 let cortesImportados = [];
+let lowerThirdVideoKey = "";
 
 const STORAGE_SESSION = "os4_transcription_session";
 const STORAGE_JOB = "os4_current_job";
 const STORAGE_RESULTS = "os4_last_results_view";
 const STORAGE_PACKAGE = "os4_editor_package";
+
+function chaveVideo(url) {
+  const valor = String(url || "").trim();
+  try {
+    const parsed = new URL(valor);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const partes = parsed.pathname.split("/").filter(Boolean);
+    let id = "";
+    if (host === "youtu.be") id = partes[0] || "";
+    if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com") {
+      id = parsed.searchParams.get("v") || (["shorts", "embed", "live"].includes(partes[0]) ? partes[1] : "") || "";
+    }
+    if (id) return `youtube:${id}`;
+  } catch {}
+  return valor;
+}
+
+function salvarSessaoTranscricao() {
+  try { localStorage.setItem(STORAGE_SESSION, JSON.stringify(sessaoTranscricao)); } catch {}
+}
+
+function atualizarTarjaVideo() {
+  const key = chaveVideo(videoUrl?.value);
+  if (key === lowerThirdVideoKey) return;
+  lowerThirdVideoKey = key;
+  if (hasLowerThirdInput) {
+    hasLowerThirdInput.checked = Boolean(sessaoTranscricao && key === chaveVideo(sessaoTranscricao.videoUrl) && sessaoTranscricao.hasLowerThird === true);
+  }
+}
+
+hasLowerThirdInput?.addEventListener("change", () => {
+  // A URL pode ser um rascunho de outro vídeo; só altera a sessão correspondente.
+  if (sessaoTranscricao && chaveVideo(videoUrl?.value) === chaveVideo(sessaoTranscricao.videoUrl)) {
+    sessaoTranscricao.hasLowerThird = hasLowerThirdInput.checked;
+    salvarSessaoTranscricao();
+  }
+});
 
 function atualizarProgresso({ percent = 0, title = "Aguardando processamento", detail = "", time = "" } = {}) {
   const valor = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -84,7 +123,7 @@ function tituloEtapa(stage, kind) {
     drive: "Salvando no Google Drive",
     preparando_cortes: "Preparando cortes",
     baixando_base: "Carregando sessão do Drive",
-    tracking: "Enquadrando vídeo em 9:16",
+    tracking: "Ajustando enquadramento do vídeo",
     legendas: "Aplicando legendas",
     cortes: "Finalizando cortes",
     concluido: kind === "render" ? "Cortes concluídos" : "Transcrição concluída",
@@ -370,6 +409,7 @@ async function obterMetadadosYoutube(url) {
 
 let debounceMetaTimer = null;
 const atualizarMetadadosUrl = () => {
+  atualizarTarjaVideo();
   clearTimeout(debounceMetaTimer);
   debounceMetaTimer = setTimeout(async () => {
     const url = videoUrl?.value?.trim();
@@ -387,6 +427,7 @@ videoUrl?.addEventListener("change", atualizarMetadadosUrl);
 
 btnTranscrever?.addEventListener("click", async () => {
   const url = videoUrl.value.trim();
+  const hasLowerThird = hasLowerThirdInput?.checked === true;
   if (!url) {
     alert("Cole a URL do vídeo primeiro.");
     return;
@@ -411,9 +452,9 @@ btnTranscrever?.addEventListener("click", async () => {
   try {
     const dados = await api("/.netlify/functions/workflow-start", {
       method: "POST",
-      body: JSON.stringify({ kind: "transcribe", videoUrl: url }),
+      body: JSON.stringify({ kind: "transcribe", videoUrl: url, hasLowerThird }),
     });
-    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "transcribe", timestamp: Date.now() }));
+    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "transcribe", videoUrl: url, hasLowerThird, timestamp: Date.now() }));
     alternarBotaoCancelar(true);
     acompanharJob(dados.requestId, "transcribe");
   } catch (erro) {
@@ -504,6 +545,11 @@ function acompanharJob(id, kind) {
       atualizarTelaJob(job, kind);
 
       if (job.status === "completed") {
+        let jobLocal = null;
+        try {
+          const salvo = JSON.parse(localStorage.getItem(STORAGE_JOB) || "null");
+          if (salvo?.id === id) jobLocal = salvo;
+        } catch {}
         clearInterval(pollTimer);
         pollTimer = null;
         localStorage.removeItem(STORAGE_JOB);
@@ -512,7 +558,11 @@ function acompanharJob(id, kind) {
         btnGerarCortes.disabled = false;
 
         if (kind === "transcribe") {
-          mostrarTranscricao(job.result);
+          mostrarTranscricao({
+            ...job.result,
+            videoUrl: jobLocal?.videoUrl || job.result?.videoUrl || "",
+            hasLowerThird: job.hasLowerThird === true,
+          });
           btnTranscrever.disabled = false;
           btnTranscrever.textContent = "Transcrever outro";
         } else {
@@ -572,6 +622,9 @@ function retomarJob() {
       return;
     }
     if (job.kind === "transcribe") {
+      if (videoUrl) videoUrl.value = job.videoUrl || "";
+      lowerThirdVideoKey = chaveVideo(job.videoUrl);
+      if (hasLowerThirdInput) hasLowerThirdInput.checked = job.hasLowerThird === true;
       btnTranscrever.disabled = true;
       btnTranscrever.textContent = "Processando...";
     } else {
@@ -586,8 +639,11 @@ function retomarJob() {
 
 function mostrarTranscricao(result) {
   if (!result) return;
-  sessaoTranscricao = result;
-  try { localStorage.setItem(STORAGE_SESSION, JSON.stringify(result)); } catch {}
+  sessaoTranscricao = { ...result, videoUrl: result.videoUrl || "", hasLowerThird: result.hasLowerThird === true };
+  salvarSessaoTranscricao();
+  if (videoUrl) videoUrl.value = sessaoTranscricao.videoUrl;
+  lowerThirdVideoKey = chaveVideo(sessaoTranscricao.videoUrl);
+  if (hasLowerThirdInput) hasLowerThirdInput.checked = sessaoTranscricao.hasLowerThird;
 
   transcriptText.value = result.transcript || "";
   driveFolderLink.href = result.driveFolderUrl || `https://drive.google.com/drive/folders/${result.folderId}`;
@@ -1073,10 +1129,11 @@ btnGerarCortes?.addEventListener("click", async () => {
         folderId: sessaoTranscricao.folderId,
         videoFileId: sessaoTranscricao.videoFileId,
         transcriptJsonFileId: sessaoTranscricao.transcriptJsonFileId,
+        hasLowerThird: sessaoTranscricao.hasLowerThird === true,
         cuts,
       }),
     });
-    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "render", timestamp: Date.now() }));
+    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "render", videoUrl: sessaoTranscricao.videoUrl, hasLowerThird: sessaoTranscricao.hasLowerThird === true, timestamp: Date.now() }));
     alternarBotaoCancelar(true);
     acompanharJob(dados.requestId, "render");
   } catch (erro) {

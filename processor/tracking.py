@@ -11,7 +11,8 @@ try:
 except ImportError:
     cv2 = None
 
-from .framing import Face, StableFraming
+from .framing import Face, SpeakerContinuity, StableFraming
+from .lower_third import LowerThird, fit_crop_size
 
 
 def calcular_movimento_labial(
@@ -32,18 +33,22 @@ def calcular_movimento_labial(
     cx, cy = float(fx + fw / 2) / w, float(fy + fh / 2) / h
     best_score = 0.0
 
-    for item in prev_mouths:
-        pcx, pcy, p_roi = item[0], item[1], item[2]
+    # Detector order can change between frames; associate the nearest face.
+    matches = [
+        item for item in prev_mouths
+        if item[2] is not None and math.hypot(cx - item[0], cy - item[1]) < 0.12
+    ]
+    if matches:
+        item = min(matches, key=lambda item: math.hypot(cx - item[0], cy - item[1]))
+        p_roi = item[2]
         prev_score = item[3] if len(item) > 3 else 0.0
-        if math.hypot(cx - pcx, cy - pcy) < 0.12 and p_roi is not None:
-            diff = float(cv2.absdiff(mouth_roi, p_roi).mean())
-            raw_score = min(1.0, max(0.0, (diff - 3.0) / 9.0))
-            # Suavização temporal (EMA assimétrico): ataque rápido para fala e decaimento suave para pausas
-            if raw_score >= prev_score:
-                best_score = 0.60 * raw_score + 0.40 * prev_score
-            else:
-                best_score = 0.20 * raw_score + 0.80 * prev_score
-            break
+        diff = float(cv2.absdiff(mouth_roi, p_roi).mean())
+        raw_score = min(1.0, max(0.0, (diff - 3.0) / 9.0))
+        # Suavização temporal (EMA assimétrico): ataque rápido para fala e decaimento suave para pausas
+        if raw_score >= prev_score:
+            best_score = 0.60 * raw_score + 0.40 * prev_score
+        else:
+            best_score = 0.20 * raw_score + 0.80 * prev_score
 
     return best_score, (cx, cy, mouth_roi, best_score)
 
@@ -100,7 +105,9 @@ def render_tracking_9x16(
     altura_saida: int = 1920,
     detectar_a_cada: int = 3,
     fade_out_visual: bool = False,
+    lower_third: LowerThird | None = None,
 ) -> Path:
+    lower_third = lower_third or LowerThird()
     video_origem = Path(video_origem)
     saida = Path(saida)
     work_dir = Path(work_dir)
@@ -147,6 +154,10 @@ def render_tracking_9x16(
         cap.release()
         raise RuntimeError("Dimensões inválidas no segmento de vídeo.")
 
+    # A altura da tarja é medida na origem, antes de qualquer zoom ou tracking.
+    if lower_third.mode == "crop":
+        h = lower_third.content_height(h)
+
     yunet = garantir_yunet(work_dir)
 
     # Resolução otimizada para detecção facial rápida com IA (máx 1280px de largura)
@@ -162,7 +173,10 @@ def render_tracking_9x16(
         top_k=5000,
     )
 
-    crop_w = min(int(round(h * 9 / 16)), w)
+    if lower_third.mode == "crop":
+        crop_w, crop_h = fit_crop_size(w, h, largura_saida / altura_saida)
+    else:
+        crop_w, crop_h = min(int(round(h * 9 / 16)), w), h
     framing = StableFraming(crop_w / w)
     previous_scene = None
     previous_mouths: list[tuple[float, float, any]] = []
@@ -203,6 +217,7 @@ def render_tracking_9x16(
             )
             mudou, corte_seco = mudou_plano(previous_scene, scene)
             previous_scene = scene
+            frame = lower_third.apply(frame)
 
             if mudou:
                 framing.reset_shot(snap=corte_seco)
@@ -238,7 +253,7 @@ def render_tracking_9x16(
                                 speaking_score=score_fala,
                             )
                         )
-                    previous_mouths = current_mouths
+                previous_mouths = current_mouths
 
                 framing.observe(detections, frame_idx / fps)
 
@@ -248,12 +263,15 @@ def render_tracking_9x16(
             # Zoom Punch no Início: escala sutil de 1.08x nos primeiros 2.0s para retenção visual instantânea
             fator_zoom = 1.08 if tempo_decorrido < 2.0 else 1.0
             cur_crop_w = int(round(crop_w / fator_zoom))
-            cur_crop_h = int(round(h / fator_zoom))
+            cur_crop_h = max(1, int(round(crop_h / fator_zoom)))
 
             x0 = int(round(centro_x - cur_crop_w / 2))
             x0 = max(0, min(w - cur_crop_w, x0))
             y0 = int(round((h - cur_crop_h) / 2))
             y0 = max(0, min(h - cur_crop_h, y0))
+            if lower_third.mode == "crop":
+                # Preserva a folga acima da cabeça mesmo no zoom inicial.
+                y0 = 0
 
             crop = frame[y0:y0 + cur_crop_h, x0:x0 + cur_crop_w]
 
@@ -325,6 +343,7 @@ def render_cinematic_16x9(
     altura_saida: int = 1080,
     detectar_a_cada: int = 4,
     fade_out_visual: bool = False,
+    lower_third: LowerThird | None = None,
 ) -> Path:
     """
     Renderiza corte horizontal 16:9 dinâmico (estilo Multi-Cam de estúdio) para YouTube.
@@ -333,6 +352,7 @@ def render_cinematic_16x9(
     - Sem marcas d'água e sem legendas na tela (vídeo 100% limpo em 1080p).
     - Áudio masterizado no padrão YouTube (-14 LUFS) com compressor vocal e fade out suave.
     """
+    lower_third = lower_third or LowerThird()
     video_origem = Path(video_origem)
     saida = Path(saida)
     work_dir = Path(work_dir)
@@ -378,6 +398,13 @@ def render_cinematic_16x9(
     if w <= 0 or h <= 0:
         cap.release()
         raise RuntimeError("Dimensões inválidas no segmento de vídeo.")
+
+    if lower_third.mode == "crop":
+        h = lower_third.content_height(h)
+    if lower_third.mode == "crop":
+        base_crop_w, base_crop_h = fit_crop_size(w, h, largura_saida / altura_saida)
+    else:
+        base_crop_w, base_crop_h = w, h
 
     yunet = garantir_yunet(work_dir)
     det_w = min(1280, w)
@@ -428,7 +455,7 @@ def render_cinematic_16x9(
     cur_cy = float(h) / 2.0
     target_cx = float(w) / 2.0
     target_cy = float(h) / 2.0
-    speaker_streak = 0.0
+    speaker_continuity = SpeakerContinuity()
 
     try:
         while True:
@@ -441,13 +468,14 @@ def render_cinematic_16x9(
             )
             mudou, corte_seco = mudou_plano(previous_scene, scene)
             previous_scene = scene
+            frame = lower_third.apply(frame)
 
             tempo_decorrido = frame_idx / fps
 
             if mudou:
                 current_mode = "wide"
                 shot_start_t = tempo_decorrido
-                speaker_streak = 0.0
+                speaker_continuity.reset()
                 previous_mouths = []
                 target_cx = float(w) / 2.0
                 target_cy = float(h) / 2.0
@@ -465,9 +493,6 @@ def render_cinematic_16x9(
                 detected_speakers = []
 
                 if faces is not None:
-                    scale_x = float(w) / det_w
-                    scale_y = float(h) / det_h
-
                     for f in faces:
                         score_fala, mouth_data = calcular_movimento_labial(
                             det_frame, f, previous_mouths, det_w, det_h
@@ -476,33 +501,41 @@ def render_cinematic_16x9(
                             current_mouths.append(mouth_data)
 
                         if score_fala >= 0.35:
-                            fx, fy, fw, fh = f[0] * scale_x, f[1] * scale_y, f[2] * scale_x, f[3] * scale_y
-                            detected_speakers.append((score_fala, fx + fw / 2.0, fy + fh * 0.40))
+                            detected_speakers.append(
+                                Face(
+                                    float(f[0]) / det_w,
+                                    float(f[1]) / det_h,
+                                    float(f[2]) / det_w,
+                                    float(f[3]) / det_h,
+                                    float(f[-1]),
+                                    speaking_score=score_fala,
+                                )
+                            )
 
-                    previous_mouths = current_mouths
+                previous_mouths = current_mouths
 
                 time_in_shot = tempo_decorrido - shot_start_t
+                speaker = speaker_continuity.observe(
+                    detected_speakers, tempo_decorrido, detectar_a_cada / fps
+                )
 
                 if len(detected_speakers) == 1:
-                    speaker = detected_speakers[0]
-                    speaker_streak += (detectar_a_cada / fps)
-                    target_cx = speaker[1]
-                    target_cy = speaker[2]
+                    if speaker is not None:
+                        target_cx = speaker.center * w
+                        target_cy = (speaker.y + speaker.height * 0.40) * h
 
-                    if speaker_streak >= 1.5 and time_in_shot >= min_shot_duration:
+                    if speaker is not None and time_in_shot >= min_shot_duration:
                         if current_mode != "speaker":
                             current_mode = "speaker"
                             shot_start_t = tempo_decorrido
                 elif len(detected_speakers) > 1:
-                    speaker_streak = 0.0
                     if current_mode == "speaker" and time_in_shot >= min_shot_duration:
                         current_mode = "wide"
                         shot_start_t = tempo_decorrido
                         target_cx = float(w) / 2.0
                         target_cy = float(h) / 2.0
                 else:
-                    speaker_streak = max(0.0, speaker_streak - (detectar_a_cada / fps))
-                    if speaker_streak <= 0.0 and current_mode == "speaker" and time_in_shot >= (min_shot_duration + 2.0):
+                    if speaker_continuity.streak <= 0.0 and current_mode == "speaker" and time_in_shot >= (min_shot_duration + 2.0):
                         current_mode = "wide"
                         shot_start_t = tempo_decorrido
                         target_cx = float(w) / 2.0
@@ -518,10 +551,10 @@ def render_cinematic_16x9(
             else:
                 zoom = 1.0
 
-            cur_crop_w = int(round(w / zoom))
-            cur_crop_h = int(round(h / zoom))
+            cur_crop_w = max(1, int(round(base_crop_w / zoom)))
+            cur_crop_h = max(1, int(round(base_crop_h / zoom)))
 
-            if zoom <= 1.001:
+            if zoom <= 1.001 and lower_third.mode != "crop":
                 x0 = 0
                 y0 = 0
             else:
@@ -529,6 +562,8 @@ def render_cinematic_16x9(
                 y0 = int(round(cur_cy - cur_crop_h / 2.0))
                 x0 = max(0, min(w - cur_crop_w, x0))
                 y0 = max(0, min(h - cur_crop_h, y0))
+                if lower_third.mode == "crop" and current_mode == "wide":
+                    y0 = 0
 
             crop = frame[y0:y0 + cur_crop_h, x0:x0 + cur_crop_w]
 

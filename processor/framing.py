@@ -45,6 +45,43 @@ def same_face(a: Face, b: Face) -> bool:
     )
 
 
+class SpeakerContinuity:
+    """Confirm one sustained speaker before moving the horizontal camera."""
+
+    def __init__(self, hold: float = 1.5, pause_tolerance: float = 0.30):
+        self.hold = float(hold)
+        self.pause_tolerance = float(pause_tolerance)
+        self.reset()
+
+    def reset(self):
+        self.candidate: Face | None = None
+        self.last_valid = -math.inf
+        self.streak = 0.0
+
+    def observe(
+        self, speakers: list[Face], timestamp: float, sample_duration: float
+    ) -> Face | None:
+        # Normal detector intervals can exceed 0.30s on low-FPS sources.
+        gap_limit = max(self.pause_tolerance, 1.5 * sample_duration)
+        if self.candidate is not None and timestamp - self.last_valid > gap_limit:
+            self.reset()
+
+        if len(speakers) != 1:
+            if speakers:
+                self.reset()
+            else:
+                self.streak = max(0.0, self.streak - sample_duration)
+            return None
+
+        speaker = speakers[0]
+        if self.candidate is None or not same_face(self.candidate, speaker):
+            self.streak = 0.0
+        self.candidate = speaker
+        self.last_valid = timestamp
+        self.streak += sample_duration
+        return speaker if self.streak >= self.hold else None
+
+
 class StableFraming:
     def __init__(
         self,
@@ -72,6 +109,10 @@ class StableFraming:
         self.fresh_shot = snap
 
     def observe(self, faces: list[Face], timestamp: float):
+        # A missed detection must not count as sustained evidence on resumption.
+        if self.candidate is not None and timestamp - self.candidate_last_valid > 0.30:
+            self.candidate = None
+
         # Filtra detecções inválidas ou espúrias: fotos em quadros/jornais no cenário
         # têm área/dimensões minúsculas comparadas a participantes reais de vídeo/podcast.
         faces = [
@@ -142,9 +183,11 @@ class StableFraming:
         if self.candidate is None or not same_face(self.candidate, best):
             self.candidate = best
             self.candidate_since = timestamp
+            self.candidate_last_valid = timestamp
             return
 
         self.candidate = best
+        self.candidate_last_valid = timestamp
         if timestamp - self.candidate_since >= self.switch_hold:
             self.target = best
             self.last_seen = timestamp

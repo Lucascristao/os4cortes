@@ -22,6 +22,14 @@ on:
       callback_url:
         description: "Callback de progresso"
         required: true
+      lower_third_mode:
+        description: "Tratamento da tarja na origem"
+        required: false
+        default: "off"
+      lower_third_height:
+        description: "Fração da altura da tarja na origem"
+        required: false
+        default: "0"
 
 permissions:
   contents: read
@@ -42,6 +50,8 @@ jobs:
       OS4_VIDEO_FILE_ID: ${{ inputs.video_file_id }}
       OS4_TRANSCRIPT_JSON_FILE_ID: ${{ inputs.transcript_json_file_id }}
       OS4_CUTS_JSON: ${{ inputs.cuts_json }}
+      OS4_LOWER_THIRD_MODE: ${{ inputs.lower_third_mode }}
+      OS4_LOWER_THIRD_HEIGHT: ${{ inputs.lower_third_height }}
 
     steps:
       - name: Baixar código
@@ -72,6 +82,8 @@ jobs:
             --video-file-id "$OS4_VIDEO_FILE_ID" \
             --transcript-json-file-id "$OS4_TRANSCRIPT_JSON_FILE_ID" \
             --cuts-json "$OS4_CUTS_JSON" \
+            --lower-third-mode "$OS4_LOWER_THIRD_MODE" \
+            --lower-third-height "$OS4_LOWER_THIRD_HEIGHT" \
             --workdir ".work" \
             --output "output"
 

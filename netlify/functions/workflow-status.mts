@@ -72,6 +72,7 @@ export default safeHandler(async (request, context) => {
   const safe = {
     id: requestId,
     kind: job.kind,
+    hasLowerThird: job.hasLowerThird === true,
     status: job.status,
     stale,
     stage: job.stage || "",

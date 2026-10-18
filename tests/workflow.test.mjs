@@ -119,6 +119,7 @@ test('stale queued jobs remain resumable while a runner is waiting',async()=>{
  assert.equal(res.status,200);
  const data=await res.json();
  assert.equal(data.job.status,'queued');
+ assert.equal(data.job.hasLowerThird,false);
  assert.equal(data.job.stale,true);
  assert.equal(data.job.error,null);
 });
@@ -141,6 +142,77 @@ test('more than 30 cuts flow through dispatch, partial readiness and scoped publ
  assert.equal(feed.callbackHash,undefined);assert.equal(feed.token,undefined);assert.equal(feed.ownerHash,undefined);
  await progress(req('workflow-progress','POST',{...update,status:'completed',result:{cuts:[{...ready,index:39,files:{videoLegenda:{id:'final39'},post:{id:'post39'}}}]}}),context);
  feed=await (await read()).json();assert.equal(feed.status,'completed');assert.deepEqual(feed.cuts.map(c=>c.index),[39,40]);
+});
+
+test('video lower-third flag reaches all 40 mixed-format cuts and defaults to off',async()=>{
+ const cuts=Array.from({length:40},(_,i)=>({
+  inicio:'00:00',fim:i%2?'04:00':'00:30',titulo:`Corte misto ${i+1}`,
+  formato:i%2?'16:9':'9:16',destino:i%2?'youtube':'reels_tiktok',
+ }));
+ for(const [flag,enabled] of [[{hasLowerThird:true},true],[{hasLowerThird:false},false],[{},false]]) {
+  const response=await start(req('workflow-start','POST',{
+   kind:'render',folderId:'mixed-lower-third',videoFileId:'source',transcriptJsonFileId:'transcript',cuts,...flag,
+  }),context);
+  assert.equal(response.status,202);
+  const {requestId}=await response.json();
+  const {inputs}=dispatches.at(-1);
+  assert.equal(inputs.lower_third_mode,enabled?'crop':'off');
+  assert.equal(inputs.lower_third_height,enabled?'0.30':'0');
+  assert.deepEqual(JSON.parse(inputs.cuts_json),cuts);
+  const job=await blobStore('os4-jobs',context).get(requestId,{type:'json'});
+  assert.equal(job.hasLowerThird,enabled);
+  assert.equal(job.totalCuts,40);
+  const polled=await (await status(req('workflow-status?id='+requestId),context)).json();
+  assert.equal(polled.job.hasLowerThird,enabled);
+ }
+});
+
+test('transcription persists the video flag without adding unsupported workflow inputs',async()=>{
+ for(const [flag,enabled] of [[{hasLowerThird:true},true],[{hasLowerThird:false},false],[{},false]]) {
+  const response=await start(req('workflow-start','POST',{
+   kind:'transcribe',videoUrl:'https://youtu.be/PMGxFRAea_I',...flag,
+  }),context);
+  assert.equal(response.status,202);
+  const {requestId}=await response.json();
+  const job=await blobStore('os4-jobs',context).get(requestId,{type:'json'});
+  assert.equal(job.hasLowerThird,enabled);
+  assert.deepEqual(Object.keys(dispatches.at(-1).inputs).sort(),['callback_url','request_id','video_url']);
+  const update={
+   request_id:requestId,token:crypto.createHmac('sha256',callbackSecret).update('os4-progress:'+requestId).digest('hex'),
+   status:'completed',stage:'concluido',percent:100,
+   result:{folderId:'folder',videoFileId:'video',transcriptJsonFileId:'transcript'},
+  };
+  assert.equal((await progress(req('workflow-progress','POST',update),context)).status,200);
+  const polled=await (await status(req('workflow-status?id='+requestId),context)).json();
+  assert.equal(polled.job.hasLowerThird,enabled);
+ }
+});
+
+test('lower-third flag accepts only booleans and invalid values never dispatch processing',async()=>{
+ const before=dispatches.length;
+ const recordsBefore=records.size;
+ const requests=[
+  {kind:'transcribe',videoUrl:'https://youtu.be/PMGxFRAea_I'},
+  {kind:'render',folderId:'folder',videoFileId:'source',transcriptJsonFileId:'transcript',cuts:[{inicio:0,fim:15}]},
+ ];
+ for(const body of requests) {
+  for(const hasLowerThird of ['true','false','cover','',1,0,null,{},[]]) {
+   const response=await start(req('workflow-start','POST',{...body,hasLowerThird}),context);
+   assert.equal(response.status,400,`${body.kind}: ${JSON.stringify(hasLowerThird)}`);
+  }
+ }
+ assert.equal(dispatches.length,before);
+ assert.equal(records.size,recordsBefore);
+});
+
+test('render lower-third mode and height are derived exclusively from the video checkbox',async()=>{
+ const response=await start(req('workflow-start','POST',{
+  kind:'render',folderId:'folder',videoFileId:'source',transcriptJsonFileId:'transcript',
+  cuts:[{inicio:0,fim:15}],hasLowerThird:true,lower_third_mode:'cover',lower_third_height:'0.60',
+ }),context);
+ assert.equal(response.status,202);
+ assert.equal(dispatches.at(-1).inputs.lower_third_mode,'crop');
+ assert.equal(dispatches.at(-1).inputs.lower_third_height,'0.30');
 });
 
 

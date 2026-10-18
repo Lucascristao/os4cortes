@@ -100,6 +100,10 @@ export default safeHandler(async (request, context) => {
   if (!["transcribe", "render"].includes(kind)) {
     return json(400, { ok: false, error: "Tipo de processamento inválido." });
   }
+  if (Object.hasOwn(body, "hasLowerThird") && typeof body.hasLowerThird !== "boolean") {
+    return json(400, { ok: false, error: "A opção de tarja do vídeo precisa ser verdadeira ou falsa." });
+  }
+  const hasLowerThird = body.hasLowerThird === true;
 
   const configStore = blobStore("os4-config", context);
   const jobsStore = blobStore("os4-jobs", context);
@@ -181,6 +185,8 @@ export default safeHandler(async (request, context) => {
       transcript_json_file_id: transcriptJsonFileId,
       cuts_json: cutsJson,
       callback_url: callbackUrl,
+      lower_third_mode: hasLowerThird ? "crop" : "off",
+      lower_third_height: hasLowerThird ? "0.30" : "0",
     };
   }
 
@@ -189,6 +195,7 @@ export default safeHandler(async (request, context) => {
     ownerHash: ownerHash(user.email),
     callbackHash: crypto.createHash("sha256").update(derivedCallbackToken).digest("hex"),
     kind,
+    hasLowerThird,
     folderId: kind === "render" ? inputs.folder_id : null,
     totalCuts: kind === "render" ? JSON.parse(inputs.cuts_json).length : null,
     status: "queued",

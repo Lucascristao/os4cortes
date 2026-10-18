@@ -85,6 +85,11 @@
           <input id="videoUrl" type="url" placeholder="https://youtube.com/watch?v=..." autocomplete="off">
           <button id="btnTranscrever" type="button">Transcrever</button>
         </div>
+        <label class="video-option" for="hasLowerThird">
+          <input id="hasLowerThird" type="checkbox" aria-describedby="lowerThirdHint">
+          <span>Vídeo com tarja jornalística</span>
+        </label>
+        <p id="lowerThirdHint" class="hint video-option-hint">Reenquadra todos os cortes para retirar a tarja, inclusive os vídeos horizontais para o YouTube.</p>
         <p class="hint">O vídeo é baixado uma vez, transcrito uma vez e fica preparado no Drive para gerar quantos cortes você escolher.</p>
       </section>
 

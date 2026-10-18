@@ -116,6 +116,9 @@ h2 { font-size: 1.1rem; margin-bottom: 0; }
 
 label { display: block; font-weight: 750; margin-bottom: 10px; }
 .input-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+.video-option { display: flex; align-items: center; gap: 10px; margin: 16px 0 0; font-size: .9rem; cursor: pointer; }
+.video-option input { width: 18px; height: 18px; margin: 0; padding: 0; flex: 0 0 auto; accent-color: var(--accent); cursor: pointer; }
+.hint.video-option-hint { margin-top: 6px; padding-left: 28px; }
 
 input, textarea {
   width: 100%;
