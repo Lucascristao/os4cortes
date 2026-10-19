@@ -251,11 +251,27 @@ async function publishYouTubeVideo({ videoPath, title, description = '', thumbna
     if (thumbnailPath && fs.existsSync(thumbnailPath)) {
       try {
         console.log('[YouTube] Tentando upload de miniatura personalizada (thumbnail/capa 16:9)...');
+        const thumbContainer = page.locator('ytcp-thumbnails-compact, #thumbnails, #file-loader').first();
+        await thumbContainer.scrollIntoViewIfNeeded().catch(() => {});
+        await page.waitForTimeout(500);
+
         const thumbInput = page.locator('input#file-loader, ytcp-thumbnails-compact input[type="file"], input[type="file"][accept*="image"]').first();
         if (await thumbInput.count() > 0) {
           await thumbInput.setInputFiles(thumbnailPath);
-          console.log('[YouTube] Miniatura 16:9 enviada com sucesso:', thumbnailPath);
+          console.log('[YouTube] ✅ Miniatura 16:9 enviada com sucesso:', thumbnailPath);
           await page.waitForTimeout(2000);
+
+          // Se abrir modal de verificação telefônica exigida pelo YouTube Studio
+          const phoneVerifyDialog = page.locator('ytcp-dialog:has-text("Verifique"), ytcp-confirmation-dialog:has-text("Verifique"), [role="dialog"]:has-text("verificar seu número")').first();
+          if (await phoneVerifyDialog.isVisible({ timeout: 1500 }).catch(() => false)) {
+            console.warn('[YouTube] Miniaturas personalizadas exigem verificação do canal no YouTube. Fechando aviso...');
+            const cancelBtn = page.locator('[role="dialog"] button:has-text("Cancelar"), [role="dialog"] #cancel-button').first();
+            if (await cancelBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+              await cancelBtn.click({ force: true }).catch(() => {});
+            }
+          }
+        } else {
+          console.log('[YouTube] Campo de upload de miniatura não disponível (em vídeos verticais Shorts o YouTube gerencia a miniatura automaticamente no computador).');
         }
       } catch (errThumb) {
         console.warn('[YouTube] Aviso ao enviar miniatura (recurso opcional ou requer canal verificado):', errThumb.message);

@@ -2,7 +2,26 @@ const { chromium } = require('playwright');
 const path = require('node:path');
 const fs = require('node:fs');
 
-async function publishInstagramReels({ videoPath, caption, attempt }) {
+async function dismissPopups(page) {
+  try {
+    const popups = [
+      page.getByRole('button', { name: 'Agora não' }),
+      page.locator('button:has-text("Agora não")'),
+      page.locator('button:has-text("Not now")'),
+      page.locator('button:has-text("Cancelar")'),
+      page.locator('button:has-text("Entendi")'),
+      page.locator('button:has-text("OK")')
+    ];
+    for (const btn of popups) {
+      if (await btn.first().isVisible({ timeout: 500 }).catch(() => false)) {
+        await btn.first().click().catch(() => {});
+        await page.waitForTimeout(300);
+      }
+    }
+  } catch (_) {}
+}
+
+async function publishInstagramReels({ videoPath, caption, thumbnailPath = null, attempt }) {
   attempt?.stage('Abrindo Instagram');
   const startTime = Date.now();
   const dataDir = path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
@@ -11,6 +30,7 @@ async function publishInstagramReels({ videoPath, caption, attempt }) {
 
   console.log('[Instagram] Iniciando publicação de Reel...');
   console.log('[Instagram] Vídeo:', videoPath);
+  if (thumbnailPath) console.log('[Instagram] Miniatura/Capa:', thumbnailPath);
 
   const ctx = await chromium.launchPersistentContext(profileDir, {
     executablePath: chromePath,
@@ -28,18 +48,11 @@ async function publishInstagramReels({ videoPath, caption, attempt }) {
     console.log('[Instagram 1/6] Carregando Instagram...');
     await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
-
-    // Fecha popup "Ativar notificações" se aparecer
-    const agora = page.getByRole('button', { name: 'Agora não' });
-    if (await agora.count() > 0 && await agora.isVisible().catch(() => false)) {
-      await agora.click().catch(() => {});
-      console.log('[Instagram] Popup "Agora não" fechado.');
-      await page.waitForTimeout(400);
-    }
+    await dismissPopups(page);
     await page.keyboard.press('Escape').catch(() => {});
 
     console.log('[Instagram 2/6] Abrindo modal Criar (+) ➔ Postar...');
-    const plusIcon = page.locator('a:has(svg[aria-label="Novo post"]), a:has(svg[aria-label="Nova publicação"]), div[role="button"]:has(svg[aria-label*="post" i]), [aria-label="Novo post"], [aria-label="Nova publicação"], [aria-label="New post"], svg[aria-label="Novo post"], svg[aria-label="Nova publicação"], svg[aria-label="New post"], a:has-text("Criar")').first();
+    const plusIcon = page.locator('svg[aria-label="Novo post"], svg[aria-label="Nova publicação"], svg[aria-label="New post"], a:has(svg[aria-label="Novo post"]), a:has(svg[aria-label="Nova publicação"]), [aria-label="Novo post"], [aria-label="Nova publicação"], a:has-text("Criar")').first();
     await plusIcon.waitFor({ state: 'visible', timeout: 15000 });
     await plusIcon.click({ force: true });
     await page.waitForTimeout(600);
@@ -52,51 +65,172 @@ async function publishInstagramReels({ videoPath, caption, attempt }) {
 
     console.log('[Instagram 3/6] Anexando arquivo de vídeo...');
     attempt?.stage('Enviando vídeo');
-    const fileInput = page.locator('input[type="file"]').first();
-    await fileInput.waitFor({ state: 'attached', timeout: 30000 });
     const tUpload = Date.now();
-    await fileInput.setInputFiles(videoPath);
-    console.log('[Instagram] Vídeo anexado! Aguardando o modal processar...');
-    await page.waitForTimeout(2500);
+
+    // Tenta anexar pelo botão "Selecionar do computador" via evento filechooser nativo
+    let attached = false;
+    const selectBtn = page.locator('[role="dialog"] button:has-text("Selecionar"), button:has-text("Selecionar do computador")').first();
+    if (await selectBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      try {
+        const [fileChooser] = await Promise.all([
+          page.waitForEvent('filechooser', { timeout: 6000 }),
+          selectBtn.click({ force: true })
+        ]);
+        if (fileChooser) {
+          await fileChooser.setFiles(videoPath);
+          attached = true;
+          console.log('[Instagram] Vídeo anexado via seletor nativo de arquivos!');
+        }
+      } catch (errChooser) {
+        console.log(`[Instagram] Filechooser direto falhou: ${errChooser.message}, tentando input direto...`);
+      }
+    }
+
+    if (!attached) {
+      const fileInput = page.locator('[role="dialog"] input[type="file"], input[type="file"]').last();
+      await fileInput.waitFor({ state: 'attached', timeout: 15000 });
+      await fileInput.setInputFiles(videoPath);
+      console.log('[Instagram] Vídeo anexado via input file direto.');
+    }
+
+    // Aguarda o modal carregar o vídeo (o botão "Selecionar do computador" deve sumir ao carregar o player)
+    for (let w = 0; w < 12; w++) {
+      await page.waitForTimeout(1000);
+      const stillInitial = await selectBtn.isVisible().catch(() => false);
+      if (!stillInitial) {
+        console.log('[Instagram] Vídeo processado pelo modal com sucesso!');
+        break;
+      }
+      if (w === 4 || w === 8) {
+        console.log('[Instagram] Reforçando anexo do arquivo de vídeo...');
+        const fileInput = page.locator('[role="dialog"] input[type="file"], input[type="file"]').last();
+        await fileInput.setInputFiles(videoPath).catch(() => {});
+      }
+    }
 
     // Fecha aviso de formato Reels se aparecer
     const reelNotice = page.locator('button:has-text("OK"), button:has-text("Entendi")').first();
-    if (await reelNotice.count() > 0 && await reelNotice.isVisible().catch(() => false)) {
+    if (await reelNotice.isVisible({ timeout: 2000 }).catch(() => false)) {
       await reelNotice.click({ force: true }).catch(() => {});
       await page.waitForTimeout(400);
     }
 
-    console.log('[Instagram 4/6] Definindo proporção 9:16 vertical...');
+    console.log('[Instagram 4/6] Verificando proporção...');
+    // Nossos cortes já são renderizados em 9:16 vertical (1080x1920).
+    // Só tenta abrir o menu de corte se o botão estiver visível imediatamente (sem esperar 12 segundos).
     try {
-      const cropBtn = page.locator('button:has(svg[aria-label*="corte" i]), button:has(svg[aria-label*="crop" i]), [aria-label*="Selecionar corte" i]').first();
-      await cropBtn.waitFor({ state: 'visible', timeout: 12000 });
-      await cropBtn.click();
-      await page.waitForTimeout(600);
+      const cropBtn = page.locator('[role="dialog"] button:has(svg[aria-label*="corte" i]), [role="dialog"] button:has(svg[aria-label*="crop" i]), [role="dialog"] [aria-label*="Selecionar corte" i]').first();
+      if (await cropBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+        await cropBtn.click();
+        await page.waitForTimeout(400);
+        const opt916 = page.locator('span:text-is("9:16"), div:text-is("9:16")').last();
+        if (await opt916.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await opt916.click({ force: true });
+          console.log('[Instagram] ✅ Proporção 9:16 vertical confirmada!');
+          await page.waitForTimeout(400);
+        }
+      }
+    } catch (_) {}
 
-      const opt916 = page.locator('span:text-is("9:16"), div:text-is("9:16")').last();
-      await opt916.waitFor({ state: 'visible', timeout: 8000 });
-      await opt916.click({ force: true });
-      console.log('[Instagram] ✅ Proporção 9:16 vertical confirmada!');
-      await page.waitForTimeout(800);
-    } catch (errCrop) {
-      console.warn(`[Instagram] Aviso na seleção de proporção: ${errCrop.message}`);
+    console.log('[Instagram 5/6] Configurando capa e avançando telas...');
+    // Etapa 1: Avança da tela de corte para a tela de edição/capa
+    const nextBtn = page.locator('[role="dialog"] div[role="button"]:has-text("Avançar"), [role="dialog"] button:has-text("Avançar")').first();
+    if (await nextBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
+      await nextBtn.click();
+      console.log('[Instagram] Avançou para tela de edição de capa.');
+      await page.waitForTimeout(1500);
     }
 
-    console.log('[Instagram 5/6] Avançando telas...');
-    const nextBtn1 = page.locator('div[role="button"]:has-text("Avançar"), button:has-text("Avançar")').first();
-    await nextBtn1.waitFor({ state: 'visible', timeout: 20000 });
-    await nextBtn1.click();
-    await page.waitForTimeout(1200);
+    // Configuração de Capa no Instagram (Upload de arquivo ou seleção de frame)
+    try {
+      const coverSectionVisible = await page.locator('[role="dialog"] text=/foto da capa/i, [role="dialog"] text=/cover photo/i, [role="dialog"] button:has-text("Selecionar do computador"), [role="dialog"] button:has-text("Adicionar do computador")').first().isVisible({ timeout: 3000 }).catch(() => false);
+      if (coverSectionVisible) {
+        console.log('[Instagram] Tela "Foto da capa" detectada!');
+        attempt?.stage('Configurando capa do Reel');
+        let coverDone = false;
 
-    const nextBtn2 = page.locator('div[role="button"]:has-text("Avançar"), button:has-text("Avançar")').first();
-    await nextBtn2.waitFor({ state: 'visible', timeout: 20000 });
-    await nextBtn2.click();
-    await page.waitForTimeout(1200);
+        // 1. Tenta upload de arquivo personalizado (capa.jpg)
+        if (thumbnailPath && fs.existsSync(thumbnailPath)) {
+          console.log('[Instagram] Tentando upload de capa personalizada:', thumbnailPath);
+          try {
+            const selectCoverBtn = page.locator('[role="dialog"] button:has-text("Selecionar do computador"), [role="dialog"] button:has-text("Adicionar do computador"), [role="dialog"] div[role="button"]:has-text("Selecionar do computador"), [role="dialog"] div[role="button"]:has-text("Adicionar do computador")').first();
+            if (await selectCoverBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+              try {
+                const [coverChooser] = await Promise.all([
+                  page.waitForEvent('filechooser', { timeout: 4000 }),
+                  selectCoverBtn.click({ force: true })
+                ]);
+                if (coverChooser) {
+                  await coverChooser.setFiles(thumbnailPath);
+                  coverDone = true;
+                  console.log('[Instagram] ✅ Capa anexada via filechooser nativo!');
+                  await page.waitForTimeout(1500);
+                }
+              } catch (eChoose) {
+                console.log(`[Instagram] Filechooser da capa: ${eChoose.message}, tentando input direto...`);
+              }
+            }
+
+            if (!coverDone) {
+              const coverInput = page.locator('[role="dialog"] input[type="file"][accept*="image"], [role="dialog"] input[type="file"]').last();
+              if (await coverInput.count() > 0) {
+                await coverInput.setInputFiles(thumbnailPath);
+                coverDone = true;
+                console.log('[Instagram] ✅ Capa anexada via input file!');
+                await page.waitForTimeout(1500);
+              }
+            }
+          } catch (errImg) {
+            console.warn('[Instagram] Falha ao enviar imagem de capa:', errImg.message);
+          }
+        }
+
+        // 2. Fallback: Selecionar frame do próprio vídeo na linha do tempo (~2 a 3 segundos)
+        if (!coverDone) {
+          console.log('[Instagram] Selecionando frame com a arte do título a partir do vídeo...');
+          try {
+            const filmstrip = page.locator('[role="dialog"] [class*="filmstrip"], [role="dialog"] [role="slider"], [role="dialog"] [class*="timeline"], [role="dialog"] [aria-label*="vídeo" i]').first();
+            if (await filmstrip.isVisible({ timeout: 2500 }).catch(() => false)) {
+              const fBox = await filmstrip.boundingBox();
+              if (fBox && fBox.width > 40) {
+                const clickX = fBox.x + Math.max(15, Math.min(fBox.width * 0.12, 80));
+                const clickY = fBox.y + fBox.height / 2;
+                await page.mouse.click(clickX, clickY);
+                console.log(`[Instagram] ✅ Frame selecionado no carrossel de vídeo (X=${Math.round(clickX)}).`);
+                coverDone = true;
+                await page.waitForTimeout(1000);
+              }
+            }
+          } catch (errScrub) {
+            console.warn('[Instagram] Aviso ao selecionar frame do vídeo:', errScrub.message);
+          }
+        }
+      }
+    } catch (errCover) {
+      console.warn('[Instagram] Aviso na verificação de capa (prosseguindo):', errCover.message);
+    }
+
+    // Avança inteligentemente até a tela de legenda estar visível
+    for (let step = 0; step < 4; step++) {
+      const captionVisible = await page.locator('[role="dialog"] div[aria-label*="legenda" i], [role="dialog"] div[aria-label*="caption" i], [role="dialog"] div[role="textbox"]').first().isVisible().catch(() => false);
+      if (captionVisible) {
+        console.log('[Instagram] Tela de legenda alcançada!');
+        break;
+      }
+      const nextBtnLoop = page.locator('[role="dialog"] div[role="button"]:has-text("Avançar"), [role="dialog"] button:has-text("Avançar")').first();
+      if (await nextBtnLoop.isVisible({ timeout: 4000 }).catch(() => false)) {
+        await nextBtnLoop.click();
+        console.log(`[Instagram] Botão Avançar clicado (etapa ${step + 1}).`);
+        await page.waitForTimeout(1000);
+      } else {
+        await page.waitForTimeout(600);
+      }
+    }
 
     console.log('[Instagram] Preenchendo legenda e hashtags...');
     attempt?.stage('Preenchendo legenda');
-    const captionEl = page.locator('div[aria-label*="legenda" i], div[aria-label*="caption" i], div[role="textbox"], div[contenteditable="true"]').first();
-    await captionEl.waitFor({ state: 'visible', timeout: 20000 });
+    const captionEl = page.locator('[role="dialog"] div[aria-label*="legenda" i], [role="dialog"] div[aria-label*="caption" i], [role="dialog"] div[role="textbox"], [role="dialog"] div[contenteditable="true"]').first();
+    await captionEl.waitFor({ state: 'visible', timeout: 15000 });
     await captionEl.click();
     await page.waitForTimeout(200);
     await page.keyboard.press('Control+A');
@@ -139,8 +273,8 @@ async function publishInstagramReels({ videoPath, caption, attempt }) {
     }
 
     console.log('[Instagram 6/6] >>> CLICANDO EM COMPARTILHAR NO INSTAGRAM <<<');
-    const shareBtn = page.locator('[role="dialog"]').getByRole('button', { name: 'Compartilhar', exact: true });
-    await shareBtn.waitFor({ state: 'visible', timeout: 20000 });
+    const shareBtn = page.locator('[role="dialog"] button:has-text("Compartilhar"), [role="dialog"] div[role="button"]:has-text("Compartilhar"), [role="dialog"] [aria-label="Compartilhar"]').first();
+    await shareBtn.waitFor({ state: 'visible', timeout: 15000 });
 
     attempt?.stage('Publicando e aguardando confirmação');
     attempt?.beforePublish();
