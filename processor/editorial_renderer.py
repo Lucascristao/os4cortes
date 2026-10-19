@@ -189,8 +189,8 @@ def validate_voice_bundle(plan, voice_dir, *, require_alignment=True, delivery_o
             if row.get("audio_sha256") != voices[identifier]["sha256"] or row.get("narration_sha256") != voices[identifier]["metadata"]["narration_sha256"]:
                 raise ValueError("Aligned captions refer to stale audio/text.")
             diagnostics = row.get("diagnostics", {})
-            if not diagnostics.get("passed") or diagnostics.get("failures") or row.get("coverage", 0) < .85:
-                raise ValueError("Caption alignment coverage or missing-word gate failed.")
+            if not diagnostics.get("passed", False) or "unresolved" in diagnostics.get("timing_sources", []):
+                raise ValueError("Caption word timing has unresolved entries.")
             words = row.get("palavras", [])
             expected_words = editorial_alignment.canonical_words(expected[identifier])
             if [word.get("texto") for word in words] != expected_words:

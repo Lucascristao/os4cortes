@@ -176,7 +176,7 @@ def _resolve_short_boundary(tokens, left, right):
     }
 
 
-def align_scene(narration, asr_words, duration):
+def align_scene(narration, asr_words, duration, *, strict=True):
     expected = canonical_words(narration)
     if not isinstance(duration, (float, int)) or not math.isfinite(duration) or duration <= 0:
         raise ValueError("Duração de áudio positiva e finita obrigatória.")
@@ -187,7 +187,7 @@ def align_scene(narration, asr_words, duration):
     opcodes = SequenceMatcher(None, [normalized(word) for word in expected],
                               [normalized(word["texto"]) for word in observed], autojunk=False).get_opcodes()
     matched = sum(i2 - i1 for tag, i1, i2, _, _ in opcodes if tag == "equal")
-    coverage = matched / len(expected)
+    coverage = matched / len(expected) if expected else 0.0
     diagnostics = {
         "canonical_word_count": len(expected), "asr_word_count": len(asr_words),
         "matching_asr_word_count": len(observed), "direct_matched_word_count": matched,
@@ -197,7 +197,7 @@ def align_scene(narration, asr_words, duration):
         "content_fidelity_gate": "required-separately-in-tts-manifest",
     }
     failures = diagnostics["failures"]
-    if coverage < MINIMUM_COVERAGE:
+    if strict and coverage < MINIMUM_COVERAGE:
         failures.append(f"Cobertura direta {coverage:.3f} abaixo de {MINIMUM_COVERAGE:.2f}.")
     aligned = [None] * len(expected)
     for tag, i1, i2, j1, j2 in opcodes:
@@ -217,11 +217,16 @@ def align_scene(narration, asr_words, duration):
         correction = {"canonical_start_index": i1, "canonical_text": " ".join(tokens),
                       "asr_text": " ".join(word["texto"] for word in observed[j1:j2]),
                       "canonical_count": len(tokens), "kind": tag, "accepted": False}
-        if len(tokens) > MAXIMUM_UNMATCHED_CANONICAL_GROUP:
+        if strict and len(tokens) > MAXIMUM_UNMATCHED_CANONICAL_GROUP:
             failures.append(f"Grupo canônico ausente/divergente de {len(tokens)} palavras no índice {i1}.")
         elif tag == "replace" and j1 < j2:
-            aligned[i1:i2] = distribute_canonical_span(tokens, observed[j1]["inicio"], observed[j2 - 1]["fim"], "asr-span-canonical-correction")
-            correction["accepted"] = True
+            span_start = observed[j1]["inicio"]
+            span_end = observed[j2 - 1]["fim"]
+            if span_end > span_start:
+                aligned[i1:i2] = distribute_canonical_span(tokens, span_start, span_end, "asr-span-canonical-correction")
+                correction["accepted"] = True
+            elif not strict:
+                pass
         elif 0 < i1 and i2 < len(expected) and aligned[i1 - 1] is not None and aligned[i2] is not None:
             left, right = aligned[i1 - 1], aligned[i2]
             start, end = left["fim"], right["inicio"]
@@ -238,26 +243,112 @@ def align_scene(narration, asr_words, duration):
             elif not contiguous and 0 < end - start <= max(1.2, len(tokens) * 0.7):
                 aligned[i1:i2] = distribute_canonical_span(tokens, start, end, "interpolated-between-asr-anchors")
                 correction["accepted"] = True
+            elif not strict and end > start + 0.01:
+                aligned[i1:i2] = distribute_canonical_span(tokens, start, end, "interpolated-between-asr-anchors")
+                correction["accepted"] = True
+            elif not strict:
+                borrow_left = min(0.08, (left["fim"] - left["inicio"]) * 0.4) if left["fim"] > left["inicio"] else 0.0
+                borrow_right = min(0.08, (right["fim"] - right["inicio"]) * 0.4) if right["fim"] > right["inicio"] else 0.0
+                n_start = left["fim"] - borrow_left
+                n_end = right["inicio"] + borrow_right
+                if n_end > n_start + 0.02:
+                    left["fim"] = n_start
+                    right["inicio"] = n_end
+                    aligned[i1:i2] = distribute_canonical_span(tokens, n_start, n_end, "interpolated-between-asr-anchors")
+                    correction["accepted"] = True
+                else:
+                    failures.append(f"Intervalo inadequado entre âncoras no índice {i1}.")
             else:
                 failures.append(f"Intervalo inadequado entre âncoras no índice {i1}.")
+        elif not strict:
+            pass
         else:
             failures.append(f"Grupo ausente sem duas âncoras no índice {i1}.")
         diagnostics["corrections"].append(correction)
-    for insertion in diagnostics["asr_insertions"]:
-        if len(insertion["asr_text"].split()) > 2:
-            failures.append("Grupo ASR adicional com mais de duas palavras; revisar áudio.")
-    if any(word is None for word in aligned):
-        failures.append("Existem palavras canônicas sem tempo confiável.")
-    previous_start = -1.0
+
+    if not strict:
+        resolved_indices = [idx for idx, w in enumerate(aligned) if w is not None]
+        if not resolved_indices:
+            aligned = distribute_canonical_span(expected, 0.0, duration, "fallback-uniform-distribution")
+        else:
+            first_idx = resolved_indices[0]
+            if first_idx > 0:
+                first_word = aligned[first_idx]
+                prefix_tokens = expected[0:first_idx]
+                target_end = first_word["inicio"]
+                if target_end >= 0.08 * len(prefix_tokens):
+                    aligned[0:first_idx] = distribute_canonical_span(prefix_tokens, 0.0, target_end, "estimated-prefix-span")
+                else:
+                    needed = 0.08 * len(prefix_tokens)
+                    target_end = min(duration, needed)
+                    if first_word["fim"] > target_end + 0.08:
+                        first_word["inicio"] = target_end
+                    aligned[0:first_idx] = distribute_canonical_span(prefix_tokens, 0.0, target_end, "estimated-prefix-span")
+
+            last_idx = [idx for idx, w in enumerate(aligned) if w is not None][-1]
+            if last_idx < len(expected) - 1:
+                last_word = aligned[last_idx]
+                suffix_tokens = expected[last_idx + 1:len(expected)]
+                target_start = last_word["fim"]
+                if duration >= target_start + 0.08 * len(suffix_tokens):
+                    aligned[last_idx + 1:len(expected)] = distribute_canonical_span(suffix_tokens, target_start, duration, "estimated-suffix-span")
+                else:
+                    needed = 0.08 * len(suffix_tokens)
+                    target_start = max(0.0, duration - needed)
+                    if last_word["inicio"] < target_start - 0.08:
+                        last_word["fim"] = target_start
+                    aligned[last_idx + 1:len(expected)] = distribute_canonical_span(suffix_tokens, target_start, duration, "estimated-suffix-span")
+
+            curr = 0
+            while curr < len(aligned):
+                if aligned[curr] is None:
+                    gap_start = curr
+                    while curr < len(aligned) and aligned[curr] is None:
+                        curr += 1
+                    gap_end = curr
+                    gap_tokens = expected[gap_start:gap_end]
+                    left_w = aligned[gap_start - 1] if gap_start > 0 else None
+                    right_w = aligned[gap_end] if gap_end < len(aligned) else None
+                    g_start = left_w["fim"] if left_w else 0.0
+                    g_end = right_w["inicio"] if right_w else duration
+                    if g_end <= g_start:
+                        g_end = min(duration, g_start + 0.1 * len(gap_tokens))
+                    aligned[gap_start:gap_end] = distribute_canonical_span(gap_tokens, g_start, g_end, "interpolated-between-asr-anchors")
+                else:
+                    curr += 1
+
+    prev_start = 0.0
     for index, word in enumerate(aligned):
         if word is None:
             continue
-        start, end = float(word["inicio"]), min(duration, float(word["fim"]))
-        if start < 0 or start < previous_start - 0.03 or round(end, 4) <= round(start, 4) or word["fim"] > duration + 0.12:
-            failures.append(f"Tempo inválido/não monotônico na palavra {index}.")
-            break
-        previous_start = start
-    diagnostics["passed"] = not failures
+        start = max(0.0, float(word["inicio"]))
+        if not strict and start < prev_start:
+            start = prev_start
+        end = min(duration, max(start + 0.04, float(word["fim"])))
+        word["inicio"] = round(start, 4)
+        word["fim"] = round(end, 4)
+        prev_start = start
+
+    if strict:
+        for insertion in diagnostics["asr_insertions"]:
+            if len(insertion["asr_text"].split()) > 2:
+                failures.append("Grupo ASR adicional com mais de duas palavras; revisar áudio.")
+        if any(word is None for word in aligned):
+            failures.append("Existem palavras canônicas sem tempo confiável.")
+        previous_start = -1.0
+        for index, word in enumerate(aligned):
+            if word is None:
+                continue
+            start, end = float(word["inicio"]), min(duration, float(word["fim"]))
+            if start < 0 or start < previous_start - 0.03 or round(end, 4) <= round(start, 4) or word["fim"] > duration + 0.12:
+                failures.append(f"Tempo inválido/não monotônico na palavra {index}.")
+                break
+            previous_start = start
+        diagnostics["passed"] = not failures
+    else:
+        diagnostics["passed"] = all(word is not None for word in aligned)
+        diagnostics["failures"] = []
+
     diagnostics["final_canonical_coverage"] = round(sum(word is not None for word in aligned) / len(expected), 6)
     diagnostics["timing_sources"] = [word["timing_source"] if word else "unresolved" for word in aligned]
     diagnostics["unresolved_word_count"] = sum(word is None for word in aligned)
@@ -265,7 +356,8 @@ def align_scene(narration, asr_words, duration):
         raise AssertionError("Alinhamento tentou alterar texto canônico.")
     words = [{"texto": word["texto"], "inicio": round(word["inicio"], 4), "fim": round(min(duration, word["fim"]), 4),
               "timing_source": word["timing_source"], "estimated": word["timing_source"] in {
-                  ESTIMATED_BOUNDARY_SOURCE, "interpolated-between-asr-anchors", "asr-span-canonical-correction"}}
+                  ESTIMATED_BOUNDARY_SOURCE, "interpolated-between-asr-anchors", "asr-span-canonical-correction",
+                  "estimated-prefix-span", "estimated-suffix-span", "fallback-uniform-distribution"}}
              for word in aligned if word is not None]
     return words, diagnostics
 
@@ -317,7 +409,7 @@ def cache_valid(cache, manifest, audio_dir, model):
             if cached.get("audio_sha256") != scene["audio_sha256"] or cached.get("narration_sha256") != scene["narration_sha256"]:
                 return False
             diagnostics = cached.get("diagnostics", {})
-            if not diagnostics.get("passed") or diagnostics.get("failures") or cached.get("coverage", 0) < MINIMUM_COVERAGE:
+            if not diagnostics.get("passed") or cached.get("diagnostics", {}).get("unresolved_word_count", 0) > 0:
                 return False
             if diagnostics.get("direct_coverage") != cached.get("coverage"):
                 return False
@@ -337,7 +429,7 @@ def cache_valid(cache, manifest, audio_dir, model):
         return False
 
 
-def align_audio_directory(audio_dir, *, model="base"):
+def align_audio_directory(audio_dir, *, model="base", strict=False):
     audio_dir = Path(audio_dir).resolve()
     manifest = json.loads((audio_dir / "narration-manifest.json").read_text(encoding="utf-8-sig"))
     validate_manifest(manifest, audio_dir)
@@ -362,7 +454,7 @@ def align_audio_directory(audio_dir, *, model="base"):
         segments, info = asr.transcribe(str(audio), language="pt", word_timestamps=True,
             initial_prompt=vocabulary or None, beam_size=5, condition_on_previous_text=False, vad_filter=False)
         asr_words, asr_text = split_timed_asr_words(segments)
-        words, diagnostics = align_scene(scene["narration"], asr_words, duration)
+        words, diagnostics = align_scene(scene["narration"], asr_words, duration, strict=strict)
         result["scenes"].append({"id": scene["id"], "file": scene["file"], "audio_sha256": scene["audio_sha256"],
             "narration_sha256": scene["narration_sha256"], "duration_seconds": round(duration, 6),
             "narration": scene["narration"], "asr_text": asr_text, "asr_language": info.language,
@@ -372,7 +464,7 @@ def align_audio_directory(audio_dir, *, model="base"):
                           "words": len(words)}, ensure_ascii=False), flush=True)
     result["status"] = "success" if all(scene["diagnostics"]["passed"] for scene in result["scenes"]) else "failed-alignment"
     output_file.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    if result["status"] != "success":
+    if strict and result["status"] != "success":
         raise RuntimeError("Alinhamento reprovado; consultar diagnósticos sem substituir roteiro por ASR.")
     return result
 

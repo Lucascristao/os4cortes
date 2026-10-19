@@ -132,6 +132,42 @@ class EditorialAlignmentTests(unittest.TestCase):
         self.assertEqual(len(prompt.split(", ")), 12)
         self.assertLessEqual(len(prompt), 180)
 
+    def test_permissive_mode_resolves_missing_prefix_and_passes(self):
+        observations = timed_observations(NARRATION, omitted={0})
+        words, diagnostics = align_scene(NARRATION, observations, 3, strict=False)
+        self.assertTrue(diagnostics["passed"])
+        self.assertEqual(len(words), len(canonical_words(NARRATION)))
+        self.assertEqual(words[0]["texto"], "Roberta")
+        self.assertEqual(words[0]["timing_source"], "estimated-prefix-span")
+        self.assertAlmostEqual(words[0]["inicio"], 0.0)
+
+    def test_permissive_mode_resolves_group_over_two_words_and_passes(self):
+        text = "A conversa chegou à escala seis por um."
+        words_canon = canonical_words(text)
+        sim_asr = [
+            {"texto": "A", "inicio": 0.0, "fim": 0.2},
+            {"texto": "conversa", "inicio": 0.2, "fim": 0.6},
+            {"texto": "chegou", "inicio": 0.6, "fim": 1.0},
+            {"texto": "à", "inicio": 1.0, "fim": 1.2},
+            {"texto": "escala", "inicio": 1.2, "fim": 1.6},
+            {"texto": "6x1", "inicio": 1.6, "fim": 2.2},
+        ]
+        words, diagnostics = align_scene(text, sim_asr, 3.0, strict=False)
+        self.assertTrue(diagnostics["passed"])
+        self.assertEqual(len(words), len(words_canon))
+        self.assertEqual([w["texto"] for w in words], words_canon)
+        self.assertEqual(diagnostics["unresolved_word_count"], 0)
+
+    def test_permissive_mode_resolves_missing_suffix_and_passes(self):
+        expected = canonical_words(NARRATION)
+        observations = timed_observations(NARRATION, omitted={len(expected) - 1})
+        words, diagnostics = align_scene(NARRATION, observations, 3, strict=False)
+        self.assertTrue(diagnostics["passed"])
+        self.assertEqual(len(words), len(expected))
+        self.assertEqual(words[-1]["texto"], expected[-1])
+        self.assertEqual(words[-1]["timing_source"], "estimated-suffix-span")
+
+
 
 class AlignmentManifestTests(unittest.TestCase):
     def fixture(self):
