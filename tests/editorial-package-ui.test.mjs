@@ -251,6 +251,11 @@ test('prompts delegam seleção à IA e pedem ideia completa com apelo sem faixa
     await h.get('#btnCopiarPromptIA').fire('click');
     const prompt = h.copied[0];
     assert.match(prompt, /automaticamente/);
+    assert.match(prompt, /FONTE EXCLUSIVA DESTE TRABALHO/);
+    assert.match(prompt, /Não navegue, não pesquise sites, notícias ou artigos de apoio/);
+    assert.match(prompt, /A URL identifica e credita o vídeo; não é um pedido de pesquisa/);
+    assert.match(prompt, /Fim de segmento da transcrição não (?:é necessariamente|garante) fim de frase/);
+    assert.doesNotMatch(prompt, /dados externos sem fonte verificada/);
     assert.match(prompt, /apelo viral ou curioso sustentado pelo material/);
     assert.match(prompt, /frase solta/);
     assert.match(prompt, /história (?:completa, mas banal|banal)/);

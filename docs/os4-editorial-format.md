@@ -30,7 +30,9 @@ O novo pacote também declara `editorial.intent`: papel em relação à fonte, p
 
 ## Atribuição e evidência
 
-Para cada afirmação, registrar se é fala atribuída, fato verificado em outra fonte, inferência editorial ou pergunta. Associar falas a palavras e timestamps da transcrição e manter a URL/origem. A legenda automática ajuda a localizar; a revisão do áudio confirma nomes, negativas e limites de corte. Timestamps derivados de legendas não devem ser apresentados como alinhamento acústico confirmado.
+Usar exclusivamente a transcrição e os metadados fornecidos, sem buscar notícias, sites ou artigos de apoio e sem acrescentar fatos específicos de memória. A URL identifica e credita o vídeo. Para cada afirmação, distinguir fala atribuída, informação explícita do material, inferência editorial ou pergunta. Associar falas a palavras e timestamps da transcrição e manter a URL/origem. Dados ausentes são omitidos ou ficam vazios nos campos que aceitam isso, sem criar pesquisa nem briefing adicional por corte.
+
+A legenda automática ajuda a localizar; timestamps derivados de legendas não devem ser apresentados como alinhamento acústico confirmado. A IA lê o contexto anterior e a continuação de cada clip: a quebra de linha da transcrição não é garantia de fim de frase. A seleção precisa preservar predicados, negações, condições, respostas e desfechos antes de intercalar uma narração ou mudar de assunto.
 
 “Ela diz que apresentou” registra um depoimento. Não prova, por si, os fatos posteriores nem a inexistência deles. Uma interpretação precisa explicar o raciocínio e conservar seu alcance: “neste trecho” quando a conclusão se refere somente ao recorte. Não usar uma resposta sobre intenção como prova do resultado, nem desconhecimento declarado como prova de inexistência.
 

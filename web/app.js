@@ -681,6 +681,10 @@ $("#btnCopiarTranscricao")?.addEventListener("click", async (event) => {
   }
 });
 
+const DIRETRIZ_FONTE_EXCLUSIVA = `FONTE EXCLUSIVA DESTE TRABALHO
+Use somente a transcrição e os metadados fornecidos neste prompt. Não navegue, não pesquise sites, notícias ou artigos de apoio e não abra a URL para buscar contexto adicional. A URL identifica e credita o vídeo; não é um pedido de pesquisa. Não acrescente fatos específicos usando memória, notícias ou informações de fora do material, nem atualize o contexto do vídeo com acontecimentos posteriores.
+Faça a seleção e, no formato autoral, o comentário a partir do que a fonte efetivamente diz, incluindo suas hipóteses, ironias e opiniões atribuídas. Você pode desenvolver uma observação própria e relacionar os pontos sustentados pelos trechos, conservando seu alcance. Se faltar um dado, omita a afirmação que depende dele ou escolha outro ponto; não pesquise para preencher a lacuna nem peça um briefing por corte. Datas desconhecidas ficam vazias nos campos que aceitam string vazia. Preserve o momento e a leitura do vídeo sem substituir a análise da fonte por uma análise do noticiário.`;
+
 function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, blocoVideoOriginal }) {
   const fonte = sampleAuthor && sampleAuthor !== "Canal Oficial" ? sampleAuthor : "Fonte original";
   const dadosFonte = blocoVideoOriginal.replace('Canal / Host: "Canal Oficial"', 'Canal / Host: não informado');
@@ -723,6 +727,8 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, 
 PRIORIDADE DE ESCRITA
 O text de cada narração é o produto final. Estrutura, metadados e timestamps existem para servir à fala e à montagem. Se o texto soa como telejornal, editorial de jornal ou relatório, reescreva: o corte falhou na escrita mesmo que o JSON esteja perfeito. Escreva primeiro uma fala natural, interessante e fiel ao material; organize-a no contrato exigido. A personalidade deve aparecer nas palavras, preservando a precisão dos fatos, as evidências e o JSON válido.
 
+${DIRETRIZ_FONTE_EXCLUSIVA}
+
 Faça automaticamente a seleção dos cortes, a escolha da pauta, do ângulo, da relação com a fonte e da contribuição do OS4. O usuário fornece o vídeo e a transcrição; não precisa elaborar um briefing, escolher o alvo ou aprovar uma proposta para cada corte. Resolva essas decisões a partir do material e da identidade abaixo e devolva o pacote estruturado pronto para importar.
 
 Selecione somente ideias completas com apelo viral ou curioso sustentado pelo material: uma surpresa, contraste, humor, fala marcante, tensão que se resolve ou aprendizado interessante que dê motivo para continuar e compartilhar. Uma história completa, mas banal e sem esse apelo, não basta. Descarte candidatos sem um gancho real; não preencha o lote com histórias sem graça nem invente conflito, indignação ou fatos para torná-las atraentes. Apelo é critério de seleção, não promessa de viralização. Não force uma quantidade mínima de cortes.
@@ -759,9 +765,12 @@ Selecione ideias com começo, meio e fim. O mínimo é de conteúdo: contexto su
 NÃO REPITA A MESMA IDEIA EM NARRAÇÕES DIFERENTES
 Identifique internamente a ideia ou função de cada intervenção. Se duas narrações carregam a mesma ideia, mesmo com palavras diferentes, elimine uma, una as duas ou substitua o conteúdo por uma contribuição nova. Parafrasear não é acrescentar. Uma ponte curta pode mudar o foco ou orientar a atenção para algo novo; não precisa virar um discurso nem anunciar a conclusão que outro bloco já entregou. No humor, preserve a surpresa e o tempo da reação; não acrescente fala só para demonstrar personalidade.
 
+LIMITES DOS TRECHOS ORIGINAIS
+Antes de fixar start/end de cada clip, leia a fala anterior e a continuação imediata na transcrição. Fim de segmento da transcrição não é necessariamente fim de frase. A entrada precisa ter referência compreensível e a saída precisa completar a ideia: não deixe de fora um predicado, uma negação, condição, resposta ou desfecho que está na linha seguinte. Não intercale narração no meio de uma frase para depois retomá-la como fragmento. Ajuste a seleção até um limite de sentido e recalcule o envelope; no humor, preserve a preparação e a punchline.
+
 Escreva como uma conversa brasileira, espontânea e acessível, com frases que soem bem em voz alta. A provocação nasce do que aconteceu na fonte; evite perguntas genéricas, clichês como “e aí, o que você acha?” e pedidos artificiais de comentário ou compartilhamento. Uma pergunta de engajamento deve ser específica, natural e pertinente, sem pressupor fatos ausentes ou transformar uma acusação sem base em pergunta. Compartilhamento deve vir de uma observação boa, uma surpresa, uma contradição real ou uma frase memorável, sem fabricar indignação.
 
-Preserve a atribuição: “ela diz”, “segundo o relato”, quando isso bastar para distinguir fala de fato estabelecido. Separe fato da fonte e sua interpretação, sem insinuações ou acusações sem fundamento. Não transforme toda fala em defesa preventiva: não repita “isso não prova nada”, “não significa crime” ou ressalvas equivalentes na abertura, no comentário e no final. Quando uma ressalva factual for necessária para impedir uma conclusão enganosa, faça-a uma vez, no ponto relevante, e desenvolva o assunto. Não há obrigação de encerrar com limite de evidência. Não invente falas, datas, participantes, números, fatos ou conclusões; dados externos sem fonte verificada ficam fora da locução.
+Preserve a atribuição: “ela diz”, “segundo o relato”, quando isso bastar para distinguir fala de fato estabelecido. Separe fato da fonte e sua interpretação, sem insinuações ou acusações sem fundamento. Não transforme toda fala em defesa preventiva: não repita “isso não prova nada”, “não significa crime” ou ressalvas equivalentes na abertura, no comentário e no final. Quando uma ressalva factual for necessária para impedir uma conclusão enganosa, faça-a uma vez, no ponto relevante, e desenvolva o assunto. Não há obrigação de encerrar com limite de evidência. Não invente falas, datas, participantes, números, fatos ou conclusões. Informações externas ficam fora deste pacote, mesmo que pareçam verificadas em outro lugar.
 
 Exemplos FICTÍCIOS de comportamento, apenas para estilo; não são fatos, falas ou tempos desta fonte:
 - Cocomentário político alinhado: num cenário inventado, um comentarista critica uma promessa de reduzir cargos diante do anúncio de novos cargos. source_point: "A promessa de enxugar a estrutura contrasta com o anúncio de novos cargos"; target: "A coerência entre a promessa e a decisão do governo fictício"; contribution: "Cobrar qual função concreta justifica a expansão"; mode: "support_source". Fala possível: "Olha a curva: prometeram enxugar e anunciaram mais cargos. O discurso fez dieta; a estrutura pediu sobremesa. É nesse contraste que o comentarista pegou. Qual problema esses novos cargos vão resolver?" O OS4 desenvolve a cobrança sustentada com personalidade; a intensidade do comentarista não substitui esse assunto.
@@ -827,6 +836,9 @@ $("#btnCopiarPromptIA")?.addEventListener("click", async (event) => {
     : "";
 
   const promptSimples = `Você é um editor sênior e estrategista multiplataforma do OS4 Cortes, especializado em gerar conteúdos de alta performance para redes sociais (Reels e TikTok) e vídeos normais para o YouTube (formato horizontal de canal de cortes).
+
+${DIRETRIZ_FONTE_EXCLUSIVA}
+
 Leia toda a transcrição antes de selecionar. Sua missão é entregar um ÚNICO PACOTE JSON UNIFICADO contendo DOIS TIPOS DE CORTES:
 
 Escolha automaticamente os trechos e sua estrutura a partir da transcrição. O mínimo é de conteúdo: contexto, desenvolvimento e desfecho, sem transformar uma frase solta, um bordão ou uma reação isolada em corte. O usuário não precisa elaborar um briefing nem aprovar uma proposta para cada vídeo. Não imponha duração mínima numérica, duração-alvo ou faixas de curtos/médios/longos; preserve uma ideia completa, sem esticar nem interromper falas para atingir tempo.
@@ -859,6 +871,7 @@ Selecione somente ideias completas com apelo viral ou curioso sustentado pelo ma
 
 --- REGRAS DE SEGURANÇA E DIRETRIZES GERAIS ---
 - Termine sempre em ideias concluídas. Se a saída for abrupta, marque "saida_suave": false.
+- Leia a fala anterior e a continuação imediata antes de fixar inicio/fim. Fim de segmento da transcrição não garante fim de frase; preserve referências, predicados, negações, condições, respostas e o desfecho da piada.
 - Diretriz Anti-Bloqueio: NUNCA utilize termos de medicamentos controlados/emagrecedores, promessas financeiras ilusórias, violência explícita ou substâncias ilícitas. Use eufemismos conceituais neutros.
 - Responda ESTRITAMENTE em JSON válido (array de objetos), sem Markdown nem textos antes ou depois. Use timestamps HH:MM:SS.
 
