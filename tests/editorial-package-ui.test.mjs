@@ -404,6 +404,55 @@ test('prompt transmite cocomentário, intenção e exemplos com conferência int
   assert.equal(h.requests.some(request => /review|editorial-check|generate-script/.test(request.path)), false);
 });
 
+test('prompt copiado exige contexto audível antes das referências e preserva a situação da fala', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao(session());
+  await h.get('#btnCopiarPromptIA').fire('click');
+  const prompt = h.copied[0];
+  const contextStart = prompt.indexOf('CADA CORTE PRECISA SE EXPLICAR SOZINHO');
+  assert.ok(contextStart > prompt.indexOf('FONTE EXCLUSIVA DESTE TRABALHO'));
+  assert.ok(contextStart < prompt.indexOf('Identidade permanente do OS4'));
+  assert.match(prompt, /pessoa que não viu a fonte nem os outros cortes/);
+  assert.match(prompt, /Frases completas não garantem uma história compreensível/);
+  assert.match(prompt, /precisa ser ouvido nos clips ou no text das narrações/);
+  assert.match(prompt, /source, profile, intent e evidence não substituem essa apresentação ao público/);
+  assert.match(prompt, /Antes da primeira referência que dependa de algo anterior/);
+  assert.match(prompt, /pergunta respondida, pessoa ou relação relevante, apelido, comparação, personagem, metáfora/);
+  assert.match(prompt, /lendo um artigo, citando outra pessoa, encenando ou imaginando uma hipótese/);
+  assert.match(prompt, /Preserve a diferença entre o que ela afirma e o que imagina/);
+  assert.match(prompt, /Só comece direto no clip se a situação e as referências necessárias forem compreensíveis ali/);
+  assert.match(prompt, /associe-as a evidence e ajuste o envelope/);
+  assert.match(prompt, /TESTE DO ESPECTADOR SEM CONTEXTO/);
+  assert.match(prompt, /somente os clips e o text que serão ouvidos, na ordem final/);
+  assert.match(prompt, /Marque internamente a primeira referência que ficou sem explicação e corrija antes dela/);
+  assert.match(prompt, /a estrutura técnica não comprova contexto nem qualidade editorial/);
+  assert.equal(h.confirmations.length, 0);
+  assert.equal(h.requests.some(request => /review|editorial-check|generate-script/.test(request.path)), false);
+});
+
+test('prompt reúne histórias dependentes sem inventar elos e aceita narração para contextualizar', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao(session());
+  await h.get('#btnCopiarPromptIA').fire('click');
+  const prompt = h.copied[0];
+  assert.match(prompt, /Avalie os candidatos em conjunto antes de fechar o lote/);
+  assert.match(prompt, /mesma preparação e desenvolvem a mesma história, reúna-os em um único corte se isso completar seu arco/);
+  assert.match(prompt, /Não entregue pedaços que só fazem sentido quando o público já viu outro vídeo/);
+  assert.match(prompt, /ponte que explique o elo real ou a mudança de assunto/);
+  assert.match(prompt, /não invente causalidade, intenção ou sequência temporal entre elas/);
+  assert.match(prompt, /Compartilhar pessoa, tema ou vídeo de origem não basta para juntar histórias diferentes/);
+  assert.match(prompt, /Recalcule as referências, o envelope e a soma dos clips após reorganizar/);
+  assert.match(prompt, /Repor contexto indispensável ou resolver uma referência pela primeira vez é uma função legítima da narração/);
+  assert.match(prompt, /não elimine essa fala por ela não acrescentar uma opinião/);
+  assert.match(prompt, /\(3\) esta intervenção entrega contexto necessário, resolve uma referência ou acrescenta uma ideia/);
+  assert.match(prompt, /Se o material não permitir torná-la compreensível, descarte o candidato/);
+  assert.match(prompt, /sem pedir conferência ao usuário/);
+  assert.match(prompt, /Não force uma quantidade mínima de cortes/);
+  assert.match(prompt, /Não imponha|sem duração mínima numérica/);
+  assert.match(prompt, /não significam três blocos de narração/);
+  assert.doesNotMatch(prompt, /Lulinha|Dois Diabinhos|samba de Lula/);
+});
+
 const contextualProfile = extra => ({
   perspective: 'right', topic: 'politics', tone: 'provocative', intensity: 'medium',
   angle: 'O peso político da resposta que ouvimos.', audience_question: 'Qual resposta faltou nesta conversa?', ...extra,

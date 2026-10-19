@@ -173,6 +173,16 @@ Para cada cena, os tipos mínimos são:
 
 Textos visuais devem ser dados, renderizados pelo componente de edição. A IA não deve fornecer filtros FFmpeg, comandos, nomes de fontes no sistema, HTML ou código executável.
 
+### Contexto autossuficiente na montagem
+
+O prompt exige que cada corte seja compreensível por quem não viu a fonte, apenas com os clips e os `text` na ordem final. Título, metadados de planejamento e `evidence` não entregam contexto ao espectador. A seleção ou a narração precisa resolver antecedentes, metáforas, personagens, papéis e perguntas necessárias antes de suas referências aparecerem. Leituras, citações, encenações e hipóteses conservam essa condição, distinguindo o que a fonte afirma literalmente do que imagina.
+
+Repor contexto indispensável ou resolver uma referência pela primeira vez é uma função legítima da narração, sem exigir opinião extra. O contexto vem da própria transcrição, com as referências em `evidence` e o envelope recalculado; não pode fabricar o desenvolvimento ausente na fonte. No humor, começar pelo clip exige preparação e referências compreensíveis, sem antecipar a punchline.
+
+Trechos dependentes devem ser reunidos quando o elo real da fonte formar uma história completa; a ponte pode explicitar a relação ou a mudança de assunto, sem criar causa, intenção ou cronologia. O mesmo assunto ou participante não determina uma fusão automática. Na revisão interna da própria geração, a IA simula o corte isolado e reestrutura, contextualiza, reúne trechos dependentes ou descarta o candidato que não funcionar.
+
+Esses critérios de escrita não constituem um novo validador semântico do motor. Passar na estrutura e nos intervalos não comprova clareza, ritmo ou qualidade autoral. O fluxo permanece sem chamada adicional de API ou aprovação humana por vídeo.
+
 ### Validação antes de síntese
 
 - Versão suportada e limites de quantidade/tamanho de cenas e falas.

@@ -27,7 +27,17 @@ Os pares abaixo são fictícios e ensinam registro, sem fornecer fatos para os c
 
 Na redação própria de `text`, substituir “no âmbito de”, “mero”, “mera”, “depreende-se”, “diante dos elementos”, “a tese de”, “sustentação”, “probatório”, “factual relevante” e “cumpre observar” por equivalentes falados com o mesmo sentido. A orientação pertence ao prompt de escrita; não há filtro por palavras no motor, mudança das falas originais nos clips ou restrição aos campos técnicos do contrato.
 
-A IA testa cada narração na mesma resposta: tem frase de conversa, cabe num podcast ou conversa com a emoção da cena e cumpre uma função nova? Se falhar, reescrever, unir ou eliminar a intervenção. Uma ponte curta pode orientar a atenção; não precisa ganhar piada, bordão ou frase extra. Parafrasear uma ideia que outra narração já entregou não acrescenta conteúdo.
+A IA testa cada narração na mesma resposta: tem frase de conversa, cabe num podcast ou conversa com a emoção da cena e cumpre uma função nova? Se falhar, reescrever, unir ou eliminar a intervenção. Repor contexto indispensável ou resolver uma referência pela primeira vez é uma função legítima; não exige outra opinião, piada ou bordão. Parafrasear uma ideia que outra narração já entregou não acrescenta conteúdo.
+
+## Contexto compreensível no próprio corte
+
+Cada corte precisa ser entendido por quem não viu a fonte, ouvindo apenas os clips e os `text` na ordem final. Título, textos de planejamento e intervalos de `evidence` não entregam contexto ao espectador. Antes de uma referência dependente, preservar ou explicar o antecedente, a metáfora, os personagens, o papel de quem fala e a pergunta necessária para entender a resposta. Se a fonte lê, cita, encena ou imagina uma situação, esclarecer essa relação naturalmente, conservando a diferença entre afirmação literal e hipótese.
+
+O contexto pode vir da preparação original ou de uma narração breve baseada em outra passagem da mesma transcrição. A narração resolve informação ausente na montagem; não fabrica uma ideia que a fonte não desenvolve. Incluir as referências correspondentes em `evidence` e ajustar o envelope do corte. No humor, abrir diretamente no clip somente quando sua preparação e suas referências forem compreensíveis por si; contextualizar sem revelar a punchline.
+
+Quando candidatos dependem um do outro, reunir os trechos se o elo real da fonte formar uma história compreensível. A ponte explica a relação ou a mudança de assunto sem inventar causa, intenção ou cronologia. Compartilhar assunto ou participante não obriga a fusão.
+
+A IA testa o corte isoladamente na própria geração: se faltou contexto, reestruturar, contextualizar, reunir trechos dependentes ou descartar o candidato. Isso não cria API de revisão nem aprovação humana adicional. Validação de estrutura e intervalos não comprova clareza, ritmo ou qualidade autoral.
 
 ## Relação com a fonte
 

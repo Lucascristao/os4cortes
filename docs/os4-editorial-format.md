@@ -12,13 +12,23 @@ Não há duração mínima numérica, duração-alvo ou faixas de curtos, médio
 
 A montagem final usa a duração real dos WAVs, sem usá-la para reclassificar o destino. Não repetir uma explicação, prolongar silêncio, desacelerar a voz ou alongar uma cartela para atingir um minuto. Uma fala precisa continuar até completar a ideia, inclusive condições, negativas e ressalvas que mudem o sentido.
 
+## Contexto que chega ao espectador
+
+Cada vídeo precisa funcionar para quem não viu a fonte: apenas clips e `text`, na ordem final, devem explicar o necessário. Título, metadados, `evidence` e outros cortes do lote não substituem esse contexto. Resolver antes do uso os antecedentes, metáforas, personagens e papéis de quem fala; preservar a pergunta que determina o alcance da resposta. Quando a fonte lê, cita, encena ou imagina, deixar essa relação compreensível sem transformar hipótese em fato nem afirmação literal em ficção.
+
+Preservar a preparação original ou usar uma narração curta sustentada pela transcrição, com `evidence` correspondente e envelope ajustado. Contextualizar ou resolver uma referência pela primeira vez é função própria da narração e não obriga uma nova opinião; continua proibido fabricar desenvolvimento ausente ou repetir a mesma conclusão.
+
+Trechos dependentes podem ser reunidos quando o elo real da fonte produzir uma história completa. A ponte explica a relação ou a mudança de assunto, sem inventar causalidade, intenção ou cronologia. Não juntar automaticamente passagens apenas porque tratam do mesmo participante ou assunto.
+
+A revisão interna simula o vídeo isolado e resolve lacunas antes do JSON: reestruturar, contextualizar, reunir candidatos dependentes ou descartar. O contrato técnico verifica estrutura e intervalos, sem certificar compreensão ou qualidade autoral. Essa conferência pertence à geração externa existente; não acrescenta API, briefing ou aprovação humana por vídeo.
+
 ## Comentarista de direita com interpretação contextual
 
 Escrever como quem conversa com uma pessoa, com frases curtas, opinião e ritmo. Em política, assumir a perspectiva de direita e desenvolver a cobrança ou o contraste que a fonte permite: coerência, responsabilidade no uso do dinheiro público, liberdade e limites do poder quando pertinentes. Firmeza pode vir com leveza; não exige raiva, grito ou sermão. Em economia, aproximar a consequência da vida do público; em empreendedorismo, destacar a decisão e o resultado concreto.
 
 No prompt autoral, a prioridade de escrita vem antes do planejamento e do schema. Pares fictícios de registro formal e falado demonstram a voz em qualquer tema, conservando o sentido. A IA confere cada `text` quanto a oralidade, emoção adequada e função própria antes de revisar o contrato, na mesma resposta. Duas narrações com a mesma ideia devem ser unidas, substituídas ou reduzidas; pontes curtas podem apenas orientar a atenção. A lista de construções formais orienta a redação e não cria bloqueio por palavras no motor. Veja a [direção de escrita e os exemplos](os4-commentator-profile.md).
 
-Humor pode começar diretamente na fala original. Preservar preparação, surpresa e desfecho; o comentário entra no momento em que acrescenta uma reação, sem antecipar nem explicar a piada. Não impor política a uma história sem assunto político, nem piada a sofrimento. Assuntos sensíveis pedem sobriedade. O número e o tamanho das intervenções seguem o contexto, sem alongar a voz para simular autoria.
+Humor pode começar diretamente na fala original quando a preparação e suas referências forem compreensíveis por si. Preservar preparação, surpresa e desfecho; quando faltar contexto, repô-lo sem revelar a punchline. O comentário entra no momento em que acrescenta uma reação, sem antecipar nem explicar a piada. Não impor política a uma história sem assunto político, nem piada a sofrimento. Assuntos sensíveis pedem sobriedade. O número e o tamanho das intervenções seguem o contexto, sem alongar a voz para simular autoria.
 
 Provocação e ironia devem nascer das palavras, situações e contrastes mostrados. Uma pergunta também transmite pressupostos: “Quem se beneficiou do esquema?” pressupõe um esquema e não serve quando isso não foi estabelecido. Uma ressalva cabe quando corrige um salto concreto na conclusão. A atribuição curta, como “ela afirma”, costuma bastar para apresentar um depoimento; não inserir automaticamente defesas jurídicas ou repetir que uma declaração não prova crime.
 
