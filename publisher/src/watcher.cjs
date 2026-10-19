@@ -1,4 +1,5 @@
 const EventEmitter=require('node:events');
+const {BRAND_ACCOUNT,canonicalAccount}=require('./branding.cjs');
 const ENDPOINT='https://os4cortes.netlify.app/.netlify/functions/publisher-folder';
 const terminal=s=>['completed','error','cancelled'].includes(s);
 class FolderWatcher extends EventEmitter {
@@ -74,7 +75,7 @@ class FolderWatcher extends EventEmitter {
       const videoFileId=key.split(':').slice(2).join(':'); // formato contains one colon
       const nets=c.formato==='16:9'?['youtube']:['tiktok','instagram'];
       const existing=this.q.list().filter(j=>j.payload.driveFileId===videoFileId&&j.payload.formato===c.formato&&['queued','publishing','completed','verify'].includes(j.state));
-      if(nets.every(n=>existing.some(j=>j.payload.network===n&&j.payload.account===(this.q.get('accounts',{})[n]?.account||'@os4.cortes')))){
+      if(nets.every(n=>existing.some(j=>j.payload.network===n&&canonicalAccount(j.payload.account)===canonicalAccount(this.q.get('accounts',{})[n]?.account||BRAND_ACCOUNT)))){
         w.done[key]=true;this.save();continue;
       }
       this.downloading.add(key);

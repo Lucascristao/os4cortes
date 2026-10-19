@@ -8,6 +8,7 @@ const { LocalBridgeServer } = require('./bridge.cjs');
 const { scanDriveFolder, downloadTextFileDirect, downloadCorte } = require('./downloader.cjs');
 const { FolderWatcher } = require('./watcher.cjs');
 const { sanitizeDiagnostic } = require('./diagnostics.cjs');
+const { canonicalAccount } = require('./branding.cjs');
 
 const smoke = process.argv.includes('--smoke-test');
 const dataDir = smoke ? (process.env.OS4_SMOKE_DIR || path.join(app.getPath('temp'), `OS4Publicador-smoke-${process.pid}`)) : path.join(process.env.LOCALAPPDATA, 'OS4Publicador');
@@ -263,7 +264,7 @@ ipcMain.handle('save-account', async (event, { network, account }) => {
     throw new Error('Informe a identificação da conta');
   }
   const accounts = q.get('accounts', {});
-  accounts[network] = { account: account.trim(), status: 'Informada; confirmação visual pendente' };
+  accounts[network] = { account: canonicalAccount(account.trim()), status: 'Informada; confirmação visual pendente' };
   q.set('accounts', accounts);
   return true;
 });

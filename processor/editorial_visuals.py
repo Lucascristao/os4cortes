@@ -16,8 +16,9 @@ from typing import Sequence
 from PIL import Image, ImageDraw, ImageFont
 
 from .lower_third import LowerThird
+from .branding import CHANNEL_BADGE, normalize_branding
 
-VISUAL_STYLE_VERSION = "os4-creator-black-motion-2026-v2"
+VISUAL_STYLE_VERSION = "os4-creator-black-motion-2026-v3-os4dedireita"
 BACKGROUND_STYLE_VERSION = "os4-creator-black-motion-2026-v1"
 
 
@@ -81,7 +82,7 @@ class EditorialScene:
     kicker: str = ""
     lines: tuple[str, ...] = ()
     credit: str = ""
-    brand: str = "OS4 CORTES"
+    brand: str = CHANNEL_BADGE
 
     def __post_init__(self) -> None:
         for name in ("title", "kicker", "credit", "brand"):
@@ -95,6 +96,7 @@ class EditorialScene:
                                       for line in self.lines):
             raise ValueError("Use at most three nonempty overlay lines.")
         object.__setattr__(self, "lines", tuple(self.lines))
+        object.__setattr__(self, "brand", normalize_branding(self.brand))
 
 
 def build_background_filter(

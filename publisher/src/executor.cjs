@@ -5,6 +5,7 @@ const { sanitizeDiagnostic } = require('./diagnostics.cjs');
 const EventEmitter = require('node:events');
 const { buildYouTubeTitle } = require('./titles.cjs');
 const { PublicationAttempt } = require('./attempt.cjs');
+const { BRAND_ACCOUNT, canonicalAccount, rebrandText } = require('./branding.cjs');
 
 class QueueExecutor extends EventEmitter {
   constructor(q, options = {}) {
@@ -21,8 +22,8 @@ class QueueExecutor extends EventEmitter {
     const fileId=p.driveFileId||`${p.requestId||'local'}:${p.videoPath}`;
     const jobs=this.q.list(),ids=[];
     for(const network of nets) {
-      const account=this.q.get('accounts',{})[network]?.account||'@os4.cortes';
-      if(jobs.some(j=>j.payload.network===network && j.payload.account===account &&
+      const account=canonicalAccount(this.q.get('accounts',{})[network]?.account||BRAND_ACCOUNT);
+      if(jobs.some(j=>j.payload.network===network && canonicalAccount(j.payload.account)===account &&
         (j.payload.driveFileId===fileId || (j.payload.folderId && j.payload.folderId===p.folderId &&
          j.payload.cutIndex===p.cutIndex && (j.payload.formato||'9:16')===formato)))) continue;
       const id=crypto.createHash('sha256').update(JSON.stringify([fileId,formato,network,account])).digest('hex');
@@ -62,7 +63,7 @@ class QueueExecutor extends EventEmitter {
     const p=job.payload,net=p.network,started=this.now();let begun=false,attempt;
     try{
       await this.validateVideo(p.videoPath);
-      const text=p.postPath&&fs.existsSync(p.postPath)?fs.readFileSync(p.postPath,'utf8').trim():(p.postText||'').trim();
+      const text=rebrandText(p.postPath&&fs.existsSync(p.postPath)?fs.readFileSync(p.postPath,'utf8').trim():(p.postText||'').trim());
       if(!text)throw new Error('Texto da postagem ausente. O corte não será publicado sem legenda.');
       this.q.begin(job.id,started);begun=true;
       this.nextAvailable[net]=this.q.eligibility(net,started).next;this.q.set('network_next',this.nextAvailable);
@@ -77,7 +78,7 @@ class QueueExecutor extends EventEmitter {
         tiktok:args=>require('./adapters/tiktok.cjs').publishTikTok(args),
         instagram:args=>require('./adapters/instagram.cjs').publishInstagramReels(args)
       };
-      const firstLine=text.split('\n').find(l=>l.trim()&&!l.startsWith('#'))||p.titulo;
+      const firstLine=text.split('\n').find(l=>l.trim()&&!l.startsWith('#'))||rebrandText(p.titulo);
       const task=Promise.resolve().then(()=>publishers[net]({videoPath:p.videoPath,caption:text,title:buildYouTubeTitle(firstLine,text),description:text,thumbnailPath:p.capaPath,attempt}));
       let timer;
       const expiry=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Tempo de envio excedido. Navegador encerrado para liberar a fila.')),this.options.timeoutMs||600000);});

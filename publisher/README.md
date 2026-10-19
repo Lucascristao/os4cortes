@@ -1,5 +1,7 @@
 # OS4 Publicador 0.2.0
 
+Canal **OS4 de Direita**, identificado como **@os4dedireita** no TikTok, Instagram e YouTube. A abertura atualiza apenas as identificações antigas da marca e as descrições de envios pendentes; contas personalizadas, sessões, arquivos, histórico e limites permanecem preservados. Legendas baixadas de lotes antigos também recebem a nova identificação ao preparar o envio.
+
 Cole a pasta do vídeo novo em **Acompanhar & Iniciar Fila**, mesmo enquanto os cortes ainda são gerados. O acompanhamento consulta a API do OS4 a cada dois minutos, recebe os pacotes completos e retoma automaticamente após reiniciar. A geração escreve `_os4_publicador.json` na pasta para conectar o aplicativo à API; pastas de renderizações antigas podem não conter esse arquivo.
 
 Vídeos verticais seguem para TikTok e Instagram. Vídeos 16:9 seguem para YouTube. São permitidos dois envios simultâneos em redes diferentes, com um envio por rede. O intervalo de três a cinco minutos conta desde o início da tentativa e mantém uma pausa mínima de trinta segundos após o encerramento. O limite diário existente é de cinquenta tentativas por rede, contado pelo horário de Fortaleza; o painel informa quando esse limite é atingido.

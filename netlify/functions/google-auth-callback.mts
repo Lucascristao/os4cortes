@@ -62,27 +62,40 @@ async function driveFetch(
 
 async function ensureFolder(accessToken: string): Promise<string> {
   const query = encodeURIComponent(
-    "name = 'OS4 Cortes' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+    "(name = 'OS4 de Direita' or name = 'OS4 Cortes') and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
   );
 
   const found = await driveFetch(
     accessToken,
-    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=10`
+    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=1000`
   );
 
-  const folderId = (found.files && found.files.length > 0)
-    ? found.files[0].id
+  const folder = found.files?.find((file: { id: string; name: string }) => file.name === "OS4 de Direita")
+    || found.files?.find((file: { id: string; name: string }) => file.name === "OS4 Cortes");
+  const folderId = folder
+    ? folder.id
     : (await driveFetch(
         accessToken,
         "https://www.googleapis.com/drive/v3/files?fields=id,name",
         {
           method: "POST",
           body: JSON.stringify({
-            name: "OS4 Cortes",
+            name: "OS4 de Direita",
             mimeType: "application/vnd.google-apps.folder",
           }),
         }
       )).id;
+
+  if (folder?.name === "OS4 Cortes") {
+    try {
+      await driveFetch(accessToken, `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id,name`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: "OS4 de Direita" }),
+      });
+    } catch (_) {
+      // Keep the existing folder ID even when its display name cannot be updated.
+    }
+  }
 
   try {
     await driveFetch(
@@ -169,7 +182,7 @@ export default async (req: Request) => {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>Google Drive conectado — OS4 Cortes</title>
+<title>Google Drive conectado — OS4 de Direita</title>
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;background:#0b0b0b;color:#f5f5f5;margin:0;padding:24px}
 main{max-width:720px;margin:auto}.card{background:#151515;border:1px solid #2a2a2a;border-radius:18px;padding:20px;margin:14px 0}
@@ -183,7 +196,7 @@ small{color:#aaa;line-height:1.45;display:block}
 <main>
   <div class="card">
     <h1><span class="ok">✓</span> Google Drive conectado</h1>
-    <p>A pasta <strong>OS4 Cortes</strong> já está pronta no seu Drive.</p>
+    <p>A pasta do <strong>OS4 de Direita</strong> já está pronta no seu Drive.</p>
     <small>Copie os valores abaixo para os Secrets do GitHub. Esta página não salva os tokens.</small>
 
     <label>GOOGLE_REFRESH_TOKEN</label>

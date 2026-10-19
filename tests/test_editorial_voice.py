@@ -32,6 +32,11 @@ class EditorialVoiceTests(unittest.TestCase):
         self.assertEqual(jobs[0]["narration"], plan["scenes"][0]["text"])
         self.assertEqual(jobs[0]["direction"]["delivery"], "question")
         self.assertEqual(manifest["runtime_source"], "os4-local-port")
+        self.assertEqual(manifest["channel_identity"], "OS4 de Direita")
+        self.assertEqual(manifest["channel_handle"], "@os4dedireita")
+        self.assertIn("Você é o narrador do canal OS4 de Direita.", worker.live_session_config("Charon")["system_instruction"])
+        self.assertIn("@os4dedireita em todas as redes", manifest["global_direction"])
+        self.assertNotIn("OS4 Cortes", manifest["global_direction"])
         self.assertFalse(manifest["ode_checkout_required"])
         self.assertEqual(manifest["fallback_models"], [])
 

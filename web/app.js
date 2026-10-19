@@ -233,6 +233,14 @@ function restaurarSessao() {
     const savedPackage = localStorage.getItem(STORAGE_PACKAGE);
     if (savedPackage && pacote && !pacote.value) {
       pacote.value = savedPackage;
+      try {
+        const parsed = JSON.parse(savedPackage);
+        const migrated = atualizarIdentidadePacote(parsed);
+        if (JSON.stringify(migrated) !== JSON.stringify(parsed)) {
+          pacote.value = JSON.stringify(migrated, null, 2);
+          localStorage.setItem(STORAGE_PACKAGE, pacote.value);
+        }
+      } catch {}
     }
     const rawResults = localStorage.getItem(STORAGE_RESULTS);
     if (rawResults && !localStorage.getItem(STORAGE_JOB)) {
@@ -681,6 +689,10 @@ $("#btnCopiarTranscricao")?.addEventListener("click", async (event) => {
   }
 });
 
+const DIRETRIZ_IDENTIDADE_CANAL = `IDENTIDADE DO CANAL
+Nome oficial: OS4 de Direita. O identificador é @os4dedireita em todas as redes: Instagram, TikTok e YouTube. Preserve a identidade visual e o logo OS4; use o nome atual e o identificador atual nas referências ao nosso canal.
+Nas legendas de postagem e nas descrições do YouTube, inclua uma única assinatura: "Siga @os4dedireita para mais análises e comentários de direita." Use hashtags temáticas, sem hashtags de marca. O nome do canal e o @ são a nossa identificação; não substituem os créditos do vídeo original. Preserve títulos, nomes, URLs e falas da fonte. Não acrescente anúncio de mudança de nome, bordão ou chamada para seguir nas narrações só para cumprir a identificação.`;
+
 const DIRETRIZ_FONTE_EXCLUSIVA = `FONTE EXCLUSIVA DESTE TRABALHO
 Use somente a transcrição e os metadados fornecidos neste prompt. Não navegue, não pesquise sites, notícias ou artigos de apoio e não abra a URL para buscar contexto adicional. A URL identifica e credita o vídeo; não é um pedido de pesquisa. Não acrescente fatos específicos usando memória, notícias ou informações de fora do material, nem atualize o contexto do vídeo com acontecimentos posteriores.
 Faça a seleção e, no formato autoral, o comentário a partir do que a fonte efetivamente diz, incluindo suas hipóteses, ironias e opiniões atribuídas. Você pode desenvolver uma observação própria e relacionar os pontos sustentados pelos trechos, conservando seu alcance. Se faltar um dado, omita a afirmação que depende dele ou escolha outro ponto; não pesquise para preencher a lacuna nem peça um briefing por corte. Datas desconhecidas ficam vazias nos campos que aceitam string vazia. Preserve o momento e a leitura do vídeo sem substituir a análise da fonte por uma análise do noticiário.`;
@@ -722,7 +734,9 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, 
       ],
     },
   }];
-  return `Você é o editor do OS4 Cortes. Leia toda a transcrição e crie vídeos autorais completos: a fala original deve sustentar um comentário próprio com personalidade, contexto, desenvolvimento e fechamento.
+  return `Você é o editor do OS4 de Direita. Leia toda a transcrição e crie vídeos autorais completos: a fala original deve sustentar um comentário próprio com personalidade, contexto, desenvolvimento e fechamento.
+
+${DIRETRIZ_IDENTIDADE_CANAL}
 
 PRIORIDADE DE ESCRITA
 O text de cada narração é o produto final. Estrutura, metadados e timestamps existem para servir à fala e à montagem. Se o texto soa como telejornal, editorial de jornal ou relatório, reescreva: o corte falhou na escrita mesmo que o JSON esteja perfeito. Escreva primeiro uma fala natural, interessante e fiel ao material; organize-a no contrato exigido. A personalidade deve aparecer nas palavras, preservando a precisão dos fatos, as evidências e o JSON válido.
@@ -844,7 +858,9 @@ $("#btnCopiarPromptIA")?.addEventListener("click", async (event) => {
     ? `\n--- DADOS DO VÍDEO ORIGINAL NO YOUTUBE ---\nTítulo oficial no YouTube: "${sampleTitle}"\nCanal / Host: "${sampleAuthor}"\n`
     : "";
 
-  const promptSimples = `Você é um editor sênior e estrategista multiplataforma do OS4 Cortes, especializado em gerar conteúdos de alta performance para redes sociais (Reels e TikTok) e vídeos normais para o YouTube (formato horizontal de canal de cortes).
+  const promptSimples = `Você é um editor sênior e estrategista multiplataforma do OS4 de Direita, especializado em gerar conteúdos de alta performance para redes sociais (Reels e TikTok) e vídeos normais para o YouTube (formato horizontal de canal de cortes).
+
+${DIRETRIZ_IDENTIDADE_CANAL}
 
 ${DIRETRIZ_FONTE_EXCLUSIVA}
 
@@ -861,7 +877,7 @@ Selecione somente ideias completas com apelo viral ou curioso sustentado pelo ma
 4. Legenda do Post: Reflexão/insight do corte em 2 a 3 linhas + linha de crédito oficial obrigatória:
    🎬 Episódio completo: "${sampleTitle || "Título oficial do vídeo no YouTube"}"
    🎙️ Com: [Nomes dos Participantes extraídos do vídeo]
-5. Hashtags: 2 a 3 hashtags temáticas específicas no array "hashtags" (ex: ["#negocios", "#gestao"]). NÃO use #os4 nem #os4cortes.
+5. Hashtags: 2 a 3 hashtags temáticas específicas no array "hashtags" (ex: ["#negocios", "#gestao"]). NÃO use hashtags de marca; o @os4dedireita fica na assinatura.
 
 --- GRUPO 2: CORTES LONGOS (YouTube - Vídeos Normais 16:9) ---
 1. Proporção e Duração: "formato": "16:9", "destino": "youtube". Trechos originais acima de 3 minutos. A ideia completa determina a duração, sem impor uma faixa ou alongar o corte para preencher tempo; não reproduza o vídeo inteiro.
@@ -1012,7 +1028,36 @@ function duracaoConteudoOriginal(corte, inicio, fim, simpleCuts = false) {
   return Number(clips.reduce((total, cena) => total + cena.end - cena.start, 0).toFixed(6));
 }
 
+function normalizarTextoMarca(value) {
+  // Only owned publication fields use this function; keep source URLs intact.
+  return String(value ?? "").split(/(https?:\/\/[^\s<>]+)/gi).map((part, index) => index % 2 ? part : part
+    .replace(/Siga\s+@os4(?:[._]?cortes|dedireita)\s+para mais insights diários sobre negócios e liderança\.?/gi,
+      "Siga @os4dedireita para mais análises e comentários de direita.")
+    .replace(/(?<![\w@])@os4[._]?cortes(?!\w|\.\w)/gi, "@os4dedireita")
+    .replace(/(?<![\w#])#os4[._]?cortes(?!\w|\.\w)/gi, "#os4dedireita")
+    .replace(/(?<![\w/@#\\])os4\s+cortes\b/gi, "OS4 de Direita")
+    .replace(/(?<![\w/@#\\])os4[._]?cortes(?!\w|\.\w)/gi, "os4dedireita")
+  ).join("");
+}
+
+function atualizarIdentidadePacote(data) {
+  const updateCut = cut => {
+    if (!cut || typeof cut !== "object" || Array.isArray(cut)) return cut;
+    const updated = { ...cut };
+    for (const key of ["titulo", "legenda_post", "descricao", "descricao_completa", "hashtags", "tags"]) {
+      if (typeof updated[key] === "string") updated[key] = normalizarTextoMarca(updated[key]);
+      else if (Array.isArray(updated[key])) updated[key] = updated[key].map(value =>
+        typeof value === "string" ? normalizarTextoMarca(value) : value);
+    }
+    return updated;
+  };
+  if (Array.isArray(data)) return data.map(updateCut);
+  if (data && Array.isArray(data.cortes)) return { ...data, cortes: data.cortes.map(updateCut) };
+  return data;
+}
+
 function normalizarPacote(data, { simpleCuts = simpleCutsInput?.checked === true } = {}) {
+  data = atualizarIdentidadePacote(data);
   const lista = Array.isArray(data) ? data : data?.cortes;
   if (!Array.isArray(lista) || !lista.length) throw new Error("Nenhum corte encontrado no JSON.");
 

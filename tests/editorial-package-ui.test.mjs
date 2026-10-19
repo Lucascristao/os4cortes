@@ -113,6 +113,37 @@ const plan = () => ({
 });
 const cut = extra => ({ titulo: 'Uma pergunta', inicio: '00:10', fim: '00:20', formato: '9:16', saida_suave: false, ...extra });
 
+test('pacote legado atualiza publicação sem alterar fonte, URLs ou narração', () => {
+  const h = harness();
+  const editorial = plan();
+  editorial.source = { label: 'OS4 Cortes', url: 'https://example.test/os4cortes' };
+  editorial.scenes[0].text = 'A fonte disse OS4 Cortes e @os4.cortes.';
+  const original = cut({ titulo: 'OS4 CORTES comenta', editorial,
+    legenda_post: 'Siga @os4.cortes para mais insights diários sobre negócios e liderança.\nhttps://os4cortes.netlify.app\n@os4cortes.extra',
+    hashtags: ['#politica', '#os4cortes'] });
+  const [updated] = h.context.normalizarPacote([original]);
+  assert.equal(updated.titulo, 'OS4 de Direita comenta');
+  assert.match(updated.legenda_post, /Siga @os4dedireita para mais análises e comentários de direita\./);
+  assert.match(updated.legenda_post, /https:\/\/os4cortes.netlify.app/);
+  assert.match(updated.legenda_post, /@os4cortes.extra/);
+  assert.equal(updated.hashtags, '#politica #os4dedireita');
+  assert.equal(updated.editorial, editorial);
+  assert.deepEqual(plain(h.context.normalizarPacote([updated])), plain([updated]));
+  assert.equal(original.titulo, 'OS4 CORTES comenta');
+});
+
+test('restaurar pacote legado migra somente metadados preservando o contrato salvo', () => {
+  const original = { cortes: [cut({ titulo: 'OS4 Cortes', legenda_post: 'Siga @os4cortes', editorial: plan() })], extension: 7 };
+  const h = harness({ [packageKey]: JSON.stringify(original) });
+  h.context.restaurarSessao();
+  const saved = JSON.parse(h.storage.get(packageKey));
+  assert.equal(saved.extension, 7);
+  assert.equal(saved.cortes[0].titulo, 'OS4 de Direita');
+  assert.equal(saved.cortes[0].legenda_post, 'Siga @os4dedireita');
+  assert.deepEqual(saved.cortes[0].editorial, original.cortes[0].editorial);
+  assert.deepEqual(JSON.parse(h.get('#pacote').value), saved);
+});
+
 test('normalização conserva o objeto editorial sem filtrar campos ou inventar uma versão', () => {
   const h = harness();
   const editorial = plan();
@@ -242,6 +273,20 @@ test('modo simples preserva o prompt anterior sem incluir plano editorial', asyn
   assert.match(h.copied[0], /GRUPO 2: CORTES LONGOS/);
   assert.match(h.copied[0], /Diretriz Anti-Bloqueio/);
   assert.doesNotMatch(h.copied[0], /"editorial"/);
+});
+
+test('ambos os prompts identificam o canal e o @ atual em todas as redes', async () => {
+  for (const simpleCuts of [false, true]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session({ simpleCuts }));
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const prompt = h.copied[0];
+    assert.match(prompt, /Nome oficial: OS4 de Direita/);
+    assert.match(prompt, /@os4dedireita em todas as redes: Instagram, TikTok e YouTube/);
+    assert.match(prompt, /Preserve a identidade visual e o logo OS4/);
+    assert.match(prompt, /inclua uma única assinatura/);
+    assert.doesNotMatch(prompt, /OS4 Cortes|@os4\.cortes|#os4cortes/);
+  }
 });
 
 test('prompts delegam seleção à IA e pedem ideia completa com apelo sem faixas de duração', async () => {

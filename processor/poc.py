@@ -38,7 +38,7 @@ def progresso(stage: str, overall: float, detail: str = "") -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Prova de conceito: um corte completo do OS4 Cortes."
+        description="Prova de conceito: um corte completo do OS4 de Direita."
     )
     parser.add_argument("--url", required=True, help="URL do YouTube.")
     parser.add_argument("--inicio", required=True, help="MM:SS ou segundos.")

@@ -1,7 +1,7 @@
 {
-  "name": "OS4 Cortes",
-  "short_name": "OS4 Cortes",
-  "description": "Cortes verticais com tracking, legendas e pacote de publicação.",
+  "name": "OS4 de Direita",
+  "short_name": "OS4 de Direita",
+  "description": "OS4 de Direita — @os4dedireita em todas as redes. Cortes e vídeos autorais com legendas e pacote de publicação.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

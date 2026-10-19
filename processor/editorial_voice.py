@@ -18,12 +18,14 @@ from pathlib import Path
 import sys
 
 if __package__:
+    from .branding import CHANNEL_NAME, CHANNEL_HANDLE
     from .editorial_plan import effective_editorial_intent, effective_editorial_profile, normalize_editorial_plan
 else:  # Portable cloud bundle: editorial_plan.py resides beside this file.
+    from branding import CHANNEL_NAME, CHANNEL_HANDLE
     from editorial_plan import effective_editorial_intent, effective_editorial_profile, normalize_editorial_plan
 
 
-VOICE_ADAPTER_VERSION = "os4-editorial-live-adapter-v4-commentary-intent"
+VOICE_ADAPTER_VERSION = "os4-editorial-live-adapter-v5-os4dedireita"
 MASTER_PITCH_SEMITONES = -1.0
 VOICE_TONE_REFERENCE = {
     "repository": "https://github.com/Lucascristao/Plotquake",
@@ -32,7 +34,7 @@ VOICE_TONE_REFERENCE = {
     "scope": "Warm chest resonance and a uniform derived-master tonal calibration; no music, effects, language or format copied.",
 }
 OS4_GLOBAL_DIRECTION = (
-    "Direção OS4 Cortes: interprete como um comentarista de direita bem com a vida, "
+    f"Direção {CHANNEL_NAME} ({CHANNEL_HANDLE} em todas as redes): interprete como um comentarista de direita bem com a vida, "
     "próximo de quem escuta, seguro, espirituoso e incisivo, com curiosidade e provocação "
     "na medida do roteiro. Desenvolva a observação escrita com presença de comentarista, "
     "sem reprisar manchetes, dar sermão ou assumir automaticamente o papel de advogado. "
@@ -90,7 +92,7 @@ def _load_worker(ode_root=None):
         expected_identity = "Você é o narrador do canal O Dinheiro Explica."
         if expected_identity not in text:
             raise RuntimeError("Instrução de identidade ODE mudou; revisar adaptação antes de sintetizar.")
-        return text.replace(expected_identity, "Você é o narrador do canal OS4 Cortes.") + " " + OS4_GLOBAL_DIRECTION
+        return text.replace(expected_identity, f"Você é o narrador do canal {CHANNEL_NAME}.") + " " + OS4_GLOBAL_DIRECTION
 
     # Original request/fidelity/cache functions use this configuration function.
     # Thus their policy fingerprint includes OS4 global direction automatically.
@@ -119,7 +121,7 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
     narration_ids = {scene["id"] for scene in normalized["scenes"] if scene["kind"] == "narration"}
     if set(overrides) - narration_ids:
         raise ValueError("Override de voz cita cena que não é narração do plano.")
-    global_direction_fingerprint = fingerprint({"version": VOICE_ADAPTER_VERSION, "channel": "OS4 Cortes", "system_instruction": worker.live_session_config("Charon")["system_instruction"]})
+    global_direction_fingerprint = fingerprint({"version": VOICE_ADAPTER_VERSION, "channel": CHANNEL_NAME, "system_instruction": worker.live_session_config("Charon")["system_instruction"]})
     # Also isolate the speech profile explicitly, in addition to ODE's voice
     # policy fingerprint, so old ODE/pilot caches cannot pass accidentally.
     speech_fingerprint = fingerprint({"ode_speech_profile": worker.project_speech_fingerprint({"speech": {"pronunciations": {}}}), "os4_global_direction": global_direction_fingerprint, "editorial_profile": profile, "editorial_intent": intent})
@@ -148,7 +150,8 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
         "version": VOICE_ADAPTER_VERSION, "status": "prepared",
         "source_plan_fingerprint": fingerprint(normalized), "source_text_unchanged": True,
         "engine": worker.ENGINE, "model": worker.PRIMARY_TTS_MODEL,
-        "voice": "Charon", "presenter_name": "Roberto", "channel_identity": "OS4 Cortes",
+        "voice": "Charon", "presenter_name": "Roberto", "channel_identity": CHANNEL_NAME,
+        "channel_handle": CHANNEL_HANDLE,
         "global_direction": OS4_GLOBAL_DIRECTION,
         "editorial_profile": profile,
         "editorial_intent": intent,

@@ -63,25 +63,38 @@ async function driveFetch(accessToken, url, options = {}) {
 
 async function ensureFolder(accessToken) {
   const query = encodeURIComponent(
-    "name = 'OS4 Cortes' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+    "(name = 'OS4 de Direita' or name = 'OS4 Cortes') and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
   );
   const found = await driveFetch(
     accessToken,
-    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=10`
+    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=1000`
   );
-  const folderId = found.files?.length
-    ? found.files[0].id
+  const folder = found.files?.find((file) => file.name === "OS4 de Direita")
+    || found.files?.find((file) => file.name === "OS4 Cortes");
+  const folderId = folder
+    ? folder.id
     : (await driveFetch(
         accessToken,
         "https://www.googleapis.com/drive/v3/files?fields=id,name",
         {
           method: "POST",
           body: JSON.stringify({
-            name: "OS4 Cortes",
+            name: "OS4 de Direita",
             mimeType: "application/vnd.google-apps.folder",
           }),
         }
       )).id;
+
+  if (folder?.name === "OS4 Cortes") {
+    try {
+      await driveFetch(accessToken, `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id,name`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: "OS4 de Direita" }),
+      });
+    } catch (_) {
+      // Keep the existing folder ID even when its display name cannot be updated.
+    }
+  }
 
   try {
     await driveFetch(
@@ -151,7 +164,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 403,
       headers: { "content-type": "text/plain; charset=utf-8" },
-      body: "Esta conta Google não está autorizada a acessar o OS4 Cortes.",
+      body: "Esta conta Google não está autorizada a acessar o OS4 de Direita.",
     };
   }
 

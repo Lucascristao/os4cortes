@@ -8,6 +8,8 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from .branding import CHANNEL_BADGE, ensure_channel_signature, normalize_branding
+
 
 ARCHIVO_BLACK_URL = (
     "https://raw.githubusercontent.com/google/fonts/"
@@ -343,7 +345,7 @@ def gerar_capa_frame0(
     # 3. Quebra de linha do título do corte
     font_size = 64
     font_titulo = ImageFont.truetype(str(font_path), font_size)
-    words = titulo.strip().split()
+    words = normalize_branding(titulo).strip().split()
     lines = []
     curr = []
     for w in words:
@@ -376,11 +378,11 @@ def gerar_capa_frame0(
     line_h = int(font_size * 1.22)
     total_title_h = len(lines) * line_h
 
-    # 4. Badge "OS4 CORTES" discreto posicionado na base logo acima do título
+    # 4. Badge do canal discreto posicionado na base logo acima do título
     # Grade segura: Instagram 1:1 é Y: 420-1500, TikTok 3:4 é Y: 240-1680.
     # Posicionamento na base: peito/mesa (Y=1140-1420), mantendo a cabeça/rosto 100% livres e em destaque.
     font_badge = ImageFont.truetype(str(font_path), 30)
-    badge_text = "OS4 CORTES"
+    badge_text = CHANNEL_BADGE
     bbox_b = font_badge.getbbox(badge_text)
     bw = bbox_b[2] - bbox_b[0]
     bh = bbox_b[3] - bbox_b[1]
@@ -639,19 +641,16 @@ def escrever_post(
     hashtags: str = "",
 ) -> Path:
     destino = Path(destino)
-    texto = titulo.strip()
+    texto = normalize_branding(titulo).strip()
 
     if legenda_post.strip():
-        texto += "\n\n" + legenda_post.strip()
+        texto += "\n\n" + normalize_branding(legenda_post).strip()
 
-    # Assinatura oficial @os4.cortes
-    assinatura = "Siga @os4.cortes para mais insights diários sobre negócios e liderança."
-    if "@os4.cortes" not in texto:
-        texto += "\n\n" + assinatura
+    texto = ensure_channel_signature(texto)
 
     if hashtags.strip():
-        tags = hashtags.strip()
-        tags = re.sub(r"#os4cortes\b", "", tags, flags=re.IGNORECASE)
+        tags = normalize_branding(hashtags).strip()
+        tags = re.sub(r"#os4dedireita\b", "", tags, flags=re.IGNORECASE)
         tags = re.sub(r"#os4\b", "", tags, flags=re.IGNORECASE)
         tags = " ".join(tags.split())
         if tags:
@@ -669,17 +668,19 @@ def escrever_post_youtube(
 ) -> Path:
     destino = Path(destino)
     # Linha 1: Título oficial de alto CTR para YouTube (sem hashtag #shorts)
-    clean_title = re.sub(r"#shorts\b", "", str(titulo or "Corte"), flags=re.IGNORECASE).strip()
+    clean_title = re.sub(r"#shorts\b", "", normalize_branding(str(titulo or "Corte")), flags=re.IGNORECASE).strip()
     texto = clean_title
 
     if descricao.strip():
-        texto += "\n\n" + descricao.strip()
+        texto += "\n\n" + normalize_branding(descricao).strip()
+
+    texto = ensure_channel_signature(texto)
 
     if tags:
         if isinstance(tags, list):
-            tags_str = ", ".join(str(t).strip().lstrip("#") for t in tags if str(t).strip())
+            tags_str = ", ".join(normalize_branding(str(t)).strip().lstrip("#") for t in tags if str(t).strip())
         else:
-            tags_str = str(tags).strip()
+            tags_str = normalize_branding(str(tags)).strip()
         if tags_str:
             texto += "\n\n---\nTags / Palavras-chave: " + tags_str
 

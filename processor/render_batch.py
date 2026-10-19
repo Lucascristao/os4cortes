@@ -6,6 +6,7 @@ import os
 import shutil
 from pathlib import Path
 
+from .branding import normalize_branding
 from .captions import (
     CaptionStyle,
     carregar_palavras,
@@ -99,7 +100,7 @@ def normalizar_cortes(raw: str, *, cut_mode: str | None = None) -> list[dict]:
         if not isinstance(corte, dict):
             raise ValueError(f"Corte {idx} inválido.")
 
-        titulo = str(corte.get("titulo") or f"Corte {idx}").strip()
+        titulo = normalize_branding(str(corte.get("titulo") or f"Corte {idx}")).strip()
         inicio = tempo_para_segundos(corte.get("inicio", 0))
         fim = tempo_para_segundos(corte.get("fim", 0))
         if fim <= inicio:
@@ -128,12 +129,14 @@ def normalizar_cortes(raw: str, *, cut_mode: str | None = None) -> list[dict]:
             formato = "9:16"
             destino = "reels_tiktok"
 
-        descricao = str(corte.get("descricao") or corte.get("descricao_completa") or corte.get("legenda_post") or "").strip()
+        descricao = normalize_branding(str(corte.get("descricao") or corte.get("descricao_completa") or corte.get("legenda_post") or "")).strip()
         tags = corte.get("tags") or corte.get("hashtags") or ""
         if isinstance(tags, list):
+            tags = [normalize_branding(str(x)) for x in tags]
             tags_formatadas = " ".join(str(x).strip() for x in tags if str(x).strip())
         else:
-            tags_formatadas = str(tags or "").strip()
+            tags = normalize_branding(str(tags or "")).strip()
+            tags_formatadas = tags
 
         saida.append(
             {
@@ -143,7 +146,7 @@ def normalizar_cortes(raw: str, *, cut_mode: str | None = None) -> list[dict]:
                 "formato": formato,
                 "destino": destino,
                 "descricao": descricao,
-                "legenda_post": str(corte.get("legenda_post") or descricao).strip(),
+                "legenda_post": normalize_branding(str(corte.get("legenda_post") or descricao)).strip(),
                 "hashtags": tags_formatadas,
                 "tags": tags,
                 "saida_suave": bool(corte.get("saida_suave", True)),

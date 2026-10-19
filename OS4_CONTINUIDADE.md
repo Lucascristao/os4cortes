@@ -1,5 +1,7 @@
 # OS4 Cortes — continuidade em 13/09/2026
 
+> Identidade atual do canal: **OS4 de Direita**, **@os4dedireita** em todas as redes. O logo e a identidade visual OS4 permanecem. As referências abaixo documentam o histórico; nomes de repositório, URLs e caminhos técnicos continuam válidos.
+
 ## Pedido e prioridade
 Melhorias devem funcionar em vídeos diversos, sem regras específicas para este exemplo. Usuário pediu parar antes de 5% restante da janela de 5h, documentar pendências e publicar o concluído.
 

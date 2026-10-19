@@ -1,5 +1,7 @@
 # OS4 CORTES — HANDOFF TÉCNICO COMPLETO
 
+> Identidade atual do canal: **OS4 de Direita**, **@os4dedireita** em todas as redes. Preserve a identidade visual e o logo OS4. Este documento registra a arquitetura histórica; os nomes técnicos de repositório, URLs e caminhos abaixo continuam válidos.
+
 > **Estado deste documento:** 13/09/2026  
 > **Projeto:** OS4 Cortes  
 > **Repositório:** `Lucascristao/os4cortes`  

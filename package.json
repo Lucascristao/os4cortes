@@ -2,7 +2,7 @@
   "name": "os4cortes-web",
   "private": true,
   "version": "1.0.0",
-  "description": "Frontend e funções Netlify do OS4 Cortes",
+  "description": "Frontend e funções Netlify do OS4 de Direita — @os4dedireita",
   "dependencies": {
     "@netlify/blobs": "11.0.3"
   },

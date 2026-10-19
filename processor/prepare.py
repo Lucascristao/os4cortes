@@ -27,7 +27,7 @@ def ffprobe_duration(video_path: str | Path) -> float:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prepara um vídeo do OS4 Cortes: download, transcrição e persistência no Drive.")
+    parser = argparse.ArgumentParser(description="Prepara um vídeo do OS4 de Direita: download, transcrição e persistência no Drive.")
     parser.add_argument("--url", required=True)
     parser.add_argument("--request-id", required=True)
     parser.add_argument("--workdir", default=".work")

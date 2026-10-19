@@ -69,7 +69,7 @@ exports.handler = async (event) => {
   }
 
   // Sessão deslizante: cada acesso válido renova a permanência por até 400 dias.
-  // Na prática, o OS4 Cortes só encerra a sessão pelo botão "Sair",
+  // Na prática, o OS4 de Direita só encerra a sessão pelo botão "Sair",
   // salvo se o navegador apagar cookies/dados do site.
   const renewedSession = signSession(
     {

@@ -1,6 +1,7 @@
 const { DatabaseSync } = require('node:sqlite');
 const crypto = require('node:crypto');
 const { sanitizeDiagnostic } = require('./diagnostics.cjs');
+const { canonicalAccounts, rebrandPayload, migrateQueueBranding } = require('./branding.cjs');
 const day = (ms) => new Intl.DateTimeFormat('en-CA', {timeZone:'America/Fortaleza',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ms));
 class Queue {
   constructor(file) {
@@ -10,11 +11,17 @@ class Queue {
       CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY, job TEXT, network TEXT NOT NULL, day TEXT NOT NULL, started INTEGER NOT NULL, next INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, job TEXT, state TEXT NOT NULL, at INTEGER NOT NULL, detail TEXT, synced INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);`);
+    try { migrateQueueBranding(this.db); }
+    catch (error) {
+      this.brandingMigrationError = sanitizeDiagnostic(error.message);
+      console.warn(`[Marca] Migração da identificação adiada; os dados foram preservados. ${this.brandingMigrationError}`);
+    }
     this.db.prepare("UPDATE jobs SET state='verify', evidence='Publicação interrompida. Verificar antes de reenviar.' WHERE state='publishing'").run();
     this.db.prepare("UPDATE jobs SET state='queued' WHERE state='preparing'").run();
   }
   transaction(fn) { this.db.exec('BEGIN IMMEDIATE'); try {const result=fn();this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;} }
   add(p,now=Date.now()) {
+    p = rebrandPayload(p);
     if(!p.id || !['youtube','instagram','tiktok'].includes(p.network) || !p.account || !p.videoFileId) throw new Error('Pedido inválido');
     const fp=crypto.createHash('sha256').update(JSON.stringify([p.videoFileId,p.network,p.account])).digest('hex');
     return this.db.prepare('INSERT OR IGNORE INTO jobs VALUES(?,?,?,?,?,NULL)').run(p.id,fp,JSON.stringify(p),'queued',now).changes === 1;
@@ -87,7 +94,7 @@ class Queue {
     });
   }
   set(key,value) {this.db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run(key,JSON.stringify(value));}
-  get(key,fallback=null) {const r=this.db.prepare('SELECT value FROM settings WHERE key=?').get(key);return r?JSON.parse(r.value):fallback;}
+  get(key,fallback=null) {const r=this.db.prepare('SELECT value FROM settings WHERE key=?').get(key);const value=r?JSON.parse(r.value):fallback;return key==='accounts'?canonicalAccounts(value):value;}
   stage(id, state, detail, now=Date.now()) {
     this.db.prepare('INSERT INTO events(id,job,state,at,detail) VALUES(?,?,?,?,?)').run(crypto.randomUUID(),id,state,now, typeof detail==='string'?detail:JSON.stringify(detail));
   }

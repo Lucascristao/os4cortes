@@ -1,4 +1,6 @@
-# OS4 Cortes
+# OS4 de Direita
+
+Canal **OS4 de Direita**, **@os4dedireita** no Instagram, TikTok e YouTube. A identidade visual e o logo **OS4** permanecem. Prompts, capas, narração e textos de publicação usam o nome atual; pacotes importados com referências antigas têm os metadados de publicação atualizados sem alterar as falas da fonte.
 
 Sistema para transformar vídeos longos em cortes verticais 9:16 com tracking de rosto, legendas automáticas e pacote de publicação.
 
