@@ -45,7 +45,7 @@ O usuário já mantém controle sobre o vídeo de origem, títulos e intervalos.
 
 A IA externa escolhe automaticamente pauta, ângulo, trechos e contribuição a partir da transcrição, com ideia completa e apelo viral ou curioso. Uma frase solta ou história banal sem gancho não preenche o lote. Não é necessário um briefing, uma escolha manual de alvo ou aprovação editorial por corte.
 
-Os dois prompts usam exclusivamente a transcrição e os metadados fornecidos. A IA não pesquisa sites ou notícias, não abre a URL para ampliar contexto e não acrescenta fatos específicos de memória; a URL serve à identificação e ao crédito. A escrita autoral interpreta os pontos sustentados pela fonte, com opiniões e hipóteses atribuídas. Ao selecionar os intervalos, a IA confere o contexto anterior e a continuação, pois o fim de um segmento da transcrição pode deixar uma frase incompleta.
+Os dois prompts usam exclusivamente a transcrição e os metadados fornecidos. A IA não pesquisa sites ou notícias, não abre a URL para ampliar contexto e não acrescenta fatos específicos de memória; a URL serve apenas como referência interna e não entra nas legendas ou descrições de publicação. Os créditos de ambos os modos usam o título oficial do vídeo original e os participantes confirmados no material, com canal/host quando disponível nas descrições do YouTube. Dados desconhecidos são omitidos, sem inventar nomes ou publicar placeholders. A escrita autoral interpreta os pontos sustentados pela fonte, com opiniões e hipóteses atribuídas. Ao selecionar os intervalos, a IA confere o contexto anterior e a continuação, pois o fim de um segmento da transcrição pode deixar uma frase incompleta.
 
 | Passagem | Comportamento implementado localmente |
 | --- | --- |

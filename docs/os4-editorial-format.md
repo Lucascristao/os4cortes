@@ -42,7 +42,7 @@ O novo pacote também declara `editorial.intent`: papel em relação à fonte, p
 
 ## Atribuição e evidência
 
-Usar exclusivamente a transcrição e os metadados fornecidos, sem buscar notícias, sites ou artigos de apoio e sem acrescentar fatos específicos de memória. A URL identifica e credita o vídeo. Para cada afirmação, distinguir fala atribuída, informação explícita do material, inferência editorial ou pergunta. Associar falas a palavras e timestamps da transcrição e manter a URL/origem. Dados ausentes são omitidos ou ficam vazios nos campos que aceitam isso, sem criar pesquisa nem briefing adicional por corte.
+Usar exclusivamente a transcrição e os metadados fornecidos, sem buscar notícias, sites ou artigos de apoio e sem acrescentar fatos específicos de memória. A URL identifica o vídeo como referência interna; os créditos nas legendas e descrições usam o título oficial e os participantes confirmados no material, sem links. Para cada afirmação, distinguir fala atribuída, informação explícita do material, inferência editorial ou pergunta. Associar falas a palavras e timestamps da transcrição e conservar a identificação da origem. Dados ausentes são omitidos ou ficam vazios nos campos que aceitam isso, sem inventar nomes, publicar placeholders ou criar pesquisa nem briefing adicional por corte.
 
 A legenda automática ajuda a localizar; timestamps derivados de legendas não devem ser apresentados como alinhamento acústico confirmado. A IA lê o contexto anterior e a continuação de cada clip: a quebra de linha da transcrição não é garantia de fim de frase. A seleção precisa preservar predicados, negações, condições, respostas e desfechos antes de intercalar uma narração ou mudar de assunto.
 

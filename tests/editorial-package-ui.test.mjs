@@ -238,6 +238,12 @@ const validPlan = () => ({
 });
 const starts = h => h.requests.filter(request => request.path.includes('workflow-start'));
 
+function promptExample(prompt) {
+  const json = prompt.match(/^\[\r?\n[\s\S]*?^\]/m)?.[0];
+  assert.ok(json, 'o prompt deve incluir um exemplo de array JSON válido');
+  return JSON.parse(json);
+}
+
 test('modo autoral é o padrão no HTML, em sessão legada e no novo prompt', async () => {
   const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
   const checkbox = html.match(/<input\b[^>]*id="simpleCuts"[^>]*>/)[0];
@@ -289,6 +295,63 @@ test('ambos os prompts identificam o canal e o @ atual em todas as redes', async
   }
 });
 
+test('ambos os prompts exigem créditos por título e participantes confirmados sem publicar a URL', async () => {
+  for (const simpleCuts of [false, true]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session({ simpleCuts }));
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const prompt = h.copied[0];
+    const credits = prompt.split('CRÉDITOS DE PUBLICAÇÃO')[1]?.split(/\r?\n\s*\r?\n/)[0] || '';
+    assert.ok(credits, 'os dois modos precisam compartilhar a diretriz de créditos');
+    assert.match(credits, /título oficial/i);
+    assert.match(credits, /participantes[^\n.]*confirmad[^\n.]*transcrição[^\n.]*metadados/i);
+    const urlRule = credits.split(/\r?\n/).find(line => /URL/i.test(line) && /legenda_post/.test(line) && /descricao/.test(line));
+    assert.ok(urlRule, 'a diretriz deve tratar os dois campos de publicação');
+    assert.match(urlRule, /não/i);
+    assert.match(prompt, /URL[^\n.]*referência interna/i);
+    assert.ok(prompt.includes(originalUrl), 'o vídeo continua identificado no contexto interno da IA');
+    assert.doesNotMatch(prompt, /A URL identifica e credita o vídeo/);
+  }
+});
+
+test('exemplos dos dois modos usam o título conhecido e pedem participantes confirmados sem link', async () => {
+  const title = 'ANA E BRUNO: "NEGÓCIOS E DECISÕES" | Episódio 42';
+  const meta = { title, author: 'Canal Entrevistas', url: originalUrl };
+  for (const simpleCuts of [false, true]) {
+    const h = harness({ os4_current_video_meta: JSON.stringify(meta) });
+    h.context.mostrarTranscricao(session({ simpleCuts }));
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const examples = promptExample(h.copied[0]);
+    const publicationTexts = examples.flatMap(cut => [cut.legenda_post, cut.descricao].filter(value => typeof value === 'string'));
+    assert.ok(publicationTexts.length > 0);
+    for (const text of publicationTexts) {
+      assert.ok(text.includes(title), 'o crédito deve trazer o título real obtido nos metadados');
+      assert.match(text, /\n\n🎬 Episódio completo:/, 'o JSON deve preservar as quebras de linha do crédito');
+      assert.match(text, /(?:🎙️ Com:|👥 Participantes:)\s*\[[^\]]*participantes[^\]]*confirmad[^\]]*transcrição[^\]]*metadados[^\]]*\]/i);
+      assert.doesNotMatch(text, /https?:\/\/|youtu(?:\.be|be\.com)|Participante A e Participante B/i);
+    }
+  }
+});
+
+test('sem metadados os créditos orientam omissão dos dados ausentes sem inventar título, canal ou nomes', async () => {
+  for (const simpleCuts of [false, true]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session({ simpleCuts }));
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const prompt = h.copied[0];
+    const credits = prompt.split('CRÉDITOS DE PUBLICAÇÃO')[1]?.split(/\r?\n\s*\r?\n/)[0] || '';
+    assert.match(credits, /não invente[^\n.]*(?:títulos?|nomes?|canal|host)/i);
+    assert.match(credits, /omit[ae][^\n.]*(?:crédito|linha|dado)/i);
+    const examples = promptExample(prompt);
+    for (const example of examples) {
+      for (const text of [example.legenda_post, example.descricao].filter(value => typeof value === 'string')) {
+        assert.match(text, /Episódio completo:\s*"?\[[^\]]*título oficial[^\]]*\]/i);
+        assert.doesNotMatch(text, /Canal Oficial|Participante A e Participante B|https?:\/\//i);
+      }
+    }
+  }
+});
+
 test('prompts delegam seleção à IA e pedem ideia completa com apelo sem faixas de duração', async () => {
   for (const simpleCuts of [false, true]) {
     const h = harness();
@@ -298,7 +361,7 @@ test('prompts delegam seleção à IA e pedem ideia completa com apelo sem faixa
     assert.match(prompt, /automaticamente/);
     assert.match(prompt, /FONTE EXCLUSIVA DESTE TRABALHO/);
     assert.match(prompt, /Não navegue, não pesquise sites, notícias ou artigos de apoio/);
-    assert.match(prompt, /A URL identifica e credita o vídeo; não é um pedido de pesquisa/);
+    assert.match(prompt, /URL[^\n.]*referência interna/i);
     assert.match(prompt, /Fim de segmento da transcrição não (?:é necessariamente|garante) fim de frase/);
     assert.doesNotMatch(prompt, /dados externos sem fonte verificada/);
     assert.match(prompt, /apelo viral ou curioso sustentado pelo material/);

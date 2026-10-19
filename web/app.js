@@ -691,15 +691,22 @@ $("#btnCopiarTranscricao")?.addEventListener("click", async (event) => {
 
 const DIRETRIZ_IDENTIDADE_CANAL = `IDENTIDADE DO CANAL
 Nome oficial: OS4 de Direita. O identificador é @os4dedireita em todas as redes: Instagram, TikTok e YouTube. Preserve a identidade visual e o logo OS4; use o nome atual e o identificador atual nas referências ao nosso canal.
-Nas legendas de postagem e nas descrições do YouTube, inclua uma única assinatura: "Siga @os4dedireita para mais análises e comentários de direita." Use hashtags temáticas, sem hashtags de marca. O nome do canal e o @ são a nossa identificação; não substituem os créditos do vídeo original. Preserve títulos, nomes, URLs e falas da fonte. Não acrescente anúncio de mudança de nome, bordão ou chamada para seguir nas narrações só para cumprir a identificação.`;
+Nas legendas de postagem e nas descrições do YouTube, inclua uma única assinatura: "Siga @os4dedireita para mais análises e comentários de direita." Use hashtags temáticas, sem hashtags de marca. O nome do canal e o @ são a nossa identificação; não substituem os créditos do vídeo original. Preserve títulos, nomes e falas da fonte. Não acrescente anúncio de mudança de nome, bordão ou chamada para seguir nas narrações só para cumprir a identificação.`;
 
 const DIRETRIZ_FONTE_EXCLUSIVA = `FONTE EXCLUSIVA DESTE TRABALHO
-Use somente a transcrição e os metadados fornecidos neste prompt. Não navegue, não pesquise sites, notícias ou artigos de apoio e não abra a URL para buscar contexto adicional. A URL identifica e credita o vídeo; não é um pedido de pesquisa. Não acrescente fatos específicos usando memória, notícias ou informações de fora do material, nem atualize o contexto do vídeo com acontecimentos posteriores.
+Use somente a transcrição e os metadados fornecidos neste prompt. Não navegue, não pesquise sites, notícias ou artigos de apoio e não abra a URL para buscar contexto adicional. A URL identifica o vídeo apenas como referência interna; não é um pedido de pesquisa. Não inclua a URL na legenda_post ou na descricao. Não acrescente fatos específicos usando memória, notícias ou informações de fora do material, nem atualize o contexto do vídeo com acontecimentos posteriores.
 Faça a seleção e, no formato autoral, o comentário a partir do que a fonte efetivamente diz, incluindo suas hipóteses, ironias e opiniões atribuídas. Você pode desenvolver uma observação própria e relacionar os pontos sustentados pelos trechos, conservando seu alcance. Se faltar um dado, omita a afirmação que depende dele ou escolha outro ponto; não pesquise para preencher a lacuna nem peça um briefing por corte. Datas desconhecidas ficam vazias nos campos que aceitam string vazia. Preserve o momento e a leitura do vídeo sem substituir a análise da fonte por uma análise do noticiário.`;
 
-function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, blocoVideoOriginal }) {
-  const fonte = sampleAuthor && sampleAuthor !== "Canal Oficial" ? sampleAuthor : "Fonte original";
-  const dadosFonte = blocoVideoOriginal.replace('Canal / Host: "Canal Oficial"', 'Canal / Host: não informado');
+const DIRETRIZ_CREDITOS_PUBLICACAO = `CRÉDITOS DE PUBLICAÇÃO
+Em cada legenda_post dos verticais e descricao dos horizontais, inclua um bloco com o título oficial do vídeo original e os nomes dos participantes confirmados na transcrição ou nos metadados. Preserve o título oficial literalmente; não o substitua pelo link, pelo nome do canal ou por um título criado para o corte. Não inclua links ou URLs nesses textos de publicação.
+Use este formato nos verticais:
+🎬 Episódio completo: "[Título oficial do vídeo original]"
+🎙️ Com: [Nomes dos participantes confirmados na transcrição ou nos metadados]
+Nos horizontais, use a mesma linha de episódio, acrescente 🎙️ Canal / Host: "[Canal informado nos metadados]" quando disponível e identifique os nomes com 👥 Participantes: [Nomes dos participantes confirmados na transcrição ou nos metadados].
+Identifique somente quem participa do vídeo; alguém apenas citado no assunto não é participante, e o nome do canal não confirma quem está falando. Se o título, o canal ou algum participante não estiver confirmado no material, omita a linha ou o nome correspondente. Não invente esses dados, não use a URL como substituto e não publique placeholders como "Título oficial do vídeo", "Canal Oficial" ou "Participante A".`;
+
+function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal }) {
+  const fonte = sampleAuthor || "Fonte original";
   const narracao = (id, title, start, end, text, delivery = "explain") => ({
     id, kind: "narration", text,
     background: { start, end },
@@ -710,7 +717,7 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, 
   const exemplo = [{
     titulo: "[Título fiel à ideia completa]", inicio: "00:01:15.4", fim: "00:02:20.2",
     formato: "9:16", destino: "reels_tiktok", saida_suave: true,
-    legenda_post: "[Reflexão breve e crédito da fonte]", hashtags: ["#tema"],
+    legenda_post: `[Reflexão breve sobre o corte]\n\n🎬 Episódio completo: "${sampleTitle || "[Título oficial do vídeo original]"}"\n🎙️ Com: [Nomes dos participantes confirmados na transcrição ou nos metadados]`, hashtags: ["#tema"],
     editorial: {
       version: 1,
       source: { label: fonte, date: "" },
@@ -742,6 +749,8 @@ PRIORIDADE DE ESCRITA
 O text de cada narração é o produto final. Estrutura, metadados e timestamps existem para servir à fala e à montagem. Se o texto soa como telejornal, editorial de jornal ou relatório, reescreva: o corte falhou na escrita mesmo que o JSON esteja perfeito. Escreva primeiro uma fala natural, interessante e fiel ao material; organize-a no contrato exigido. A personalidade deve aparecer nas palavras, preservando a precisão dos fatos, as evidências e o JSON válido.
 
 ${DIRETRIZ_FONTE_EXCLUSIVA}
+
+${DIRETRIZ_CREDITOS_PUBLICACAO}
 
 Faça automaticamente a seleção dos cortes, a escolha da pauta, do ângulo, da relação com a fonte e da contribuição do OS4. O usuário fornece o vídeo e a transcrição; não precisa elaborar um briefing, escolher o alvo ou aprovar uma proposta para cada corte. Resolva essas decisões a partir do material e da identidade abaixo e devolva o pacote estruturado pronto para importar.
 
@@ -804,7 +813,7 @@ Entregue somente um array JSON válido. Mantenha os campos normais de cada corte
 Regra de duração do OS4: sem duração mínima numérica, duração-alvo ou faixas de curtos/médios/longos. A história determina o tamanho. Um vertical pode passar de 2 minutos e usa até 3 minutos (180 segundos) de conteúdo original: some end - start somente das cenas kind: "clip", incluindo repetições reproduzidas. A narração acrescentada NÃO entra nesse limite; o vídeo vertical pronto pode passar de 3 minutos. Backgrounds, evidence e o envelope inicio/fim também não entram nessa soma. Acima de 180 segundos de conteúdo original, escolha formato 16:9/destino youtube. Exatamente 180 segundos ainda cabe no vertical. Não interrompa uma ideia para caber no vertical nem acrescente repetições, silêncio ou narração só para atingir uma duração.
 
 Contrato editorial obrigatório:
-- source.label identifica a fonte; source.date usa AAAA-MM-DD somente se a data estiver confirmada, ou string vazia se desconhecida. Credite a fonte na legenda_post/descricao. URL da fonte: ${urlAtual || "[URL fornecida]"}.
+- source.label identifica a fonte; source.date usa AAAA-MM-DD somente se a data estiver confirmada, ou string vazia se desconhecida. Na legenda_post/descricao, siga o bloco de CRÉDITOS DE PUBLICAÇÃO com título e participantes confirmados.
 - Inclua profile completo em TODOS os editoriais: perspective: "right"; topic: "politics", "economy", "business", "humor" ou "general"; tone: "conversational", "provocative", "ironic", "playful", "explanatory" ou "serious"; intensity: "low", "medium" ou "high"; angle: leitura editorial específica deste corte (texto não vazio, até 240 caracteres); audience_question: pergunta concreta ao público (até 240 caracteres, ou string vazia quando atrapalharia a graça ou o fechamento). Use somente esses seis campos em profile. Escolha tema, tom e intensidade por corte; perspective mantém a identidade, sem impor comentário político a todos os temas. O ângulo precisa aparecer no comentário efetivamente escrito; quando escolher uma pergunta ao público, escreva-a naturalmente no text da cena adequada. O motor interpreta a direção, mas não reescreve nem acrescenta falas à narração.
 - Inclua intent completo em TODOS os editoriais, com exatamente estes quatro campos: mode: "support_source", "challenge_source" ou "direct_commentary"; source_point: argumento ou acontecimento específico da fonte que será comentado (texto não vazio, até 240 caracteres); target: alvo concreto da cobrança (até 240 caracteres, ou string vazia quando não houver); contribution: observação própria que o OS4 acrescenta, além de resumir a fonte (texto não vazio, até 240 caracteres). Escolha o mode conforme a relação com o argumento real, sem pressupor apoio só pela identidade de quem fala. intent orienta a narração, sem ser lido como lista ou convertido em falas extras. O comentário literal deve desenvolver source_point e contribution e dirigir sua cobrança ao target escolhido, em coerência com profile.angle.
 - editorial.scenes contém de 2 a 12 cenas na ordem final, combinando narration e clip. scenes pertence ao objeto editorial, nunca à raiz do corte. Use ids únicos com letras, números, hífen ou sublinhado, começando por letra ou número (até 40 caracteres).
@@ -827,7 +836,7 @@ Depois, confira internamente o roteiro no mesmo trabalho de escrita: as falas re
 
 O exemplo abaixo ilustra o schema. Escolha também mode, tema, tom e quantidade de cenas conforme o material real. Substitua TODOS os textos entre colchetes, números e tempos por escolhas reais da transcrição. Não copie esses tempos como se tivessem sido encontrados na fonte.
 ${JSON.stringify(exemplo, null, 2)}
-${dadosFonte}
+${blocoVideoOriginal}
 --- TRANSCRIÇÃO ---
 ${transcricao}`;
 }
@@ -851,18 +860,18 @@ $("#btnCopiarPromptIA")?.addEventListener("click", async (event) => {
     }
   }
 
-  const sampleTitle = metaVideo?.title ? metaVideo.title.replace(/"/g, "'").trim() : "";
-  const sampleAuthor = metaVideo?.author ? metaVideo.author.replace(/"/g, "'").trim() : "Canal Oficial";
+  const sampleTitle = metaVideo?.title ? metaVideo.title.trim() : "";
+  const sampleAuthor = metaVideo?.author ? metaVideo.author.trim() : "";
 
-  const blocoVideoOriginal = sampleTitle
-    ? `\n--- DADOS DO VÍDEO ORIGINAL NO YOUTUBE ---\nTítulo oficial no YouTube: "${sampleTitle}"\nCanal / Host: "${sampleAuthor}"\n`
-    : "";
+  const blocoVideoOriginal = `\n--- DADOS DO VÍDEO ORIGINAL NO YOUTUBE ---\nTítulo oficial no YouTube: ${sampleTitle ? `"${sampleTitle}"` : "não informado"}\nCanal / Host: ${sampleAuthor ? `"${sampleAuthor}"` : "não informado"}\nURL de referência interna (não publicar): ${urlAtual || "não informada"}\n`;
 
   const promptSimples = `Você é um editor sênior e estrategista multiplataforma do OS4 de Direita, especializado em gerar conteúdos de alta performance para redes sociais (Reels e TikTok) e vídeos normais para o YouTube (formato horizontal de canal de cortes).
 
 ${DIRETRIZ_IDENTIDADE_CANAL}
 
 ${DIRETRIZ_FONTE_EXCLUSIVA}
+
+${DIRETRIZ_CREDITOS_PUBLICACAO}
 
 Leia toda a transcrição antes de selecionar. Sua missão é entregar um ÚNICO PACOTE JSON UNIFICADO contendo DOIS TIPOS DE CORTES:
 
@@ -875,7 +884,7 @@ Selecione somente ideias completas com apelo viral ou curioso sustentado pelo ma
 2. Gancho Inicial: Comece no ponto que desperta interesse pela ideia, preservando o contexto necessário. Descarte trechos com pigarreios ou introduções mornas.
 3. Título Magnético Curto: De 4 a 8 palavras com alto CTR para a capa (sem aspas, sem hashtags).
 4. Legenda do Post: Reflexão/insight do corte em 2 a 3 linhas + linha de crédito oficial obrigatória:
-   🎬 Episódio completo: "${sampleTitle || "Título oficial do vídeo no YouTube"}"
+   🎬 Episódio completo: "${sampleTitle || "[Título oficial do vídeo original]"}"
    🎙️ Com: [Nomes dos Participantes extraídos do vídeo]
 5. Hashtags: 2 a 3 hashtags temáticas específicas no array "hashtags" (ex: ["#negocios", "#gestao"]). NÃO use hashtags de marca; o @os4dedireita fica na assinatura.
 
@@ -888,8 +897,8 @@ Selecione somente ideias completas com apelo viral ou curioso sustentado pelo ma
    - Parágrafo 1-2: Sinopse envolvente e persuasiva sobre o assunto do corte.
    - Capítulos / Timestamps temáticos do corte (ex: "00:00 - Introdução\\n01:30 - O grande obstáculo\\n...").
    - Créditos Oficiais:
-     🎬 Episódio completo: "${sampleTitle || "Título oficial do vídeo no YouTube"}"
-     🎙️ Canal / Host: "${sampleAuthor}"
+     🎬 Episódio completo: "${sampleTitle || "[Título oficial do vídeo original]"}"
+     🎙️ Canal / Host: "${sampleAuthor || "[Canal informado nos metadados]"}"
      👥 Participantes: [Nomes dos Participantes]
    - Chamada para Ação (CTA): "Gostou desse corte? Deixe seu like e inscreva-se no canal para não perder os próximos cortes!"
    - Tags de Busca no array "tags": 3 a 6 termos de busca relevantes para SEO do YouTube.
@@ -909,7 +918,7 @@ Exemplo de estrutura do JSON:
     "formato": "9:16",
     "destino": "reels_tiktok",
     "saida_suave": true,
-    "legenda_post": "Insight em 2 a 3 linhas.\\n\\n🎬 Episódio completo: \\"${sampleTitle || "Título oficial do vídeo"}\\"\\n🎙️ Com: Participante A e Participante B",
+    "legenda_post": ${JSON.stringify(`Insight em 2 a 3 linhas.\n\n🎬 Episódio completo: "${sampleTitle || "[Título oficial do vídeo original]"}"\n🎙️ Com: [Nomes dos participantes confirmados na transcrição ou nos metadados]`)},
     "hashtags": ["#negocios", "#lideranca"]
   },
   {
@@ -919,7 +928,7 @@ Exemplo de estrutura do JSON:
     "formato": "16:9",
     "destino": "youtube",
     "saida_suave": true,
-    "descricao": "Neste trecho completo, discutimos a virada de chave que permitiu escalar a operação sem perder a qualidade.\\n\\nCapítulos:\\n00:00 - O ponto de virada\\n03:15 - A decisão arriscada\\n06:40 - O resultado e lição prática\\n\\n🎬 Episódio completo: \\"${sampleTitle || "Título oficial do vídeo"}\\"\\n🎙️ Canal / Host: \\"${sampleAuthor}\\"\\n👥 Participantes: Participante A e Participante B\\n\\nInscreva-se no canal para mais cortes de alto valor!",
+    "descricao": ${JSON.stringify(`Neste trecho completo, discutimos a virada de chave que permitiu escalar a operação sem perder a qualidade.\n\nCapítulos:\n00:00 - O ponto de virada\n03:15 - A decisão arriscada\n06:40 - O resultado e lição prática\n\n🎬 Episódio completo: "${sampleTitle || "[Título oficial do vídeo original]"}"\n🎙️ Canal / Host: "${sampleAuthor || "[Canal informado nos metadados]"}"\n👥 Participantes: [Nomes dos participantes confirmados na transcrição ou nos metadados]\n\nInscreva-se no canal para mais cortes de alto valor!`)},
     "tags": ["como escalar empresa", "gestao de negocios", "podcast de empreendedorismo"]
   }
 ]
@@ -928,7 +937,7 @@ ${blocoVideoOriginal}
 ${transcricao}`;
 
   const promptCompleto = simpleCutsInput?.checked === true ? promptSimples
-    : criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, urlAtual, blocoVideoOriginal });
+    : criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal });
   const botao = event?.currentTarget || $("#btnCopiarPromptIA");
   const original = botao?.textContent || "Copiar Prompt para IA";
   await navigator.clipboard.writeText(promptCompleto);

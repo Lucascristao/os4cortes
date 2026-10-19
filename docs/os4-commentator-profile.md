@@ -6,7 +6,7 @@ Direção fixada em 18/10/2026 conforme as preferências do canal. Este perfil a
 
 A IA escolhe automaticamente os cortes, a pauta, o ângulo, a relação com a fonte e a contribuição de cada roteiro. O fluxo continua vídeo → prompt → IA externa → JSON → geração; o usuário não precisa elaborar um briefing por corte. A seleção exige uma ideia completa e apelo viral ou curioso sustentado pela fonte. Uma frase solta ou uma história banal sem gancho deve ser descartada, sem inventar fatos ou forçar uma quantidade de cortes.
 
-A transcrição e os metadados fornecidos são a fonte exclusiva dos dois prompts. A IA não pesquisa sites ou notícias, não abre a URL para procurar contexto e não acrescenta fatos específicos de memória. A URL serve à identificação e ao crédito. Dados ausentes são omitidos ou ficam vazios nos campos que permitem isso; a interpretação própria desenvolve o que os trechos sustentam, sem atualizar o vídeo com acontecimentos externos.
+A transcrição e os metadados fornecidos são a fonte exclusiva dos dois prompts. A IA não pesquisa sites ou notícias, não abre a URL para procurar contexto e não acrescenta fatos específicos de memória. A URL serve apenas como referência interna. Nas legendas e descrições de publicação, os créditos trazem o título oficial do vídeo e os participantes confirmados no material, sem links; nas descrições do YouTube, incluem também o canal/host quando informado. Dados ausentes são omitidos ou ficam vazios nos campos que permitem isso, sem inventar nomes ou publicar placeholders; a interpretação própria desenvolve o que os trechos sustentam, sem atualizar o vídeo com acontecimentos externos.
 
 ## Personalidade constante
 
