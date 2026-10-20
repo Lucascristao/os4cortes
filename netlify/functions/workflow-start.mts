@@ -239,6 +239,10 @@ export default safeHandler(async (request, context) => {
   }
   // Cached old clients omit this field; the new UI explicitly sends false by default.
   const simpleCuts = !Object.hasOwn(body, "simpleCuts") || body.simpleCuts === true;
+  if (Object.hasOwn(body, "burnCaptions") && typeof body.burnCaptions !== "boolean") {
+    return json(400, { ok: false, error: "A opção de queimar legendas precisa ser verdadeira ou falsa." });
+  }
+  const burnCaptions = body.burnCaptions === true;
 
   const configStore = blobStore("os4-config", context);
   const jobsStore = blobStore("os4-jobs", context);
@@ -360,6 +364,7 @@ export default safeHandler(async (request, context) => {
       lower_third_mode: hasLowerThird ? "crop" : "off",
       lower_third_height: hasLowerThird ? "0.30" : "0",
       cut_mode: simpleCuts ? "simple" : "editorial",
+      burn_captions: burnCaptions ? "true" : "false",
     };
   }
 
@@ -370,6 +375,7 @@ export default safeHandler(async (request, context) => {
     kind,
     hasLowerThird,
     simpleCuts,
+    burnCaptions,
     folderId: kind === "render" ? inputs.folder_id : null,
     totalCuts: kind === "render" ? body.cuts.length : null,
     status: "queued",

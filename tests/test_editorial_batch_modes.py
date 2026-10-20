@@ -202,7 +202,7 @@ class EditorialBatchModesTests(unittest.TestCase):
             cuts = [cut(aspect=aspect, editorial=False), cut(aspect=aspect, editorial=False)]
             for value, template, title in zip(cuts, ("01_central", "03_close"), ("O QUE MUDA?", "QUAL É A ESCOLHA?")):
                 value["cover"] = {"version": 1, "template_id": template, "title": title}
-            with self.subTest(aspect=aspect), Harness(cuts, mode="simple", key="") as h:
+            with self.subTest(aspect=aspect), Harness(cuts, mode="simple", key="", extra=("--burn-captions", "true")) as h:
                 self.assertEqual(batch.main(), 0)
                 renderer = h.cinematic if aspect == "16:9" else h.tracking
                 renderer.assert_called_once()
@@ -223,6 +223,17 @@ class EditorialBatchModesTests(unittest.TestCase):
                 self.assertEqual(batch.main(), 0)
                 renderer.assert_called_once()
                 self.assertEqual(batch.render_cover.call_count, 4)
+
+    def test_simple_mode_defaults_to_clean_video_without_burning_captions(self):
+        cuts = [cut(aspect="9:16", editorial=False)]
+        with Harness(cuts, mode="simple", key="") as h:
+            self.assertEqual(batch.main(), 0)
+            h.tracking.assert_called_once()
+            batch.criar_legendas_corte.assert_not_called()
+            batch.criar_srt_limpo.assert_called_once()
+            results = h.completed.call_args.args[1]["cuts"]
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["files"]["video"], results[0]["files"]["videoLegenda"])
 
     def test_simple_video_cache_invalidates_for_source_span_treatment_fade_and_corruption(self):
         with Harness([], mode="simple", key="") as h:

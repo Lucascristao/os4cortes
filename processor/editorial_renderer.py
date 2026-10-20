@@ -359,12 +359,12 @@ def derive_narration(info, cache_dir, *, ffmpeg, speed=DEFAULT_NARRATOR_SPEED,
             "derived_key": key, "derived_cache_hit": resumed, "speed": speed, "pitch_semitones": pitch_semitones}
 
 
-def scene_fingerprint(scene, *, source_hash, canvas, lower_third, words, voice=None, font_hash=""):
+def scene_fingerprint(scene, *, source_hash, canvas, lower_third, words, voice=None, font_hash="", burn_captions=False):
     """Exclude other scenes and master audio gain from silent video cache keys."""
     from .editorial_visuals import VISUAL_STYLE_VERSION
     return fingerprint({"version": VERSION, "scene": scene, "source": source_hash,
                         "canvas": canvas, "lower_third": lower_third, "words": words,
-                        "voice_timing": voice, "font": font_hash,
+                        "voice_timing": voice, "font": font_hash, "burn_captions": burn_captions,
                         **({"visual_style": VISUAL_STYLE_VERSION} if scene.get("kind") == "narration" else {})})
 
 
@@ -386,7 +386,7 @@ def _font(font_dir):
     raise FileNotFoundError("Supply font_dir with a local Archivo Black or Arial TTF. No font is downloaded by this compositor.")
 
 
-def _caption_assets(words, scene_dir, *, canvas, font_path, font_name, duration, credit=""):
+def _caption_assets(words, scene_dir, *, canvas, font_path, font_name, duration, credit="", burn_captions=False):
     from PIL import ImageFont
     zones = canvas.safe_zones()
     left, top, right, bottom = zones["captions"]
@@ -424,10 +424,11 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
             word_end = min(duration, group[index+1]["inicio"] if index+1 < len(group) else word["fim"])
             if word_end <= word_start:
                 continue
-            rendered = captions.texto_ass_grupo(group, index, style.line_chars)
-            if fit_size < size:
-                rendered = r"{\fs" + str(fit_size) + "}" + rendered
-            events.append(f"Dialogue: 0,{captions.ass_tempo(word_start)},{captions.ass_tempo(word_end)},Clean,,0,0,0,,{rendered}")
+            if burn_captions:
+                rendered = captions.texto_ass_grupo(group, index, style.line_chars)
+                if fit_size < size:
+                    rendered = r"{\fs" + str(fit_size) + "}" + rendered
+                events.append(f"Dialogue: 0,{captions.ass_tempo(word_start)},{captions.ass_tempo(word_end)},Clean,,0,0,0,,{rendered}")
     if credit:
         events.append(f"Dialogue: 1,{captions.ass_tempo(0)},{captions.ass_tempo(duration)},Credit,,0,0,0,,{captions.escapar_ass(credit)}")
     ass = scene_dir / "captions.ass"
@@ -603,7 +604,8 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                          fps=30, asr_model="base", allow_synthesis=True, delivery_overrides=None,
                          target_active_dbfs=-18.0, peak_ceiling=.95,
                          narrator_pitch_semitones=DEFAULT_NARRATOR_PITCH_SEMITONES,
-                         narrator_speed=DEFAULT_NARRATOR_SPEED, cover=None, title=""):
+                         narrator_speed=DEFAULT_NARRATOR_SPEED, cover=None, title="",
+                         burn_captions=False):
     """Return {video,srt,capa,report}; output is the final MP4 file path."""
     from .editorial_visuals import Canvas, VISUAL_STYLE_VERSION
     video, transcript, output = Path(video).resolve(), Path(transcript).resolve(), Path(output).resolve()
@@ -674,10 +676,12 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                     raise ValueError(f"Source clip has no caption words: {scene['id']}")
                 voice_key = None
             ass, cues = _caption_assets(words, scene_dir, canvas=canvas, font_path=font_path, font_name=font_name,
-                                        duration=timing["content_duration"], credit=credit if scene["kind"] == "clip" else "")
+                                        duration=timing["content_duration"], credit=credit if scene["kind"] == "clip" else "",
+                                        burn_captions=burn_captions)
             augmented = dict(scene, _credit=credit)
             key = scene_fingerprint(augmented, source_hash=source_hash, canvas=[canvas.width, canvas.height, fps],
-                                    lower_third=[treatment.mode, treatment.height_fraction], words=words, voice=voice_key, font_hash=font_hash)
+                                    lower_third=[treatment.mode, treatment.height_fraction], words=words, voice=voice_key, font_hash=font_hash,
+                                    burn_captions=burn_captions)
             silent = scene_dir / "scene-video.mp4"
             cache_record = scene_dir / "scene-cache.json"
             resumed = _cache_valid(cache_record, key, silent)
@@ -689,8 +693,8 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                             "video_sha256": file_sha256(silent), "audio_sha256": file_sha256(audio),
                             "scene_fingerprint": key, "resumed_video": resumed,
                             **({"raw_audio_sha256": info["raw_sha256"], "raw_duration": info["raw_duration"],
-                                "derived_audio_duration": info["duration"],
-                                "derived_audio_key": info["derived_key"], "derived_audio_cache_hit": info["derived_cache_hit"]}
+                                 "derived_audio_duration": info["duration"],
+                                 "derived_audio_key": info["derived_key"], "derived_audio_cache_hit": info["derived_cache_hit"]}
                                if scene["kind"] == "narration" else {})})
             global_cues.extend({"start": cue["start"]+timing["start"], "end": cue["end"]+timing["start"], "text": cue["text"]} for cue in cues)
         total = timeline[-1]["end"]
@@ -699,6 +703,7 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
         final_key = fingerprint({"version": VERSION, "master_audio_version": MASTER_AUDIO_VERSION,
                                  "narrator_pitch_semitones": narrator_pitch_semitones,
                                  "narrator_speed": narrator_speed,
+                                 "burn_captions": burn_captions,
                                  "records": [{key: row[key] for key in ("kind", "video_sha256", "audio_sha256", "gain", "duration")} for row in records]})
         final_record = output.with_suffix(".render-cache.json")
         final_resumed = _cache_valid(final_record, final_key, output)

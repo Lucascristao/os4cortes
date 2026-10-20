@@ -9,25 +9,54 @@ from faster_whisper import WhisperModel
 from .progress import emit
 
 
+DEFAULT_INITIAL_PROMPT = (
+    "Transmissão em português do Brasil, canal OS4 de Direita. "
+    "Comentários e análises sobre política, economia, Congresso Nacional, STF, governo, leis e notícias do Brasil. "
+    "Pontuação formal, vírgulas e acentuação corretas."
+)
+
+
 def extrair_audio(video_path: str | Path, audio_path: str | Path) -> Path:
     video_path = Path(video_path)
     audio_path = Path(audio_path)
     audio_path.parent.mkdir(parents=True, exist_ok=True)
 
-    subprocess.run(
-        [
-            "ffmpeg", "-y",
-            "-i", str(video_path),
-            "-vn",
-            "-ac", "1",
-            "-ar", "16000",
-            "-c:a", "pcm_s16le",
-            str(audio_path),
-        ],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    # Filtro de áudio para clareza vocal: corta sub-graves (<80Hz) que causam estalos e rumble,
+    # corta frequências acima de 7.6kHz (ruído/chiado), e aplica speechnorm para equilibrar
+    # a intensidade de falas fracas/distantes sem estourar o sinal.
+    cmd_filtrado = [
+        "ffmpeg", "-y",
+        "-i", str(video_path),
+        "-vn",
+        "-ac", "1",
+        "-ar", "16000",
+        "-af", "highpass=f=80,lowpass=f=7600,speechnorm=e=4:r=0.0001:l=1",
+        "-c:a", "pcm_s16le",
+        str(audio_path),
+    ]
+    try:
+        subprocess.run(
+            cmd_filtrado,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        # Fallback sem filtros caso a versão do ffmpeg não suporte speechnorm
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", str(video_path),
+                "-vn",
+                "-ac", "1",
+                "-ar", "16000",
+                "-c:a", "pcm_s16le",
+                str(audio_path),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     return audio_path
 
 
@@ -40,10 +69,11 @@ def tempo_legivel(segundos: float) -> str:
 def transcrever(
     audio_path: str | Path,
     pasta_saida: str | Path,
-    modelo: str = "small",
+    modelo: str = "large-v3-turbo",
     idioma: str = "pt",
     device: str = "cpu",
     compute_type: str = "int8",
+    initial_prompt: str | None = None,
 ) -> tuple[Path, Path, list[dict]]:
     pasta_saida = Path(pasta_saida)
     pasta_saida.mkdir(parents=True, exist_ok=True)
@@ -51,19 +81,30 @@ def transcrever(
     json_path = pasta_saida / "transcricao.json"
     txt_path = pasta_saida / "transcricao_para_chatgpt.txt"
 
-    emit("carregando_whisper", 15.0, "Carregando modelo de transcrição", stage_percent=0)
-    model = WhisperModel(
-        modelo,
-        device=device,
-        compute_type=compute_type,
-    )
+    emit("carregando_whisper", 15.0, f"Carregando modelo de transcrição ({modelo})", stage_percent=0)
+    try:
+        model = WhisperModel(
+            modelo,
+            device=device,
+            compute_type=compute_type,
+        )
+    except Exception as exc:
+        print(f"Aviso ao carregar {modelo}: {exc}. Usando fallback 'small'...")
+        model = WhisperModel(
+            "small",
+            device=device,
+            compute_type=compute_type,
+        )
 
+    prompt = initial_prompt or DEFAULT_INITIAL_PROMPT
     segments, info = model.transcribe(
         str(audio_path),
         language=idioma,
         vad_filter=True,
         word_timestamps=True,
         beam_size=5,
+        initial_prompt=prompt,
+        condition_on_previous_text=False,
     )
 
     total = max(float(getattr(info, "duration", 0) or 0), 0.0)

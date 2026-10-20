@@ -81,12 +81,12 @@ def render_editorial_cut(*args, **kwargs):
     return renderer(*args, **kwargs)
 
 
-def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_third):
+def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_third, burn_captions=False):
     aspect = corte["formato"]
     prefix = f"corte_{index:02d}_{nome_seguro(corte['titulo'])}"
     if aspect == "16:9":
         prefix += "_16x9"
-    # The local publisher recognizes the captioned vertical by this suffix.
+    # The local publisher recognizes the vertical by this suffix.
     output = out / (f"{prefix}.mp4" if aspect == "16:9" else f"{prefix}_legenda.mp4")
     voice_dir = cache / editorial_fingerprint(corte["editorial"]) / "voice"
     voice_dir.mkdir(parents=True, exist_ok=True)
@@ -96,6 +96,7 @@ def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_t
         work_dir=work / f"editorial-{index:02d}", aspect=aspect,
         lower_third=lower_third, voice_dir=voice_dir, font_dir=Path(font).parent,
         cover=corte["cover"], title=corte["titulo"],
+        burn_captions=burn_captions,
     )
     video_path, srt_path = Path(rendered["video"]), Path(rendered["srt"])
     cover = Path(rendered["capa"]) if rendered.get("capa") else None
@@ -223,6 +224,7 @@ def main() -> int:
     parser.add_argument("--editorial-cache-root", default=".editorial-cache")
     parser.add_argument("--lower-third-mode", choices=("off", "cover", "crop"), default="off")
     parser.add_argument("--lower-third-height", type=float, default=0.0)
+    parser.add_argument("--burn-captions", default="false", type=lambda v: str(v).lower() in ("true", "1", "yes"))
     args = parser.parse_args()
     lower_third = LowerThird(args.lower_third_mode, args.lower_third_height)
 
@@ -313,6 +315,7 @@ def main() -> int:
                 try:
                     arquivos, limpar_arquivos, metadata = _editorial_assets(
                         video, transcricao_json, corte, i, out, work, cache, lower_third,
+                        burn_captions=args.burn_captions,
                     )
                 except Exception as exc:
                     _cut_error(errors, corte, i, total, base_inicio + faixa, exc)
@@ -394,24 +397,34 @@ def main() -> int:
                     lower_third=lower_third,
                 )
 
-                emit(
-                    "legendas",
-                    base_inicio + faixa * 0.48,
-                    f"Aplicando legendas no corte {i}/{total}",
-                    cut=i,
-                    total_cuts=total,
-                )
-                srt_path, video_legenda, capa_path = criar_legendas_corte(
-                    transcricao_json,
-                    video_corte,
-                    inicio_efetivo,
-                    corte["fim"],
-                    titulo=corte["titulo"],
-                    style=CaptionStyle(),
-                    saida_suave=corte.get("saida_suave", True),
-                    capa_pronta=capa_path,
-                    gerar_capa=False,
-                )
+                if args.burn_captions:
+                    emit(
+                        "legendas",
+                        base_inicio + faixa * 0.48,
+                        f"Aplicando legendas no corte {i}/{total}",
+                        cut=i,
+                        total_cuts=total,
+                    )
+                    srt_path, video_legenda, capa_path = criar_legendas_corte(
+                        transcricao_json,
+                        video_corte,
+                        inicio_efetivo,
+                        corte["fim"],
+                        titulo=corte["titulo"],
+                        style=CaptionStyle(),
+                        saida_suave=corte.get("saida_suave", True),
+                        capa_pronta=capa_path,
+                        gerar_capa=False,
+                    )
+                else:
+                    srt_path = criar_srt_limpo(
+                        transcricao_json,
+                        out / f"{prefixo}.srt",
+                        inicio_efetivo,
+                        corte["fim"],
+                    )
+                    video_legenda = None
+
                 post_path = escrever_post(
                     out / f"{prefixo}_post.txt",
                     corte["titulo"],
@@ -421,10 +434,11 @@ def main() -> int:
 
                 arquivos = [
                     ("video", video_corte),
-                    ("videoLegenda", video_legenda),
                     ("srt", srt_path),
                     ("post", post_path),
                 ]
+                if video_legenda and Path(video_legenda).is_file():
+                    arquivos.append(("videoLegenda", video_legenda))
                 if capa_path and capa_path.exists():
                     arquivos.append(("capa", capa_path))
 

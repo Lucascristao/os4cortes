@@ -51,7 +51,7 @@ class FolderWatcher extends EventEmitter {
       feed.requestedCount===feed.totalCuts&&feed.completedCount===feed.readyCount&&
       feed.completedCount+feed.failedCount===feed.requestedCount;
     w.failedCount=w.generationComplete?feed.failedCount:0;
-    w.ready=feed.cuts.filter(c=>c.ready&&c.files?.post?.id&&(c.formato==='16:9'?c.files?.video?.id||c.files?.videoLegenda?.id:c.files?.videoLegenda?.id));
+    w.ready=feed.cuts.filter(c=>c.ready&&c.files?.post?.id&&(c.formato==='16:9'?c.files?.video?.id||c.files?.videoLegenda?.id:c.files?.videoLegenda?.id||c.files?.video?.id));
     w.phase=terminal(feed.status)?'finishing':'watching';
     w.detail=feed.error|| (feed.stale?'Processamento sem atualização recente; acompanhamento continua.':`${feed.readyCount}/${feed.totalCuts} cortes prontos. ${feed.detail||'Aguardando novos cortes.'}`);
     this.finishIfDone(w);this.save();
@@ -66,7 +66,7 @@ class FolderWatcher extends EventEmitter {
       ?`${w.readyCount}/${w.totalCuts} cortes publicados e confirmados; ${w.failedCount} com falha na geração.`
       :'Todos os cortes publicados e confirmados.';
   }
-  key(c){return `${c.formato}:${c.formato==='16:9'?c.files.video?.id||c.files.videoLegenda?.id:c.files.videoLegenda?.id}`;}
+  key(c){return `${c.formato}:${c.formato==='16:9'?c.files.video?.id||c.files.videoLegenda?.id:c.files.videoLegenda?.id||c.files.video?.id}`;}
   drain(w){
     if(!w.enabled)return;this.finishIfDone(w);if(!w.enabled){this.save();return;}
     for(const c of w.ready||[]){

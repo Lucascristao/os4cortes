@@ -258,6 +258,32 @@ test('simple-cut flag accepts only booleans and invalid values never dispatch or
  assert.equal(records.size,recordsBefore);
 });
 
+test('burn-captions flag accepts only booleans and invalid values never dispatch or create jobs',async()=>{
+ const before=dispatches.length;
+ const recordsBefore=records.size;
+ for(const burnCaptions of ['true','false','sim','',1,0,null,{},[]]) {
+  const response=await start(req('workflow-start','POST',{...renderBody(),burnCaptions}),context);
+  assert.equal(response.status,400,JSON.stringify(burnCaptions));
+  assert.match((await response.json()).error,/queimar legendas/);
+ }
+ assert.equal(dispatches.length,before);
+ assert.equal(records.size,recordsBefore);
+});
+
+test('burn-captions defaults to false and reaches workflow dispatch when enabled',async()=>{
+ for(const [enabled,expected] of [[false,'false'],[true,'true'],[undefined,'false']]) {
+  const body=renderBody();
+  if(enabled!==undefined) body.burnCaptions=enabled;
+  const response=await start(req('workflow-start','POST',body),context);
+  assert.equal(response.status,202);
+  const {requestId}=await response.json();
+  const {inputs}=dispatches.at(-1);
+  assert.equal(inputs.burn_captions,expected);
+  const job=await blobStore('os4-jobs',context).get(requestId,{type:'json'});
+  assert.equal(job.burnCaptions,expected==='true');
+ }
+});
+
 test('explicit editorial mode rejects a legacy package before dispatch',async()=>{
  const before=dispatches.length;
  const recordsBefore=records.size;

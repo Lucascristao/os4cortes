@@ -34,6 +34,10 @@ on:
         description: "Modelo: editorial com narração ou simple legado"
         required: false
         default: "simple"
+      burn_captions:
+        description: "Queimar legendas no vídeo"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -57,6 +61,7 @@ jobs:
       OS4_LOWER_THIRD_MODE: ${{ inputs.lower_third_mode }}
       OS4_LOWER_THIRD_HEIGHT: ${{ inputs.lower_third_height }}
       OS4_CUT_MODE: ${{ inputs.cut_mode }}
+      OS4_BURN_CAPTIONS: ${{ inputs.burn_captions }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
@@ -104,6 +109,7 @@ jobs:
             --lower-third-mode "$OS4_LOWER_THIRD_MODE" \
             --lower-third-height "$OS4_LOWER_THIRD_HEIGHT" \
             --cut-mode "$OS4_CUT_MODE" \
+            --burn-captions "$OS4_BURN_CAPTIONS" \
             --workdir ".work" \
             --output "output"
 

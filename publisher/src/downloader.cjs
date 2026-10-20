@@ -474,7 +474,9 @@ async function downloadBatch(batch, onCutDownloaded = () => {}) {
   const failedCuts = [];
 
   for (const c of cuts) {
-    const videoFileId = c.formato === '16:9' ? c.files?.video?.id || c.files?.videoLegenda?.id : c.files?.videoLegenda?.id;
+    const videoFileId = c.formato === '16:9'
+      ? c.files?.video?.id || c.files?.videoLegenda?.id
+      : c.files?.videoLegenda?.id || c.files?.video?.id;
     const postFileId = c.files?.post?.id;
     const capaFileId = c.files?.capa?.id;
     const formato = c.formato || (c.destino === 'youtube' ? '16:9' : '9:16');
@@ -529,7 +531,9 @@ async function downloadBatch(batch, onCutDownloaded = () => {}) {
     await new Promise(r => setTimeout(r, 30000));
 
     for (const c of failedCuts) {
-      const videoFileId = c.formato === '16:9' ? c.files?.video?.id || c.files?.videoLegenda?.id : c.files?.videoLegenda?.id;
+      const videoFileId = c.formato === '16:9'
+        ? c.files?.video?.id || c.files?.videoLegenda?.id
+        : c.files?.videoLegenda?.id || c.files?.video?.id;
       const postFileId = c.files?.post?.id;
       const capaFileId = c.files?.capa?.id;
       const formato = c.formato || (c.destino === 'youtube' ? '16:9' : '9:16');
@@ -738,7 +742,8 @@ async function scanDriveFolder(folderUrlOrId, onLog = console.log) {
       if (!c.videoLegenda && c.video16x9) {
         c.videoLegenda = c.video16x9;
       } else if (!c.videoLegenda && c.rawVideo) {
-        // O vídeo bruto nunca é publicado como corte final.
+        c.videoLegenda = c.rawVideo;
+        c.formato = '9:16';
       }
       if (!c.titulo || c.titulo.includes('capa')) {
         c.titulo = sanitizeCutTitle(c.rawName) || `Corte ${c.cutIndex}`;

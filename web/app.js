@@ -16,6 +16,7 @@ const githubSetupMsg = $("#githubSetupMsg");
 const videoUrl = $("#videoUrl");
 const hasLowerThirdInput = $("#hasLowerThird");
 const simpleCutsInput = $("#simpleCuts");
+const burnCaptionsInput = $("#burnCaptions");
 const pacote = $("#pacote");
 const cutsEditor = $("#cutsEditor");
 const transcriptSection = $("#transcriptSection");
@@ -662,12 +663,19 @@ function retomarJob() {
 
 function mostrarTranscricao(result) {
   if (!result) return;
-  sessaoTranscricao = { ...result, videoUrl: result.videoUrl || "", hasLowerThird: result.hasLowerThird === true, simpleCuts: result.simpleCuts === true };
+  sessaoTranscricao = {
+    ...result,
+    videoUrl: result.videoUrl || "",
+    hasLowerThird: result.hasLowerThird === true,
+    simpleCuts: result.simpleCuts === true,
+    burnCaptions: result.burnCaptions === true,
+  };
   salvarSessaoTranscricao();
   if (videoUrl) videoUrl.value = sessaoTranscricao.videoUrl;
   lowerThirdVideoKey = chaveVideo(sessaoTranscricao.videoUrl);
   if (hasLowerThirdInput) hasLowerThirdInput.checked = sessaoTranscricao.hasLowerThird;
   if (simpleCutsInput) simpleCutsInput.checked = sessaoTranscricao.simpleCuts;
+  if (burnCaptionsInput) burnCaptionsInput.checked = sessaoTranscricao.burnCaptions;
 
   transcriptText.value = result.transcript || "";
   driveFolderLink.href = result.driveFolderUrl || `https://drive.google.com/drive/folders/${result.folderId}`;
@@ -1611,6 +1619,7 @@ btnGerarCortes?.addEventListener("click", async () => {
   atualizarProgresso({ percent: 1, title: "Enviando cortes para processamento", detail: `${cuts.length} cortes na fila` });
 
   try {
+    const burnCaptions = burnCaptionsInput?.checked === true;
     const dados = await api("/.netlify/functions/workflow-start", {
       method: "POST",
       body: JSON.stringify({
@@ -1620,10 +1629,11 @@ btnGerarCortes?.addEventListener("click", async () => {
         transcriptJsonFileId: sessaoTranscricao.transcriptJsonFileId,
         hasLowerThird: sessaoTranscricao.hasLowerThird === true,
         simpleCuts,
+        burnCaptions,
         cuts,
       }),
     });
-    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "render", videoUrl: sessaoTranscricao.videoUrl, hasLowerThird: sessaoTranscricao.hasLowerThird === true, simpleCuts, timestamp: Date.now() }));
+    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "render", videoUrl: sessaoTranscricao.videoUrl, hasLowerThird: sessaoTranscricao.hasLowerThird === true, simpleCuts, burnCaptions, timestamp: Date.now() }));
     alternarBotaoCancelar(true);
     acompanharJob(dados.requestId, "render");
   } catch (erro) {
@@ -1684,7 +1694,7 @@ function resultLink(texto, url, primary = false) {
     a.target = "_blank";
     a.rel = "noopener noreferrer";
     a.dataset.downloadDireto = "1";
-    a.textContent = "Baixar vídeo com legenda";
+    a.textContent = texto.toLowerCase().startsWith("baixar") ? texto : `Baixar ${texto.toLowerCase()}`;
     a.title = "Baixar usando a conta Google conectada ao OS4. Se o Google solicitar, confirme essa conta.";
   } else {
     a.href = driveAccountUrl(url);
@@ -1734,12 +1744,19 @@ function mostrarResultados(result, autoSend = true) {
         links.append(resultLink("Capa / Thumbnail", corte.files.capa.url));
       }
     } else {
-      links.append(
-        resultLink("Vídeo com legenda", corte.files.videoLegenda.url, true),
-        resultLink("Abrir legendado no Drive", corte.files.videoLegenda.url),
-      );
-      if (corte.files.video.id !== corte.files.videoLegenda.id) {
-        links.append(resultLink("Vídeo sem legenda", corte.files.video.url));
+      const temLegendaDistinta = corte.files?.video?.id && corte.files?.videoLegenda?.id && corte.files.video.id !== corte.files.videoLegenda.id;
+      if (temLegendaDistinta) {
+        links.append(
+          resultLink("Vídeo com legenda", corte.files.videoLegenda.url, true),
+          resultLink("Abrir legendado no Drive", corte.files.videoLegenda.url),
+          resultLink("Vídeo sem legenda", corte.files.video.url),
+        );
+      } else {
+        const videoPrincipal = corte.files.video || corte.files.videoLegenda;
+        links.append(
+          resultLink("Vídeo vertical", videoPrincipal.url, true),
+          resultLink("Abrir no Drive", videoPrincipal.url),
+        );
       }
       links.append(resultLink("SRT", corte.files.srt.url), resultLink("Texto da postagem", corte.files.post.url));
       if (corte.files.capa?.url) {

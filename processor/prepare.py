@@ -31,7 +31,7 @@ def main() -> int:
     parser.add_argument("--url", required=True)
     parser.add_argument("--request-id", required=True)
     parser.add_argument("--workdir", default=".work")
-    parser.add_argument("--whisper-model", default="small")
+    parser.add_argument("--whisper-model", default=os.getenv("WHISPER_MODEL", "large-v3-turbo"))
     parser.add_argument("--idioma", default="pt")
     args = parser.parse_args()
 
