@@ -705,6 +705,11 @@ Use este formato nos verticais:
 Nos horizontais, use a mesma linha de episódio, acrescente 🎙️ Canal / Host: "[Canal informado nos metadados]" quando disponível e identifique os nomes com 👥 Participantes: [Nomes dos participantes confirmados na transcrição ou nos metadados].
 Identifique somente quem participa do vídeo; alguém apenas citado no assunto não é participante, e o nome do canal não confirma quem está falando. Se o título, o canal ou algum participante não estiver confirmado no material, omita a linha ou o nome correspondente. Não invente esses dados, não use a URL como substituto e não publique placeholders como "Título oficial do vídeo", "Canal Oficial" ou "Participante A".`;
 
+const DIRETRIZ_CAPAS = `CAPAS PARA INSTAGRAM, TIKTOK E YOUTUBE
+Inclua cover na raiz de CADA corte, simples ou autoral, tanto em 9:16 quanto em 16:9: {"version":1,"template_id":"03_close","title":"O QUE ELA CONFIRMA?"}.
+Escolha aleatoriamente um dos quatro modelos permitidos por corte, variando o lote: 01_central (pessoa central), 02_lateral (pessoa ao lado), 03_close (rosto maior e faixa de uma linha) ou 04_duas_pessoas (duas pessoas presentes juntas no mesmo frame). A IA escolhe o modelo e escreve o título; o motor seleciona os frames reais dos trechos originais e monta a capa, com o rosto em destaque e letras menores. Não gere imagem, recorte, coordenadas ou descrições de rostos.
+cover.title é texto simples em uma linha, sem HTML, Markdown, hashtags ou instruções: de 3 a 6 palavras, preferencialmente até 32 caracteres; no 03_close, prefira até 24. O limite do contrato é 60 caracteres. Escreva uma chamada curta e fiel ao trecho, separada do titulo de publicação. O motor limita a capa a duas linhas nos modelos 1, 2 e 4 e uma linha no close; adapta o enquadramento e pode substituir um modelo sem frame ou título utilizável. Não invente participantes nem reúna pessoas ausentes do mesmo frame.`;
+
 function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal }) {
   const fonte = sampleAuthor || "Fonte original";
   const narracao = (id, title, start, end, text, delivery = "explain") => ({
@@ -717,6 +722,7 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideo
   const exemplo = [{
     titulo: "[Título fiel à ideia completa]", inicio: "00:01:15.4", fim: "00:02:20.2",
     formato: "9:16", destino: "reels_tiktok", saida_suave: true,
+    cover: { version: 1, template_id: "01_central", title: "[Gancho curto da capa]" },
     legenda_post: `[Reflexão breve sobre o corte]\n\n🎬 Episódio completo: "${sampleTitle || "[Título oficial do vídeo original]"}"\n🎙️ Com: [Nomes dos participantes confirmados na transcrição ou nos metadados]`, hashtags: ["#tema"],
     editorial: {
       version: 1,
@@ -751,6 +757,8 @@ O text de cada narração é o produto final. Estrutura, metadados e timestamps 
 ${DIRETRIZ_FONTE_EXCLUSIVA}
 
 ${DIRETRIZ_CREDITOS_PUBLICACAO}
+
+${DIRETRIZ_CAPAS}
 
 Faça automaticamente a seleção dos cortes, a escolha da pauta, do ângulo, da relação com a fonte e da contribuição do OS4. O usuário fornece o vídeo e a transcrição; não precisa elaborar um briefing, escolher o alvo ou aprovar uma proposta para cada corte. Resolva essas decisões a partir do material e da identidade abaixo e devolva o pacote estruturado pronto para importar.
 
@@ -811,6 +819,9 @@ Use o princípio de cada exemplo, escrevendo falas próprias e específicas para
 Entregue somente um array JSON válido. Mantenha os campos normais de cada corte e inclua editorial em TODOS os objetos, com version: 1. Proponha os DOIS destinos quando a fonte sustentar boas ideias, sem forçar quantidade: formato 9:16/destino reels_tiktok para verticais e 16:9/youtube para horizontais. No YouTube, use a mesma lógica autoral para aprofundar uma explicação completa; a versão horizontal não deve apenas alongar o vertical. Acrescente pontos substantivos e trechos completos; divida intervenções quando a história pedir e mantenha o fechamento enxuto. Evite um monólogo final de um minuto recapitulando a mesma tese ou um fundo curto repetido sob narração inchada. Selecione apenas vídeos com uma ideia completa; recalcule o ritmo pela história, sem esticar silêncio ou repetir conteúdo para atingir duração.
 
 Regra de duração do OS4: sem duração mínima numérica, duração-alvo ou faixas de curtos/médios/longos. A história determina o tamanho. Um vertical pode passar de 2 minutos e usa até 3 minutos (180 segundos) de conteúdo original: some end - start somente das cenas kind: "clip", incluindo repetições reproduzidas. A narração acrescentada NÃO entra nesse limite; o vídeo vertical pronto pode passar de 3 minutos. Backgrounds, evidence e o envelope inicio/fim também não entram nessa soma. Acima de 180 segundos de conteúdo original, escolha formato 16:9/destino youtube. Exatamente 180 segundos ainda cabe no vertical. Não interrompa uma ideia para caber no vertical nem acrescente repetições, silêncio ou narração só para atingir uma duração.
+
+ENTRADA MAIS CEDO DA FALA ORIGINAL
+Em qualquer tema, comece diretamente por um clip quando a fala já tiver gancho e contexto suficientes para quem não viu a fonte. Se precisar narrar antes, escreva gancho e contexto enxutos, mirando de 8 a 15 segundos finais até a entrada do primeiro clip, como faixa inicial flexível de teste. Some TODAS as narrações anteriores ao primeiro clip; não avalie apenas uma cena chamada abertura. O motor reproduz a narração em 1,10×, preservando o grave de −1 semitom e a naturalidade; as falas originais continuam em 1,00× com seu tom preservado. Considere a duração após esse tratamento ao planejar a abertura. Zero ou menos de oito segundos também são válidos: não complete tempo com fala redundante. Acima de quinze segundos haverá apenas aviso editorial; o motor não cortará frases, reordenará cenas nem comprará nova síntese para encurtar automaticamente. Mantenha observações específicas e a contribuição própria do OS4 nas intervenções que a história pedir.
 
 Contrato editorial obrigatório:
 - source.label identifica a fonte; source.date usa AAAA-MM-DD somente se a data estiver confirmada, ou string vazia se desconhecida. Na legenda_post/descricao, siga o bloco de CRÉDITOS DE PUBLICAÇÃO com título e participantes confirmados.
@@ -873,6 +884,8 @@ ${DIRETRIZ_FONTE_EXCLUSIVA}
 
 ${DIRETRIZ_CREDITOS_PUBLICACAO}
 
+${DIRETRIZ_CAPAS}
+
 Leia toda a transcrição antes de selecionar. Sua missão é entregar um ÚNICO PACOTE JSON UNIFICADO contendo DOIS TIPOS DE CORTES:
 
 Escolha automaticamente os trechos e sua estrutura a partir da transcrição. O mínimo é de conteúdo: contexto, desenvolvimento e desfecho, sem transformar uma frase solta, um bordão ou uma reação isolada em corte. O usuário não precisa elaborar um briefing nem aprovar uma proposta para cada vídeo. Não imponha duração mínima numérica, duração-alvo ou faixas de curtos/médios/longos; preserve uma ideia completa, sem esticar nem interromper falas para atingir tempo.
@@ -882,7 +895,7 @@ Selecione somente ideias completas com apelo viral ou curioso sustentado pelo ma
 --- GRUPO 1: CORTES VERTICAIS (Instagram Reels & TikTok) ---
 1. Proporção e Duração: "formato": "9:16", "destino": "reels_tiktok". Até 3 minutos (180 segundos) do trecho original, medidos por fim - inicio; exatamente 180 segundos ainda cabe no vertical. Pode passar de 2 minutos. Acima de 180 segundos, selecione formato 16:9/destino youtube.
 2. Gancho Inicial: Comece no ponto que desperta interesse pela ideia, preservando o contexto necessário. Descarte trechos com pigarreios ou introduções mornas.
-3. Título Magnético Curto: De 4 a 8 palavras com alto CTR para a capa (sem aspas, sem hashtags).
+3. Título Magnético Curto: De 4 a 8 palavras para a publicação (sem aspas, sem hashtags). Escreva separadamente o título menor da capa em cover.title.
 4. Legenda do Post: Reflexão/insight do corte em 2 a 3 linhas + linha de crédito oficial obrigatória:
    🎬 Episódio completo: "${sampleTitle || "[Título oficial do vídeo original]"}"
    🎙️ Com: [Nomes dos Participantes extraídos do vídeo]
@@ -918,6 +931,7 @@ Exemplo de estrutura do JSON:
     "formato": "9:16",
     "destino": "reels_tiktok",
     "saida_suave": true,
+    "cover": {"version": 1, "template_id": "01_central", "title": "O QUE MUDA AGORA?"},
     "legenda_post": ${JSON.stringify(`Insight em 2 a 3 linhas.\n\n🎬 Episódio completo: "${sampleTitle || "[Título oficial do vídeo original]"}"\n🎙️ Com: [Nomes dos participantes confirmados na transcrição ou nos metadados]`)},
     "hashtags": ["#negocios", "#lideranca"]
   },
@@ -928,6 +942,7 @@ Exemplo de estrutura do JSON:
     "formato": "16:9",
     "destino": "youtube",
     "saida_suave": true,
+    "cover": {"version": 1, "template_id": "02_lateral", "title": "A ESCOLHA QUE MUDOU TUDO"},
     "descricao": ${JSON.stringify(`Neste trecho completo, discutimos a virada de chave que permitiu escalar a operação sem perder a qualidade.\n\nCapítulos:\n00:00 - O ponto de virada\n03:15 - A decisão arriscada\n06:40 - O resultado e lição prática\n\n🎬 Episódio completo: "${sampleTitle || "[Título oficial do vídeo original]"}"\n🎙️ Canal / Host: "${sampleAuthor || "[Canal informado nos metadados]"}"\n👥 Participantes: [Nomes dos participantes confirmados na transcrição ou nos metadados]\n\nInscreva-se no canal para mais cortes de alto valor!`)},
     "tags": ["como escalar empresa", "gestao de negocios", "podcast de empreendedorismo"]
   }
@@ -1065,6 +1080,33 @@ function atualizarIdentidadePacote(data) {
   return data;
 }
 
+const MODELOS_CAPA = {
+  "01_central": "1 — Central",
+  "02_lateral": "2 — Lateral",
+  "03_close": "3 — Close",
+  "04_duas_pessoas": "4 — Duas pessoas",
+};
+
+function capaPadrao(titulo, formato) {
+  return { version: 1, template_id: formato === "16:9" ? "02_lateral" : "01_central", title: titulo };
+}
+
+function normalizarCapa(cover) {
+  if (!cover || typeof cover !== "object" || Array.isArray(cover)) throw new Error("cover precisa ser um objeto JSON.");
+  if (Object.keys(cover).length !== 3 || !["version", "template_id", "title"].every(key => Object.hasOwn(cover, key))) {
+    throw new Error("cover precisa conter somente version, template_id e title.");
+  }
+  if (cover.version !== 1) throw new Error("cover.version precisa ser 1.");
+  if (typeof cover.template_id !== "string" || !Object.hasOwn(MODELOS_CAPA, cover.template_id)) {
+    throw new Error("cover.template_id precisa ser 01_central, 02_lateral, 03_close ou 04_duas_pessoas.");
+  }
+  if (typeof cover.title !== "string" || !cover.title.trim() || Array.from(cover.title).length > 60
+      || /[\p{C}\u2028\u2029<>`]|\*\*|__|\[[^\]]*\]\(/u.test(cover.title)) {
+    throw new Error("cover.title precisa ser texto simples em uma linha, não vazio, com até 60 caracteres. Edite o título da capa.");
+  }
+  return { version: 1, template_id: cover.template_id, title: cover.title.trim() };
+}
+
 function normalizarPacote(data, { simpleCuts = simpleCutsInput?.checked === true } = {}) {
   data = atualizarIdentidadePacote(data);
   const lista = Array.isArray(data) ? data : data?.cortes;
@@ -1096,9 +1138,17 @@ function normalizarPacote(data, { simpleCuts = simpleCutsInput?.checked === true
     const legendaPost = String(c?.legenda_post || descricao).trim();
     const tagsArr = c?.tags || c?.hashtags;
     const hashtags = Array.isArray(tagsArr) ? tagsArr.join(" ") : String(tagsArr || "").trim();
+    const titulo = String(c?.titulo || `Corte ${i + 1}`).trim();
+    let cover;
+    try {
+      cover = Object.hasOwn(c || {}, "cover") ? normalizarCapa(c.cover) : normalizarCapa(capaPadrao(titulo, formato));
+    } catch (erro) {
+      if (Object.hasOwn(c || {}, "cover")) throw new Error(`Corte ${i + 1}: ${erro.message}`);
+      // Import legacy publication titles intact; the editor asks for a short cover title before rendering.
+    }
 
     return {
-      titulo: String(c?.titulo || `Corte ${i + 1}`).trim(),
+      titulo,
       inicio,
       fim,
       formato,
@@ -1108,6 +1158,7 @@ function normalizarPacote(data, { simpleCuts = simpleCutsInput?.checked === true
       hashtags,
       tags: hashtags,
       saida_suave: c?.saida_suave !== false,
+      ...(cover ? { cover } : {}),
       ...(temEditorial ? { editorial: c.editorial } : {}),
     };
   });
@@ -1183,9 +1234,11 @@ function renderizarEditor(cortes) {
     const isYoutube = corte.formato === "16:9" || corte.destino === "youtube";
     card.dataset.formato = isYoutube ? "16:9" : "9:16";
     card.dataset.destino = isYoutube ? "youtube" : "reels_tiktok";
-    // Keep the plan on its card so editing or reordering cannot associate it with another cut.
+    // Keep metadata on its card so editing or reordering cannot associate it with another cut.
     card.os4CutMetadata = {
       saida_suave: corte.saida_suave !== false,
+      cover: corte.cover || capaPadrao(corte.titulo, card.dataset.formato),
+      legacyCover: !Object.hasOwn(corte, "cover"),
       ...(Object.hasOwn(corte, "editorial") ? { editorial: corte.editorial } : {}),
     };
 
@@ -1229,6 +1282,14 @@ function renderizarEditor(cortes) {
     const labelTitulo = isYoutube ? "Título no YouTube (Até 95 chars)" : "Título";
     const titulo = criarCampo(labelTitulo, corte.titulo);
     titulo.campo.dataset.field = "titulo";
+    const capa = card.os4CutMetadata.cover;
+    const modeloCapa = document.createElement("p");
+    modeloCapa.className = "cover-template";
+    modeloCapa.textContent = `Modelo da capa: ${MODELOS_CAPA[capa.template_id]}`;
+    const tituloCapa = criarCampo("Título da capa (opcional, até 60 caracteres)", capa.title);
+    tituloCapa.campo.dataset.field = "cover_title";
+    tituloCapa.campo.maxLength = 60;
+    tituloCapa.campo.placeholder = "Vazio: usar o título do corte";
     const tempos = document.createElement("div");
     tempos.className = "cut-times";
     const inicio = criarCampo("Início", corte.inicio);
@@ -1309,14 +1370,24 @@ function renderizarEditor(cortes) {
       }
     });
 
-    card.append(top, titulo.wrap, tempos, legenda.wrap, hashtags.wrap);
+    card.append(top, titulo.wrap, modeloCapa, tituloCapa.wrap, tempos, legenda.wrap, hashtags.wrap);
     if (Object.hasOwn(corte, "editorial")) card.appendChild(criarResumoEditorial(corte.editorial));
+    for (const campo of [...card.querySelectorAll("input"), ...card.querySelectorAll("textarea")]) {
+      campo.addEventListener("input", sincronizarPacoteEditor);
+    }
     cutsEditor.appendChild(card);
   });
 
   cutsEditor.classList.remove("hidden");
   btnGerarCortes.classList.remove("hidden");
   setStatus("cortes", `${cortes.length} cortes prontos para gerar`, "active");
+  sincronizarPacoteEditor();
+}
+
+function sincronizarPacoteEditor() {
+  cortesImportados = lerCortesEditor();
+  pacote.value = JSON.stringify(cortesImportados, null, 2);
+  try { localStorage.setItem(STORAGE_PACKAGE, pacote.value); } catch {}
 }
 
 btnImportar?.addEventListener("click", () => {
@@ -1342,8 +1413,17 @@ function lerCortesEditor() {
     const textoPost = card.querySelector('[data-field="legenda_post"]')?.value?.trim() || "";
     const tagsVal = card.querySelector('[data-field="hashtags"]')?.value?.trim() || "";
     const metadados = card.os4CutMetadata || {};
+    const titulo = card.querySelector('[data-field="titulo"]').value.trim();
+    const cover = {
+      ...(metadados.cover || capaPadrao(titulo, formato)),
+      title: card.querySelector('[data-field="cover_title"]')?.value?.trim() || titulo,
+    };
+    let incluirCapa = true;
+    if (metadados.legacyCover && cover.title === titulo) {
+      try { normalizarCapa(cover); } catch { incluirCapa = false; }
+    }
     return {
-      titulo: card.querySelector('[data-field="titulo"]').value.trim(),
+      titulo,
       inicio: card.querySelector('[data-field="inicio"]').value.trim(),
       fim: card.querySelector('[data-field="fim"]').value.trim(),
       formato,
@@ -1353,6 +1433,7 @@ function lerCortesEditor() {
       hashtags: tagsVal,
       tags: tagsVal,
       saida_suave: metadados.saida_suave !== false,
+      ...(incluirCapa ? { cover } : {}),
       ...(Object.hasOwn(metadados, "editorial") ? { editorial: metadados.editorial } : {}),
     };
   });
@@ -1488,9 +1569,21 @@ btnGerarCortes?.addEventListener("click", async () => {
 
   const simpleCuts = sessaoTranscricao.simpleCuts === true;
   const cortesEditados = lerCortesEditor();
-  const rotas = normalizarPacote(cortesEditados, { simpleCuts });
+  let rotas;
+  try {
+    rotas = normalizarPacote(cortesEditados, { simpleCuts });
+    rotas.forEach((corte, i) => {
+      try { corte.cover = normalizarCapa(corte.cover || capaPadrao(corte.titulo, corte.formato)); }
+      catch (erro) { throw new Error(`Corte ${i + 1}: ${erro.message}`); }
+    });
+  } catch (erro) {
+    setStatus("cortes", "Revise a capa", "error");
+    atualizarProgresso({ percent: 0, title: "O título da capa precisa de ajuste", detail: erro.message });
+    alert(erro.message);
+    return;
+  }
   const cuts = cortesEditados.map((corte, i) => ({
-    ...corte, formato: rotas[i].formato, destino: rotas[i].destino,
+    ...corte, formato: rotas[i].formato, destino: rotas[i].destino, cover: rotas[i].cover,
     descricao: rotas[i].formato === "16:9" ? (corte.descricao || corte.legenda_post) : corte.descricao,
   }));
   if (!simpleCuts) {

@@ -78,6 +78,8 @@ class EditorialVoiceTests(unittest.TestCase):
         self.assertEqual(first["raw_pitch_semitones"], 0)
         self.assertEqual(first["master_pitch_semitones"], -1)
         self.assertFalse(first["master_pitch_applied"])
+        self.assertEqual(first["narrator_speed"], 1.10)
+        self.assertEqual(first["master_pitch_stage"], "cached-narration-derivative-before-timeline")
         self.assertFalse(first["continuity"]["cross_scene_websocket_reuse"])
         self.assertFalse(first["continuity"]["perfect_timbre_guaranteed"])
         with patch.object(editorial_voice, "MASTER_PITCH_SEMITONES", 0):

@@ -115,7 +115,28 @@ class EditorialBatchContractTests(unittest.TestCase):
             "titulo": "Uma resposta", "inicio": 10.0, "fim": 20.0,
             "formato": "9:16", "destino": "reels_tiktok", "descricao": "",
             "legenda_post": "", "hashtags": "", "tags": "", "saida_suave": False,
+            "cover": {"version": 1, "template_id": "01_central", "title": "Uma resposta"},
         })
+
+    def test_cover_survives_compressed_transport_and_format_defaults(self):
+        import base64
+        import gzip
+        cuts = package(include_editorial=False) + package(include_editorial=False)
+        cuts[0]["cover"] = {"version": 1, "template_id": "03_close", "title": "E A RESPOSTA?"}
+        cuts[1]["formato"] = "16:9"
+        encoded = "gzip-base64:" + base64.b64encode(gzip.compress(json.dumps(cuts).encode())).decode()
+        result = normalizar_cortes(encoded)
+        self.assertEqual(result[0]["cover"], cuts[0]["cover"])
+        self.assertEqual(result[1]["cover"]["template_id"], "02_lateral")
+
+    def test_invalid_cover_is_rejected_with_cut_context(self):
+        for cover in (None, [], {"version": True},
+                      {"version": 1, "template_id": "unknown", "title": "Título"},
+                      {"version": 1, "template_id": "01_central", "title": "x" * 61}):
+            cuts = package(include_editorial=False)
+            cuts[0]["cover"] = cover
+            with self.subTest(cover=cover), self.assertRaisesRegex(ValueError, "Corte 1:.*cover"):
+                normalizar_cortes(json.dumps(cuts))
 
     def test_mixed_package_keeps_the_validated_plan_only_on_the_opted_in_cut(self):
         cuts = package() + package(include_editorial=False)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -14,9 +15,9 @@ from .captions import (
     criar_srt_limpo,
     escrever_post,
     escrever_post_youtube,
-    gerar_capa_16x9,
     garantir_archivo_black,
 )
+from .covers import CoverError, normalize_cover, render_cover
 from .drive import uploader_por_env
 from .cut_transport import decode_cuts_json
 from .editorial_plan import editorial_fingerprint, normalize_editorial_plan
@@ -29,6 +30,49 @@ except ImportError:
     render_cinematic_16x9 = None
     render_tracking_9x16 = None
 from .utils import nome_seguro, tempo_para_segundos
+
+SIMPLE_VIDEO_CACHE_VERSION = "os4-simple-video-v1"
+
+
+def _file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _render_simple_video(video, start, end, output, *, aspect, work_dir, cache_dir,
+                         lower_third, fade_out_visual, source_sha256=None):
+    """Reuse source-only video; cover and publication edits do not change this key."""
+    config = {
+        "version": SIMPLE_VIDEO_CACHE_VERSION,
+        "source_sha256": source_sha256 or _file_sha256(video),
+        "span": [start, end], "aspect": aspect,
+        "lower_third": {"mode": lower_third.mode, "height_fraction": lower_third.height_fraction},
+        "fade_out_visual": fade_out_visual,
+    }
+    key = hashlib.sha256(json.dumps(config, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    cache_dir, output = Path(cache_dir), Path(output)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cached_video, sidecar = cache_dir / f"{key}.mp4", cache_dir / f"{key}.json"
+    record = {}
+    try:
+        record = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+    valid = (isinstance(record, dict) and record.get("key") == key and cached_video.is_file()
+             and record.get("sha256") == _file_sha256(cached_video))
+    if not valid:
+        renderer = render_cinematic_16x9 if aspect == "16:9" else render_tracking_9x16
+        renderer(video, start, end, cached_video, work_dir=work_dir,
+                 fade_out_visual=fade_out_visual, lower_third=lower_third)
+        record = {"key": key, "sha256": _file_sha256(cached_video), "config": config}
+        sidecar.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.resolve() != cached_video.resolve():
+        shutil.copyfile(cached_video, output)
+    return {"key": key, "cache_hit": bool(valid), "sha256": record["sha256"]}
 
 
 def render_editorial_cut(*args, **kwargs):
@@ -51,6 +95,7 @@ def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_t
         video, transcript, corte["editorial"], output,
         work_dir=work / f"editorial-{index:02d}", aspect=aspect,
         lower_third=lower_third, voice_dir=voice_dir, font_dir=Path(font).parent,
+        cover=corte["cover"], title=corte["titulo"],
     )
     video_path, srt_path = Path(rendered["video"]), Path(rendered["srt"])
     cover = Path(rendered["capa"]) if rendered.get("capa") else None
@@ -60,11 +105,13 @@ def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_t
     else:
         post = escrever_post(out / f"{prefix}_post.txt", corte["titulo"], corte["legenda_post"], corte["hashtags"])
     assets = [("video", video_path), ("srt", srt_path), ("post", post)]
-    if cover and cover.exists():
-        assets.append(("capa", cover))
+    if not cover or not cover.is_file():
+        raise CoverError("A capa obrigatória do corte autoral não foi gerada.")
+    assets.append(("capa", cover))
+    metadata = json.loads(report.read_text(encoding="utf-8")) if report and report.exists() else {}
     # Reports and synthesis caches stay local; they are not publisher uploads.
     cleanup = [video_path, srt_path, post, cover, report, output.with_suffix(".render-cache.json")]
-    return assets, cleanup
+    return assets, cleanup, metadata
 
 
 def _cut_error(errors, corte, index, total, progress, exc):
@@ -128,6 +175,12 @@ def normalizar_cortes(raw: str, *, cut_mode: str | None = None) -> list[dict]:
         else:
             formato = "9:16"
             destino = "reels_tiktok"
+        try:
+            if "cover" in corte and corte["cover"] is None:
+                raise CoverError("cover deve ser um objeto version: 1.")
+            cover = normalize_cover(corte.get("cover"), titulo, formato)
+        except ValueError as exc:
+            raise ValueError(f"Corte {idx}: {exc}") from exc
 
         descricao = normalize_branding(str(corte.get("descricao") or corte.get("descricao_completa") or corte.get("legenda_post") or "")).strip()
         tags = corte.get("tags") or corte.get("hashtags") or ""
@@ -150,6 +203,7 @@ def normalizar_cortes(raw: str, *, cut_mode: str | None = None) -> list[dict]:
                 "hashtags": tags_formatadas,
                 "tags": tags,
                 "saida_suave": bool(corte.get("saida_suave", True)),
+                "cover": cover,
                 **({"editorial": editorial} if "editorial" in corte else {}),
             }
         )
@@ -217,6 +271,7 @@ def main() -> int:
         emit("baixando_base", 8.0, "Vídeo-base pronto", stage_percent=100, total_cuts=total)
         uploader.download(args.transcript_json_file_id, transcricao_json)
         emit("baixando_base", 10.0, "Transcrição carregada", total_cuts=total)
+        source_sha256 = _file_sha256(video) if args.cut_mode == "simple" else None
 
         palavras_globais = carregar_palavras(transcricao_json)
         resultados: list[dict] = []
@@ -236,11 +291,27 @@ def main() -> int:
             usar_fade_visual = not corte.get("saida_suave", True)
 
             limpar_arquivos = []
+            metadata = {}
+            prefixo = f"corte_{i:02d}_{titulo_arquivo}" + ("_16x9" if formato == "16:9" else "")
+            if args.cut_mode == "simple":
+                try:
+                    cover_report = render_cover(
+                        video, [(inicio_efetivo, corte["fim"])], out / f"{prefixo}_capa.jpg",
+                        cover=corte["cover"], title=corte["titulo"], aspect=formato,
+                        lower_third=lower_third, work_dir=cache / "covers",
+                    )
+                    capa_path = Path(cover_report["path"])
+                    metadata = {"cover": cover_report, "first_original_clip_seconds": 0.0,
+                                "duration_seconds": corte["fim"] - inicio_efetivo,
+                                "source_clip_seconds": corte["fim"] - inicio_efetivo}
+                except CoverError as exc:
+                    _cut_error(errors, corte, i, total, base_inicio + faixa, exc)
+                    continue
 
             if args.cut_mode == "editorial":
                 emit("tracking", base_inicio, f"Montando vídeo autoral {i}/{total}: {corte['titulo']}", cut=i, total_cuts=total)
                 try:
-                    arquivos, limpar_arquivos = _editorial_assets(
+                    arquivos, limpar_arquivos, metadata = _editorial_assets(
                         video, transcricao_json, corte, i, out, work, cache, lower_third,
                     )
                 except Exception as exc:
@@ -257,12 +328,15 @@ def main() -> int:
                     cut=i,
                     total_cuts=total,
                 )
-                render_cinematic_16x9(
+                _render_simple_video(
                     video,
                     inicio_efetivo,
                     corte["fim"],
                     video_16x9,
+                    aspect=formato,
                     work_dir=work,
+                    cache_dir=cache / "simple-video",
+                    source_sha256=source_sha256,
                     fade_out_visual=usar_fade_visual,
                     lower_third=lower_third,
                 )
@@ -279,10 +353,6 @@ def main() -> int:
                     out / f"{prefixo}.srt",
                     inicio_efetivo,
                     corte["fim"],
-                )
-                capa_path = gerar_capa_16x9(
-                    video_16x9,
-                    out / f"{prefixo}_capa.jpg",
                 )
                 post_path = escrever_post_youtube(
                     out / f"{prefixo}_post.txt",
@@ -311,12 +381,15 @@ def main() -> int:
                     cut=i,
                     total_cuts=total,
                 )
-                render_tracking_9x16(
+                _render_simple_video(
                     video,
                     inicio_efetivo,
                     corte["fim"],
                     video_corte,
+                    aspect=formato,
                     work_dir=work,
+                    cache_dir=cache / "simple-video",
+                    source_sha256=source_sha256,
                     fade_out_visual=usar_fade_visual,
                     lower_third=lower_third,
                 )
@@ -336,6 +409,8 @@ def main() -> int:
                     titulo=corte["titulo"],
                     style=CaptionStyle(),
                     saida_suave=corte.get("saida_suave", True),
+                    capa_pronta=capa_path,
+                    gerar_capa=False,
                 )
                 post_path = escrever_post(
                     out / f"{prefixo}_post.txt",
@@ -366,6 +441,8 @@ def main() -> int:
             ids: dict[str, str] = {}
 
             try:
+                if not any(key == "capa" and Path(path).is_file() for key, path in arquivos):
+                    raise CoverError("Capa obrigatória ausente; o corte não pode ser marcado como pronto.")
                 for pos, (chave, arquivo) in enumerate(arquivos, start=1):
                     file_id = uploader.upload(arquivo, folder_id=args.folder_id)
                     ids[chave] = file_id
@@ -377,7 +454,7 @@ def main() -> int:
                         total_cuts=total,
                     )
             except Exception as exc:
-                if args.cut_mode == "simple":
+                if args.cut_mode == "simple" and not isinstance(exc, CoverError):
                     raise
                 _cut_error(errors, corte, i, total, base_inicio + faixa, exc)
                 continue
@@ -414,6 +491,10 @@ def main() -> int:
                     "fim": corte["fim"],
                     "formato": formato,
                     "destino": destino,
+                    "cover": corte["cover"],
+                    "render": {key: metadata[key] for key in (
+                        "cover", "first_original_clip_seconds", "duration_seconds", "source_clip_seconds", "editorial_warnings"
+                    ) if key in metadata},
                     "files": files_dict,
                 }
             )
@@ -440,10 +521,10 @@ def main() -> int:
             "driveFolderUrl": f"https://drive.google.com/drive/folders/{args.folder_id}",
             "cuts": resultados,
         }
-        if args.cut_mode == "editorial":
+        if args.cut_mode == "editorial" or errors:
             result.update(errors=errors, requestedCount=total, completedCount=len(resultados))
             (out / "render-batch-result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-            detail = f"{len(resultados)}/{total} cortes autorais salvos no Drive"
+            detail = f"{len(resultados)}/{total} cortes {'autorais ' if args.cut_mode == 'editorial' else ''}salvos no Drive"
             if errors:
                 detail += f"; {len(errors)} falhou/falharam"
             if not resultados:

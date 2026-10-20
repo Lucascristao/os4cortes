@@ -25,8 +25,10 @@ from .voice_runtime.gemini_live_fidelity import evaluate_transcription
 
 
 VERSION = "os4-editorial-compositor-v2-bounded-overlay-input"
-MASTER_AUDIO_VERSION = "os4-editorial-master-v2-shared-baritone"
+MASTER_AUDIO_VERSION = "os4-editorial-master-v3-treated-narration"
+DERIVED_NARRATION_VERSION = "os4-narration-derived-v2-measured-tail"
 DEFAULT_NARRATOR_PITCH_SEMITONES = -1.0
+DEFAULT_NARRATOR_SPEED = 1.10
 
 
 class StaleVoicePolicy(ValueError):
@@ -97,6 +99,18 @@ def build_timeline(plan, voice_durations, *, fps=30):
                        "end": (cursor + frames) / fps})
         cursor += frames
     return result
+
+
+def editorial_timing_report(plan, timeline):
+    """Describe the assembled opening without imposing an editorial rewrite."""
+    first_original = next(row["start"] for row in timeline if row["kind"] == "clip")
+    warnings = []
+    if first_original > 15:
+        warnings.append(f"A fala original entra em {first_original:.2f}s, acima da faixa inicial de teste de 15s.")
+    return {"first_original_clip_seconds": first_original,
+            "original_content_seconds": sum(scene["end"]-scene["start"] for scene in plan["scenes"] if scene["kind"] == "clip"),
+            "source_clip_seconds": sum(scene["end"]-scene["start"] for scene in plan["scenes"] if scene["kind"] == "clip"),
+            "final_duration_seconds": timeline[-1]["end"], "editorial_warnings": warnings}
 
 
 def _safe_audio_path(root, name):
@@ -303,6 +317,48 @@ def _save_cache(record_path, key, artifact):
     _write_json(record_path, {"key": key, "sha256": file_sha256(artifact)})
 
 
+def derive_narration(info, cache_dir, *, ffmpeg, speed=DEFAULT_NARRATOR_SPEED,
+                     pitch_semitones=DEFAULT_NARRATOR_PITCH_SEMITONES):
+    """Treat a copy once; canonical WAVs and word alignment remain untouched."""
+    if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not math.isfinite(speed) or not .5 <= speed <= 2:
+        raise ValueError("Invalid narrator speed setting.")
+    if isinstance(pitch_semitones, bool) or not isinstance(pitch_semitones, (int, float)) or not math.isfinite(pitch_semitones) or not -3 <= pitch_semitones <= 3:
+        raise ValueError("Invalid shared narrator pitch setting.")
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = fingerprint({"version": DERIVED_NARRATION_VERSION, "raw_sha256": info["sha256"],
+                       "speed": speed, "pitch_semitones": pitch_semitones,
+                       "input": "pcm16-mono24k", "output": "pcm16-mono48k"})
+    output = cache_dir / f"narration-{key[:24]}.wav"
+    record = output.with_suffix(".json")
+    resumed = _cache_valid(record, key, output)
+    if not resumed:
+        ratio = 2 ** (pitch_semitones / 12)
+        # The resampling changes pitch; atempo restores its duration component
+        # and adds only the requested speed. Preserve the filter's full output:
+        # its measured duration can differ slightly from raw_duration / speed.
+        filters = (f"asetrate=24000*{ratio:.12f},aresample=48000,atempo={speed/ratio:.12f},"
+                   "asetpts=PTS-STARTPTS")
+        _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", info["path"],
+              "-af", filters, "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", output])
+        _save_cache(record, key, output)
+    with wave.open(str(output), "rb") as handle:
+        if (handle.getnchannels(), handle.getsampwidth(), handle.getframerate()) != (1, 2, 48000):
+            raise ValueError("Derived narration must be PCM16 mono 48kHz.")
+        duration = handle.getnframes() / handle.getframerate()
+    if duration <= 0 or abs(duration-info["duration"]/speed) > .15:
+        raise ValueError("Derived narration duration is inconsistent with its speed setting.")
+    words = [{**word, "inicio": word["inicio"]/speed, "fim": word["fim"]/speed} for word in info["words"]]
+    # Canonical timestamps remain exactly scaled. A few trailing alignment
+    # milliseconds may exceed atempo's output; the master pads to the timeline
+    # rather than clipping captions or trimming any of the treated speech.
+    timeline_duration = max(duration, max((word["fim"] for word in words), default=0))
+    return {**info, "raw_path": info["path"], "raw_sha256": info["sha256"], "raw_duration": info["duration"],
+            "path": output, "sha256": file_sha256(output), "duration": duration,
+            "timeline_duration": timeline_duration, "words": words,
+            "derived_key": key, "derived_cache_hit": resumed, "speed": speed, "pitch_semitones": pitch_semitones}
+
+
 def scene_fingerprint(scene, *, source_hash, canvas, lower_third, words, voice=None, font_hash=""):
     """Exclude other scenes and master audio gain from silent video cache keys."""
     from .editorial_visuals import VISUAL_STYLE_VERSION
@@ -495,28 +551,24 @@ def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, 
           "-filter_complex", ";".join(filters), "-map", "[outv]", "-an", *common, output])
 
 
-def _scene_audio_filter(record, index, narrator_pitch_semitones):
+def _scene_audio_filter(record, index):
     duration = record["duration"]
-    # Plotquake's subtle, shared one-semitone treatment. Preserve the raw WAV,
-    # source speakers and final timing; apply the same setting to every narrator.
-    pitch = ""
-    if record["kind"] == "narration" and narrator_pitch_semitones:
-        ratio = 2 ** (narrator_pitch_semitones / 12)
-        pitch = f"asetrate=24000*{ratio:.12f},aresample=48000,atempo={1/ratio:.12f},"
+    # Narration has already received pitch/speed in its own cached derivative.
+    # Source speech reaches this shared gain/envelope stage without either.
     return (
-        f"[{index}:a]volume={record['gain']:.10f},{pitch}"
+        f"[{index}:a]volume={record['gain']:.10f},"
         f"afade=t=in:d=0.005,afade=t=out:st={max(0,record['content_duration']-.010):.6f}:d=0.010,"
         f"aresample=48000,pan=stereo|c0=c0|c1=c0,aformat=sample_fmts=fltp:channel_layouts=stereo,"
         f"apad,atrim=duration={duration:.9f},asetpts=PTS-STARTPTS[a{index}]"
     )
 
 
-def _master_audio(records, output, *, ffmpeg, narrator_pitch_semitones=DEFAULT_NARRATOR_PITCH_SEMITONES):
+def _master_audio(records, output, *, ffmpeg):
     inputs, filters, labels = [], [], []
     for index, record in enumerate(records):
         inputs.extend(["-i", str(record["audio"])])
         label = f"a{index}"
-        filters.append(_scene_audio_filter(record, index, narrator_pitch_semitones))
+        filters.append(_scene_audio_filter(record, index))
         labels.append(f"[{label}]")
     filters.append("".join(labels) + f"concat=n={len(records)}:v=0:a=1[master]")
     _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *inputs, "-filter_complex", ";".join(filters),
@@ -550,7 +602,8 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                          voice_dir=None, font_dir=None, ffmpeg="ffmpeg", ffprobe="ffprobe", width=None,
                          fps=30, asr_model="base", allow_synthesis=True, delivery_overrides=None,
                          target_active_dbfs=-18.0, peak_ceiling=.95,
-                         narrator_pitch_semitones=DEFAULT_NARRATOR_PITCH_SEMITONES):
+                         narrator_pitch_semitones=DEFAULT_NARRATOR_PITCH_SEMITONES,
+                         narrator_speed=DEFAULT_NARRATOR_SPEED, cover=None, title=""):
     """Return {video,srt,capa,report}; output is the final MP4 file path."""
     from .editorial_visuals import Canvas, VISUAL_STYLE_VERSION
     video, transcript, output = Path(video).resolve(), Path(transcript).resolve(), Path(output).resolve()
@@ -563,6 +616,8 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
         raise ValueError("Invalid speech master target/peak ceiling.")
     if isinstance(narrator_pitch_semitones, bool) or not isinstance(narrator_pitch_semitones, (int, float)) or not math.isfinite(narrator_pitch_semitones) or not -3 <= narrator_pitch_semitones <= 3:
         raise ValueError("Invalid shared narrator pitch setting.")
+    if isinstance(narrator_speed, bool) or not isinstance(narrator_speed, (int, float)) or not math.isfinite(narrator_speed) or not .5 <= narrator_speed <= 2:
+        raise ValueError("Invalid narrator speed setting.")
     normalized = normalize_editorial_plan(_json(plan) if isinstance(plan, (str, Path)) else plan)
     source_words = captions.carregar_palavras(transcript)
     validate_source_ranges(normalized, source_words)
@@ -576,10 +631,24 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
     font_path, font_name = _font(font_dir)
     source_hash, font_hash = file_sha256(video), file_sha256(font_path)
     with _tool_path(ffmpeg, ffprobe):
+        from .covers import render_cover
+        cover_path = output.with_name(output.stem + "_capa.jpg")
+        cover_title = title or next((scene["visual"]["title"] for scene in normalized["scenes"] if scene["kind"] == "narration"), normalized["source"]["label"])
+        cover_report = render_cover(video, [(scene["start"], scene["end"]) for scene in normalized["scenes"] if scene["kind"] == "clip"],
+            cover_path, cover=cover, title=cover_title, aspect=aspect, lower_third=treatment,
+            work_dir=voice_dir.parent / "covers", ffmpeg=ffmpeg, ffprobe=ffprobe,
+            source_label=normalized["source"]["label"])
+        # A failed cover is reported before a missing voice bundle can buy TTS.
         manifest, voices, aligned = _ensure_voice_bundle(normalized, voice_dir, allow_synthesis=allow_synthesis,
                                                         delivery_overrides=delivery_overrides, asr_model=asr_model)
-        timeline = build_timeline(normalized, {key: item["duration"] for key, item in voices.items()}, fps=fps)
-        voice_stats = {key: _wave_stats(item["path"]) for key, item in voices.items()}
+        treated_voices = {key: derive_narration(item, voice_dir / "derived", ffmpeg=ffmpeg,
+                                               speed=narrator_speed, pitch_semitones=narrator_pitch_semitones)
+                          for key, item in voices.items()}
+        timeline = build_timeline(normalized, {key: item["timeline_duration"] for key, item in treated_voices.items()}, fps=fps)
+        timing_report = editorial_timing_report(normalized, timeline)
+        for warning in timing_report["editorial_warnings"]:
+            print(f"Aviso editorial: {warning}", flush=True)
+        voice_stats = {key: _wave_stats(item["path"]) for key, item in treated_voices.items()}
         combined_rms = math.sqrt(sum(item["active_energy"] for item in voice_stats.values()) / sum(item["active_windows"] for item in voice_stats.values()))
         voice_gain = min(10 ** (target_active_dbfs/20) / combined_rms, peak_ceiling / max(item["peak"] for item in voice_stats.values()))
         achieved_target = combined_rms * voice_gain
@@ -589,9 +658,9 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
             scene_dir = work / aspect.replace(":", "x") / scene["id"]
             scene_dir.mkdir(parents=True, exist_ok=True)
             if scene["kind"] == "narration":
-                info = voices[scene["id"]]
+                info = treated_voices[scene["id"]]
                 audio, words, gain = info["path"], info["words"], voice_gain
-                voice_key = {"duration": info["duration"], "words": words}
+                voice_key = {"duration": info["timeline_duration"], "words": words}
             else:
                 audio = shared / f"source-audio-{fingerprint({'source':source_hash,'start':scene['start'],'end':scene['end']})[:24]}.wav"
                 audio_key = fingerprint({"source": source_hash, "span": [scene["start"], scene["end"]], "format": "pcm16-mono24k"})
@@ -618,37 +687,43 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                 _save_cache(cache_record, key, silent)
             records.append({**timing, "video": str(silent), "audio": str(audio), "gain": gain,
                             "video_sha256": file_sha256(silent), "audio_sha256": file_sha256(audio),
-                            "scene_fingerprint": key, "resumed_video": resumed})
+                            "scene_fingerprint": key, "resumed_video": resumed,
+                            **({"raw_audio_sha256": info["raw_sha256"], "raw_duration": info["raw_duration"],
+                                "derived_audio_duration": info["duration"],
+                                "derived_audio_key": info["derived_key"], "derived_audio_cache_hit": info["derived_cache_hit"]}
+                               if scene["kind"] == "narration" else {})})
             global_cues.extend({"start": cue["start"]+timing["start"], "end": cue["end"]+timing["start"], "text": cue["text"]} for cue in cues)
         total = timeline[-1]["end"]
         srt = output.with_suffix(".srt")
         srt.write_text("\n".join(line for index, cue in enumerate(global_cues, 1) for line in [str(index), f"{captions.srt_tempo(cue['start'])} --> {captions.srt_tempo(cue['end'])}", cue["text"], ""]), encoding="utf-8")
         final_key = fingerprint({"version": VERSION, "master_audio_version": MASTER_AUDIO_VERSION,
                                  "narrator_pitch_semitones": narrator_pitch_semitones,
+                                 "narrator_speed": narrator_speed,
                                  "records": [{key: row[key] for key in ("kind", "video_sha256", "audio_sha256", "gain", "duration")} for row in records]})
         final_record = output.with_suffix(".render-cache.json")
         final_resumed = _cache_valid(final_record, final_key, output)
         if not final_resumed:
             master = work / aspect.replace(":", "x") / "master.wav"
-            _master_audio(records, master, ffmpeg=ffmpeg, narrator_pitch_semitones=narrator_pitch_semitones)
+            _master_audio(records, master, ffmpeg=ffmpeg)
             concat = master.with_name("concat-video.txt")
             concat.write_text("".join("file '" + row["video"].replace("\\", "/").replace("'", "'\\''") + "'\n" for row in records), encoding="utf-8")
             _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat,
                   "-i", master, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                   "-ar", "48000", "-ac", "2", "-t", f"{total:.9f}", "-movflags", "+faststart", output])
             _save_cache(final_record, final_key, output)
-        cover = output.with_name(output.stem + "_capa.jpg")
-        _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-ss", str(min(1.0, total/2)), "-i", output, "-frames:v", "1", "-q:v", "2", cover])
         probe = _probe_output(output, ffmpeg=ffmpeg, ffprobe=ffprobe)
         video_stream = next((stream for stream in probe["streams"] if stream.get("codec_type") == "video"), {})
         audio_stream = next((stream for stream in probe["streams"] if stream.get("codec_type") == "audio"), {})
         if video_stream.get("codec_name") != "h264" or audio_stream.get("codec_name") != "aac" or (video_stream.get("width"), video_stream.get("height")) != (canvas.width, canvas.height) or abs(float(probe["format"]["duration"])-total) > .15:
             raise RuntimeError("Final MP4 codec, geometry, or duration validation failed.")
+        final_duration = float(probe["format"]["duration"])
         # The raw voice files must remain identical after all master operations.
         if any(file_sha256(item["path"]) != item["sha256"] for item in voices.values()):
             raise RuntimeError("Raw narration WAV changed during rendering.")
-        report = {"version": VERSION, "status": "success", "video": str(output), "srt": str(srt), "capa": str(cover),
-                  "aspect": aspect, "width": canvas.width, "height": canvas.height, "fps": fps, "duration_seconds": total,
+        report = {"version": VERSION, "status": "success", "video": str(output), "srt": str(srt), "capa": str(cover_path),
+                  "aspect": aspect, "width": canvas.width, "height": canvas.height, "fps": fps,
+                  "cover": cover_report, **timing_report, "duration_seconds": final_duration,
+                  "final_duration_seconds": final_duration, "timeline_duration_seconds": total,
                   "visual_style": VISUAL_STYLE_VERSION,
                   "source_sha256": source_hash, "plan_fingerprint": fingerprint(normalized), "video_sha256": file_sha256(output),
                   "voice_model": manifest["model"], "voice": manifest["voice"], "raw_voice_byte_identical": True,
@@ -656,14 +731,17 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                   "voice_gain_common": voice_gain, "target_active_dbfs": target_active_dbfs,
                   "achieved_voice_active_dbfs": 20*math.log10(achieved_target), "peak_ceiling": peak_ceiling,
                   "master_audio_version": MASTER_AUDIO_VERSION,
+                  "derived_narration_version": DERIVED_NARRATION_VERSION,
                   "narrator_pitch_semitones": narrator_pitch_semitones,
-                  "narrator_duration_preserved": True,
+                  "narrator_speed": narrator_speed,
+                  "narrator_duration_preserved": narrator_speed == 1,
                   "source_speakers_pitch_unchanged": True,
-                  "audio_processing": "Common narrator pitch with tempo compensation, gain and 5/10ms edge envelopes in separate master; raw WAVs untouched; no per-scene TTS loudnorm.",
+                  "source_speakers_speed": 1.0,
+                  "audio_processing": "Pitch and speed applied once to cached narration derivatives; measured durations and scaled canonical words drive the timeline. Shared gain and 5/10ms edge envelopes in master; raw WAVs/alignment untouched; original clips keep speed/pitch.",
                   "final_resumed": final_resumed, "scenes": records}
         report_file = output.with_suffix(".render-report.json")
         _write_json(report_file, report)
-        return {"video": output, "srt": srt, "capa": cover, "report": report_file}
+        return {"video": output, "srt": srt, "capa": cover_path, "report": report_file}
 
 
 def main(argv=None):

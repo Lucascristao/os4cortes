@@ -506,6 +506,43 @@ test('forty editorial plans cross dispatch losslessly through the shared Python 
  assert.equal(job.totalCuts,40,'Counting cuts must not parse compressed workflow input as JSON');
 });
 
+test('cover crosses simple, editorial and gzip dispatch without changing its cut association',async()=>{
+ const models=['01_central','02_lateral','03_close','04_duas_pessoas'];
+ const covers=models.map((template_id,index)=>({version:1,template_id,title:`A DECISÃO ${index+1} MUDOU?`}));
+ for(const simpleCuts of [true,false]) {
+  const cuts=covers.map(cover=>({...narratedCut(),cover}));
+  const response=await start(req('workflow-start','POST',renderBody({cuts,simpleCuts})),context);
+  assert.equal(response.status,202);
+  const sent=JSON.parse(dispatches.at(-1).inputs.cuts_json);
+  assert.deepEqual(sent.map(cut=>cut.cover),covers);
+ }
+ const cuts=fortyEditorialCuts().map((cut,index)=>({...cut,cover:covers[index%4]}));
+ const response=await start(req('workflow-start','POST',renderBody({cuts,simpleCuts:false})),context);
+ assert.equal(response.status,202);
+ const transport=dispatches.at(-1).inputs.cuts_json;
+ assert.ok(transport.startsWith('gzip-base64:'));
+ const sent=JSON.parse(gunzipSync(Buffer.from(transport.slice('gzip-base64:'.length),'base64')).toString('utf8'));
+ assert.deepEqual(sent,cuts);
+});
+
+test('invalid cover fails before dispatch and job creation in both render modes',async()=>{
+ const base={version:1,template_id:'03_close',title:'O QUE ELA CONFIRMA?'};
+ const invalid=[null,[],{},'03_close',{...base,version:2},{...base,version:true},{...base,template_id:'novo'},
+  {...base,title:''},{...base,title:42},{...base,title:'a'.repeat(61)},{...base,title:'duas\nlinhas'},
+  {...base,title:'<b>Título</b>'},{...base,title:'**Título**'},{...base,title:'[Título](https://example.test)'},
+  {...base,title:'Título\u200boculto'},{...base,title:'Duas\u2028linhas'},{...base,extra:true},
+  {...base,title:' '.repeat(60)+'a'},{...base,title:'[](https://example.test)'}];
+ for(const simpleCuts of [true,false]) for(const cover of invalid) {
+  const beforeDispatch=dispatches.length;
+  const beforeRecords=records.size;
+  const response=await start(req('workflow-start','POST',renderBody({cuts:[{...narratedCut(),cover}],simpleCuts})),context);
+  assert.equal(response.status,400,JSON.stringify({simpleCuts,cover}));
+  assert.match((await response.json()).error,/Corte 1: cover/);
+  assert.equal(dispatches.length,beforeDispatch);
+  assert.equal(records.size,beforeRecords);
+ }
+});
+
 test('editorial size limits count UTF-8 bytes and reject transport that stays too large after gzip',async()=>{
  const before=dispatches.length;
  const recordsBefore=records.size;

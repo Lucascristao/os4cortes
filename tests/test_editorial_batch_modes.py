@@ -113,7 +113,10 @@ class Harness:
             "carregar_palavras": Mock(return_value=[{"texto": "fala", "inicio": 10.8, "fim": 19.9}]),
             "criar_legendas_corte": Mock(side_effect=self.captions),
             "criar_srt_limpo": Mock(side_effect=lambda transcript, path, *args: self.touch(path)),
-            "gerar_capa_16x9": Mock(side_effect=lambda video, path: self.touch(path)),
+            "render_cover": Mock(side_effect=lambda video, ranges, path, **kwargs: {
+                "path": str(self.touch(path)), "requested_template_id": kwargs["cover"]["template_id"],
+                "applied_template_id": kwargs["cover"]["template_id"], "sha256": "cover-hash",
+            }),
             "garantir_archivo_black": Mock(return_value=self.root/"fonts"/"ArchivoBlack-Regular.ttf"),
         }
         for name, value in substitutions.items():
@@ -193,6 +196,84 @@ class EditorialBatchModesTests(unittest.TestCase):
             self.assertEqual(h.tracking.call_count, 1)
             h.renderer.assert_not_called()
             h.failed.assert_called_once()
+
+    def test_simple_cover_changes_reuse_source_video_for_both_formats(self):
+        for aspect in ("9:16", "16:9"):
+            cuts = [cut(aspect=aspect, editorial=False), cut(aspect=aspect, editorial=False)]
+            for value, template, title in zip(cuts, ("01_central", "03_close"), ("O QUE MUDA?", "QUAL É A ESCOLHA?")):
+                value["cover"] = {"version": 1, "template_id": template, "title": title}
+            with self.subTest(aspect=aspect), Harness(cuts, mode="simple", key="") as h:
+                self.assertEqual(batch.main(), 0)
+                renderer = h.cinematic if aspect == "16:9" else h.tracking
+                renderer.assert_called_once()
+                self.assertEqual(batch.render_cover.call_count, 2)
+                self.assertEqual([call.kwargs["cover"] for call in batch.render_cover.call_args_list], [value["cover"] for value in cuts])
+                cached = list((h.cache / "simple-video").glob("*.mp4"))
+                self.assertEqual(len(cached), 1)
+                self.assertEqual(cached[0].read_bytes(), b"media")
+                self.assertTrue(cached[0].with_suffix(".json").is_file())
+                results = h.completed.call_args.args[1]["cuts"]
+                self.assertEqual(len(results), 2)
+                self.assertTrue(all("capa" in row["files"] for row in results))
+                if aspect == "9:16":
+                    self.assertEqual(batch.criar_legendas_corte.call_count, 2, "cada capa ainda entra no próprio flash")
+                self.assertFalse(h.work.exists())
+
+                # A later invocation can reuse the artifact even after temporary work/output cleanup.
+                self.assertEqual(batch.main(), 0)
+                renderer.assert_called_once()
+                self.assertEqual(batch.render_cover.call_count, 4)
+
+    def test_simple_video_cache_invalidates_for_source_span_treatment_fade_and_corruption(self):
+        with Harness([], mode="simple", key="") as h:
+            source = h.touch(h.root / "source.mp4", b"source A")
+            common = {"aspect": "16:9", "work_dir": h.root / "render-work", "cache_dir": h.cache / "simple-video",
+                      "lower_third": LowerThird(), "fade_out_visual": False}
+            output = h.out / "copy.mp4"
+            first = batch._render_simple_video(source, 10, 20, output, **common)
+            second = batch._render_simple_video(source, 10, 20, output, **common)
+            self.assertFalse(first["cache_hit"])
+            self.assertTrue(second["cache_hit"])
+            h.cinematic.assert_called_once()
+            self.assertEqual(first["sha256"], second["sha256"])
+            (common["cache_dir"] / f"{first['key']}.mp4").write_bytes(b"corrupt cache")
+            self.assertFalse(batch._render_simple_video(source, 10, 20, output, **common)["cache_hit"])
+            self.assertEqual(h.cinematic.call_count, 2)
+            for overrides, start, end in (({}, 11, 20), ({"lower_third": LowerThird("crop", .3)}, 10, 20),
+                                           ({"fade_out_visual": True}, 10, 20)):
+                self.assertFalse(batch._render_simple_video(source, start, end, output, **{**common, **overrides})["cache_hit"])
+            source.write_bytes(b"source B")
+            self.assertFalse(batch._render_simple_video(source, 10, 20, output, **common)["cache_hit"])
+            self.assertEqual(h.cinematic.call_count, 6)
+
+    def test_cover_failure_skips_only_that_simple_cut_before_tracking(self):
+        with Harness([cut(editorial=False), cut(editorial=False)], mode="simple", key="") as h:
+            renderer = batch.render_cover.side_effect
+            attempts = []
+            def cover(*args, **kwargs):
+                attempts.append(1)
+                if len(attempts) == 1:
+                    raise batch.CoverError("Título de capa não cabe no mínimo permitido")
+                return renderer(*args, **kwargs)
+            batch.render_cover.side_effect = cover
+            self.assertEqual(batch.main(), 0)
+            h.tracking.assert_called_once()
+            result = h.completed.call_args.args[1]
+            self.assertEqual([row["index"] for row in result["cuts"]], [2])
+            self.assertIn("capa", result["cuts"][0]["files"])
+            self.assertEqual(result["errors"][0]["index"], 1)
+            self.assertEqual(result["cuts"][0]["render"]["first_original_clip_seconds"], 0)
+
+    def test_editorial_cover_upload_failure_never_emits_ready_cut(self):
+        with Harness([cut()], mode="editorial") as h:
+            upload = h.uploader.upload
+            def fail_cover(path, **kwargs):
+                if str(path).endswith("_capa.jpg"):
+                    raise RuntimeError("capa upload failed")
+                return upload(path, **kwargs)
+            h.uploader.upload = fail_cover
+            self.assertEqual(batch.main(), 1)
+            self.assertFalse(any("ready_cut" in call.kwargs for call in h.emit.call_args_list))
 
     def test_editorial_routes_formats_and_exact_plan_without_silent_span_adjustment(self):
         cuts = [cut(), cut(aspect="16:9")]

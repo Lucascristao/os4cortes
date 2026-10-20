@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import shutil
 import subprocess
@@ -40,7 +41,11 @@ def garantir_archivo_black(
     font_path = pasta_fontes / "ArchivoBlack-Regular.ttf"
 
     if not font_path.exists() or font_path.stat().st_size < 50_000:
-        urllib.request.urlretrieve(ARCHIVO_BLACK_URL, font_path)
+        portable = Path(__file__).parent / "assets" / "covers" / "fonts" / "ArchivoBlack-Regular.ttf"
+        if portable.is_file():
+            shutil.copyfile(portable, font_path)
+        else:
+            urllib.request.urlretrieve(ARCHIVO_BLACK_URL, font_path)
 
     # fontconfig validates the family on Linux runners. Local Windows previews
     # use the same TTF through fontsdir, without changing installed system fonts.
@@ -442,6 +447,7 @@ def criar_legendas_corte(
     color_grading: bool = True,
     gerar_capa: bool = True,
     saida_suave: bool = True,
+    capa_pronta: str | Path | None = None,
 ) -> tuple[Path, Path, Path | None]:
     style = style or CaptionStyle()
     pasta_fontes = Path(pasta_fontes).expanduser()
@@ -532,8 +538,10 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
     def filter_path(path):
         return str(Path(path).resolve()).replace("\\", "/").replace(":", r"\:").replace("'", r"'\''")
 
-    capa_path = None
-    if gerar_capa and titulo.strip():
+    capa_path = Path(capa_pronta) if capa_pronta is not None else None
+    if capa_path is not None and not capa_path.is_file():
+        raise ValueError("A capa fornecida para o flash não existe.")
+    if capa_path is None and gerar_capa and titulo.strip():
         try:
             caminho_capa = Path(str(base) + "_capa.jpg")
             duracao_corte = float(fim_corte) - float(inicio_corte)
@@ -629,7 +637,30 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
             str(video_legenda),
         ])
 
-    subprocess.run(cmd, check=True)
+    # Only this derived output includes the opening flash. Cover changes never
+    # invalidate tracking/source or voice artifacts.
+    def sha256_file(path):
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    cache_path = video_legenda.with_suffix(".caption-cache.json")
+    cache_key = hashlib.sha256(json.dumps({
+        "version": "os4-caption-flash-v1", "video": sha256_file(arquivo_video),
+        "ass": sha256_file(ass_path), "cover": sha256_file(capa_path) if capa_path else None,
+        "flash_seconds": 0.14, "filters": chain_base, "audio": audio_filter,
+    }, sort_keys=True).encode()).hexdigest()
+    cached = {}
+    try:
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+    if not (video_legenda.is_file() and cached.get("key") == cache_key
+            and cached.get("sha256") == sha256_file(video_legenda)):
+        subprocess.run(cmd, check=True)
+        cache_path.write_text(json.dumps({"key": cache_key, "sha256": sha256_file(video_legenda)}), encoding="utf-8")
     ass_path.unlink(missing_ok=True)
     return srt_path, video_legenda, capa_path
 

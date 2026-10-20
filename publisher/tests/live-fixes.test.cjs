@@ -18,7 +18,7 @@ test('stream segue confirmação e redirect, sem baixar um segundo buffer', asyn
   });
   await new Promise(r=>server.listen(0,'127.0.0.1',r));const address=`http://127.0.0.1:${server.address().port}`;
   try{const dest=path.join(dir,'video.mp4');await downloadDriveStream(address+'/start',dest,{allowedUrl:u=>u.origin===address});assert.equal(fs.readFileSync(dest,'utf8'),'abcdef');assert.equal(count,1);}
-  finally{await new Promise(r=>server.close(r));fs.rmSync(dir,{recursive:true,force:true});}
+  finally{await new Promise(r=>server.close(r));fs.rmSync(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 });
 test('retoma truncamento e recomeça quando o servidor ignora Range',async()=>{
   for(const respectRange of [true,false]){

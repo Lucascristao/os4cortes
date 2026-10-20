@@ -16,12 +16,16 @@ export function readyCut(value) {
   const video = formato === "16:9" ? source.video || source.videoLegenda : source.videoLegenda;
   const validId = id => typeof id === "string" && /^[\w-]{1,200}$/.test(id);
   if (!validId(video?.id) || !validId(source.post?.id)) return null;
+  // New cover-aware packages are complete only after the mandatory image upload.
+  // Legacy ready records have no cover contract and retain their previous rules.
+  if (value.cover?.version === 1 && !validId(source.capa?.id)) return null;
   const files = {};
   for (const key of ["video", "videoLegenda", "post", "capa", "srt"]) {
     if (validId(source[key]?.id)) files[key] = { id: source[key].id, url: `https://drive.google.com/file/d/${source[key].id}/view` };
   }
   return { index: value.index, titulo: String(value.titulo || `Corte ${value.index}`).slice(0, 500), formato,
-    destino: formato === "16:9" ? "youtube" : "tiktok-instagram", ready: true, files };
+    destino: formato === "16:9" ? "youtube" : "tiktok-instagram", ready: true, files,
+    ...(value.cover?.version === 1 ? { cover: value.cover } : {}) };
 }
 
 export async function publicationCuts(store, requestId, job) {

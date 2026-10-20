@@ -80,6 +80,21 @@ const EDITORIAL_TOPICS = ["politics", "economy", "business", "humor", "general"]
 const EDITORIAL_TONES = ["conversational", "provocative", "ironic", "playful", "explanatory", "serious"];
 const EDITORIAL_INTENSITIES = ["low", "medium", "high"];
 const COMMENTARY_MODES = ["support_source", "challenge_source", "direct_commentary"];
+const COVER_TEMPLATES = ["01_central", "02_lateral", "03_close", "04_duas_pessoas"];
+
+function coverShapeError(cover) {
+  if (!cover || typeof cover !== "object" || Array.isArray(cover)) return "cover precisa ser um objeto JSON.";
+  if (Object.keys(cover).length !== 3 || !["version", "template_id", "title"].every(key => Object.hasOwn(cover, key))) {
+    return "cover precisa conter somente version, template_id e title.";
+  }
+  if (cover.version !== 1) return "cover.version precisa ser 1.";
+  if (!COVER_TEMPLATES.includes(cover.template_id)) return "cover.template_id precisa ser 01_central, 02_lateral, 03_close ou 04_duas_pessoas.";
+  if (typeof cover.title !== "string" || !cover.title.trim() || Array.from(cover.title).length > 60
+      || /[\p{C}\u2028\u2029<>`]|\*\*|__|\[[^\]]*\]\(/u.test(cover.title)) {
+    return "cover.title precisa ser texto simples em uma linha, não vazio, com até 60 caracteres.";
+  }
+  return null;
+}
 
 function editorialShapeError(plan, clipStart, clipEnd) {
   const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
@@ -288,6 +303,10 @@ export default safeHandler(async (request, context) => {
       const end = seconds(cut?.fim);
       if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
         return json(400, { ok: false, error: `Corte ${index + 1}: informe início e fim válidos, com fim maior que início.` });
+      }
+      if (Object.hasOwn(cut || {}, "cover")) {
+        const error = coverShapeError(cut.cover);
+        if (error) return json(400, { ok: false, error: `Corte ${index + 1}: ${error}` });
       }
       if (!simpleCuts) {
         const error = editorialShapeError(cut?.editorial, start, end);
