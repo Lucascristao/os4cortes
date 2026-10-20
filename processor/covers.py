@@ -21,6 +21,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
 from .lower_third import LowerThird
+from .cover_faces import confirm_pair_faces
 
 
 ASSETS = Path(__file__).resolve().parent / "assets" / "covers"
@@ -289,6 +290,7 @@ def _quality(frame, detection):
     if luminance < 15 or luminance > 245 or sharpness < 1.5:
         return None
     return {"box": [x, y, fw, fh], "confidence": round(confidence, 6),
+            "landmarks": detection.get("landmarks"),
             "sharpness": round(sharpness, 4), "luminance": round(luminance, 4),
             "exposure": round(exposure, 6), "useful_area": round(area, 6),
             "framing": round(edge, 6), "eye_detail": round(eye_detail, 6), "score": round(score, 8)}
@@ -369,7 +371,7 @@ def _layout_possible(size, faces, preset):
 
 
 def _select_frame(source, ranges, treatment, work_dir, *, detector=None, max_candidates=MAX_CANDIDATES,
-                  prefer_pair=False, aspect="9:16", template_id="01_central"):
+                  prefer_pair=False, aspect="9:16", template_id="01_central", ffmpeg="ffmpeg"):
     cv2 = _cv2()
     use_cache = detector is None
     stat = Path(source).stat()
@@ -377,8 +379,9 @@ def _select_frame(source, ranges, treatment, work_dir, *, detector=None, max_can
                 treatment.mode, treatment.height_fraction, max_candidates)
     cached = _FRAME_SELECTION_CACHE.get(scan_key) if use_cache else None
     if cached is not None:
-        best, scanned, usable = cached
-        return _selected_photo(best, scanned, usable, aspect, template_id, cv2)
+        best, scanned, usable, fallback_frame, fallback_meta = cached
+        return _selected_photo(best, scanned, usable, aspect, template_id, cv2,
+                               fallback_frame=fallback_frame, fallback_meta=fallback_meta)
     cap = cv2.VideoCapture(str(source))
     best, scanned, usable = {}, 0, 0
     fallback_frame = None
@@ -396,7 +399,7 @@ def _select_frame(source, ranges, treatment, work_dir, *, detector=None, max_can
                     raw = raw_cap
             if raw is None:
                 # Decodificação de contingência via FFmpeg quando OpenCV falha no seek/codec (ex: AV1)
-                raw = _extract_frame_ffmpeg(source, timestamp)
+                raw = _extract_frame_ffmpeg(source, timestamp, ffmpeg=ffmpeg)
             scanned += 1
             if raw is None:
                 continue
@@ -436,7 +439,10 @@ def _select_frame(source, ranges, treatment, work_dir, *, detector=None, max_can
             base_record = {"timestamp": timestamp, "source_size": [raw.shape[1], raw.shape[0]],
                            "treated_size": [frame.shape[1], frame.shape[0]]}
             choices = [(face["score"], [face]) for face in faces]
-            pairs = _distinct_pairs(faces)
+            # Extra verification is limited to the two-person preset. A weak
+            # second detection must not prevent a usable single-person cover.
+            pair_faces = confirm_pair_faces(frame, faces, detector) if len(faces) >= 2 else []
+            pairs = _distinct_pairs(pair_faces)
             copied = None
             for native_aspect in ("9:16", "16:9"):
                 for identifier in TEMPLATE_IDS:
@@ -456,15 +462,15 @@ def _select_frame(source, ranges, treatment, work_dir, *, detector=None, max_can
         cap.release()
 
     if fallback_frame is None and ranges:
-        raw_first = _extract_frame_ffmpeg(source, ranges[0][0])
+        raw_first = _extract_frame_ffmpeg(source, ranges[0][0], ffmpeg=ffmpeg)
         if raw_first is not None:
             fallback_frame = treatment.apply(raw_first)
             fallback_meta = {"timestamp": ranges[0][0], "source_size": [raw_first.shape[1], raw_first.shape[0]],
                              "treated_size": [fallback_frame.shape[1], fallback_frame.shape[0]]}
 
-    if use_cache and best:
+    if use_cache and (best or fallback_frame is not None):
         _FRAME_SELECTION_CACHE.clear()
-        _FRAME_SELECTION_CACHE[scan_key] = (best, scanned, usable)
+        _FRAME_SELECTION_CACHE[scan_key] = (best, scanned, usable, fallback_frame, fallback_meta)
     return _selected_photo(best, scanned, usable, aspect, template_id, cv2,
                            fallback_frame=fallback_frame, fallback_meta=fallback_meta)
 
@@ -479,20 +485,13 @@ def _selected_photo(best, scanned, usable, aspect, template_id, cv2, fallback_fr
         if picked is None:
             picked = next(iter(best.values()), None)
     if picked is None:
-        print("[Aviso cover] Nenhum rosto utilizável detectado nos trechos originais. Usando frame da cena.", flush=True)
         if fallback_frame is None:
-            fallback_frame = np.full((1080, 1920, 3), 32, dtype=np.uint8)
+            raise CoverError("cover: não foi possível extrair nenhum frame real dos trechos originais com OpenCV ou FFmpeg.")
+        print("[Aviso cover] Nenhum rosto utilizável detectado nos trechos originais. Preservando o frame completo da cena.", flush=True)
         fh, fw = fallback_frame.shape[:2]
-        face_w, face_h = round(fw * 0.32), round(fh * 0.38)
-        face_x, face_y = round((fw - face_w) / 2), round(fh * 0.18)
-        dummy_face = {
-            "box": [face_x, face_y, face_w, face_h], "confidence": 1.0, "score": 1.0,
-            "sharpness": 10.0, "luminance": 128.0, "exposure": 1.0, "useful_area": 0.1,
-            "framing": 1.0, "mouth_activity": 0.0, "eye_detail": 1.0
-        }
         meta = fallback_meta or {"timestamp": 0.0, "source_size": [fw, fh], "treated_size": [fw, fh]}
         selection = {
-            **meta, "faces": [dummy_face], "score": 1.0,
+            **meta, "faces": [], "score": 0.0, "framing": "scene",
             "fallback_reason": "no_usable_face_detected_using_scene_frame"
         }
         picked = (selection, fallback_frame)
@@ -613,6 +612,17 @@ def _intersects(left, right):
     return max(left[0], right[0]) < min(left[2], right[2]) and max(left[1], right[1]) < min(left[3], right[3])
 
 
+def _scene_photograph(canvas, source, destination):
+    """Keep every source edge when no reliable facial anchor is available."""
+    left, top, right, bottom = destination
+    patch = ImageOps.contain(source, (right-left, bottom-top), Image.Resampling.LANCZOS).convert("RGBA")
+    x, y = left+(right-left-patch.width)//2, top+(bottom-top-patch.height)//2
+    canvas.alpha_composite(patch, (x, y))
+    return {"source_crop": [0, 0, source.width, source.height],
+            "destination": [x, y, x+patch.width, y+patch.height],
+            "panel": destination, "face_box": None}
+
+
 def _draw_title(canvas, text, preset, fitted):
     draw = ImageDraw.Draw(canvas)
     ink, white, yellow = (tuple(PRESETS["colors"][key]) for key in ("ink", "white", "yellow"))
@@ -674,8 +684,12 @@ def compose_cover(photo, selection, *, cover, aspect, source_label=""):
     """Compose one native preset from a selected real frame (also useful for QA)."""
     aspect = _aspect(aspect)
     cover = normalize_cover(cover, cover.get("title", ""), aspect)
-    requested, applied, reason = cover["template_id"], cover["template_id"], None
-    if applied == "04_duas_pessoas" and not selection.get("pair_in_same_frame"):
+    requested, applied, reason = cover["template_id"], cover["template_id"], selection.get("fallback_reason")
+    scene_fallback = selection.get("framing") == "scene" or not selection.get("faces")
+    if scene_fallback:
+        applied = default_template(aspect)
+        reason = reason or "no_usable_face_detected_using_scene_frame"
+    elif applied == "04_duas_pessoas" and not selection.get("pair_in_same_frame"):
         applied, reason = default_template(aspect), "no_usable_pair_in_same_frame"
     preset = PRESETS[aspect][applied]
     try:
@@ -689,10 +703,13 @@ def compose_cover(photo, selection, *, cover, aspect, source_label=""):
     size = tuple(PRESETS[aspect]["size"])
     canvas = ImageOps.fit(photo, size, Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(26)).convert("RGBA")
     canvas = Image.alpha_composite(canvas, Image.new("RGBA", size, (*PRESETS["colors"]["ink"], 95)))
-    faces = selection["faces"][:len(preset["photos"])]
-    crops = [_photograph(canvas, photo, face, preset, destination, applied == "03_close")
-             for face, destination in zip(faces, preset["photos"])]
-    face_boxes = [crop["face_box"] for crop in crops]
+    if scene_fallback:
+        crops = [_scene_photograph(canvas, photo, preset["photos"][0])]
+    else:
+        faces = selection["faces"][:len(preset["photos"])]
+        crops = [_photograph(canvas, photo, face, preset, destination, applied == "03_close")
+                 for face, destination in zip(faces, preset["photos"])]
+    face_boxes = [crop["face_box"] for crop in crops if crop["face_box"] is not None]
     for face_box in face_boxes:
         if _intersects(face_box, fitted["box"]):
             if not reason:
@@ -718,7 +735,8 @@ def compose_cover(photo, selection, *, cover, aspect, source_label=""):
             draw.text((1846, 72), text, font=_font(23, credit=True), fill=(233, 234, 237), anchor="rt",
                       stroke_width=1, stroke_fill=tuple(PRESETS["colors"]["ink"]))
     return canvas.convert("RGB"), {"requested_template": requested, "applied_template": applied,
-                                    "fallback_reason": reason, "typography": typography,
+                                    "fallback_reason": reason, "framing": "scene" if scene_fallback else "face",
+                                    "typography": typography,
                                     "crops": crops, "badge_box": badge, "size": list(size)}
 
 
@@ -740,7 +758,7 @@ def render_cover(source_video, ranges, output, *, cover=None, title="", aspect="
     presets/fonts, range/treatment, title and requested model independently of
     narration and video. Injected detectors deliberately bypass persistent cache.
     """
-    del ffmpeg, ffprobe
+    del ffprobe
     source, output = Path(source_video), Path(output)
     if not source.is_file():
         raise CoverError("cover: vídeo original não encontrado.")
@@ -766,6 +784,7 @@ def render_cover(source_video, ranges, output, *, cover=None, title="", aspect="
                                  "lower_third": vars(treatment), "presets": _file_hash(PRESET_FILE),
                                  "fonts": [_file_hash(TITLE_FONT), _file_hash(CREDIT_FONT)],
                                  "compositor_sha256": _file_hash(__file__),
+                                 "pair_verifier_sha256": _file_hash(Path(__file__).with_name("cover_faces.py")),
                                  "max_candidates": max_candidates, "source_label": source_label})
     cached_image, cached_report = work/f"{cache_key}.jpg", work/f"{cache_key}.json"
     if detector is None and cached_image.is_file() and cached_report.is_file():
@@ -779,7 +798,7 @@ def render_cover(source_video, ranges, output, *, cover=None, title="", aspect="
             pass
     photo, selection = _select_frame(source, intervals, treatment, work, detector=detector,
                                       max_candidates=max_candidates, prefer_pair=config["template_id"] == "04_duas_pessoas",
-                                      aspect=aspect, template_id=effective_template)
+                                      aspect=aspect, template_id=effective_template, ffmpeg=ffmpeg)
     image, details = compose_cover(photo, selection, cover=config, aspect=aspect, source_label=source_label)
     image.save(cached_image, quality=95, subsampling=0)
     report = {"version": COVER_VERSION, "cover": config, "aspect": aspect, **details,

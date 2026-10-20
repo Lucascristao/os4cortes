@@ -25,7 +25,11 @@ Pacotes legados sem `cover` usam central no vertical e lateral no horizontal, co
 
 O seletor amostra deterministicamente até 60 frames na união dos intervalos originais, após tratar a tarja. YuNet/OpenCV avalia rosto, tamanho útil, nitidez facial, exposição e enquadramento. O crop mantém proporções e margens de testa/queixo. Detecção fornece geometria, sem inferir nomes ou identidade entre cenas.
 
-Sem par utilizável no modelo 4, aplica central/lateral conforme o formato. Título que não caiba no close tenta esse mesmo fallback. Demais modelos permitem duas linhas; close permite uma. Mínimos: vertical 50 px, close vertical 48 px, horizontal 70 px. Se o título continuar ilegível ou faltar rosto utilizável, somente esse corte falha, antes de sintetizar voz.
+No modelo 4, cada rosto do par precisa passar pela confirmação em um recorte próprio e pela validação dos landmarks faciais. A checagem reduz falsos positivos, como uma estampa de roupa ampliada como a segunda pessoa, sem pretender reconhecer identidades ou garantir que toda detecção esteja correta. Sem par confirmado, aplica central/lateral conforme o formato.
+
+Sem rosto detectado, o fallback preserva a cena inteira dentro do painel de foto, mantendo a proporção e sem inventar um rosto no centro para calcular o recorte. A ausência de rosto, a nitidez baixa ou margens imperfeitas não bloqueiam por si só a capa. Se nenhum dos frames puder ser extraído ou decodificado, somente esse corte falha com motivo claro, antes da síntese de voz; o motor não fabrica um fundo cinza para registrar sucesso.
+
+Título que não caiba no close tenta central/lateral. Demais modelos permitem duas linhas; close permite uma. Mínimos: vertical 50 px, close vertical 48 px, horizontal 70 px. Se o título continuar ilegível, somente esse corte falha antes de sintetizar voz.
 
 O relatório registra modelo pedido/aplicado, substituição, timestamp, qualidade, crop e hash. O cache da capa inclui fonte, intervalos, tarja, preset, fontes e texto. Mudar somente a capa não muda TTS, alinhamento, cenas ou master autorais. No simples vertical, a saída legendada depende também do hash da capa: mantém o flash inclusivo `t <= 0.14`, sem inserir frames ou atrasar áudio.
 
