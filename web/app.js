@@ -730,6 +730,30 @@ Inclua cover na raiz de CADA corte, simples ou autoral, tanto em 9:16 quanto em 
 Escolha aleatoriamente um dos três modelos permitidos por corte, variando o lote: 01_central (pessoa central), 02_lateral (pessoa ao lado) ou 03_close (rosto maior e faixa de uma linha). A IA escolhe o modelo e escreve o título; o motor seleciona os frames reais dos trechos originais e monta a capa, com o rosto em destaque e letras menores. Não gere imagem, recorte, coordenadas ou descrições de rostos.
 cover.title é texto simples em uma linha, sem HTML, Markdown, hashtags ou instruções: de 3 a 6 palavras, preferencialmente até 32 caracteres; no 03_close, prefira até 24. O limite do contrato é 60 caracteres. Escreva uma chamada curta e fiel ao trecho, separada do titulo de publicação. O motor limita a capa a duas linhas nos modelos 1 e 2 e uma linha no close; adapta o enquadramento e pode substituir um modelo sem frame ou título utilizável. Destaque uma pessoa real do trecho.`;
 
+const DIRETRIZ_VARREDURA_EXAUSTIVA = `VARREDURA EDITORIAL EXAUSTIVA OBRIGATÓRIA (VOLUME COM ALTA QUALIDADE)
+Antes de redigir qualquer objeto JSON, execute internamente uma análise completa da transcrição em quatro etapas:
+
+Etapa 1: Mapeamento em Blocos Temporais (10 a 15 minutos)
+- Divida mentalmente a transcrição em blocos contínuos de aproximadamente 10 a 15 minutos (ex: 00:00-15:00, 15:00-30:00, etc.), do início até o último segundo do vídeo.
+- Examine todos os blocos com atenção aos detalhes, sem pular partes do vídeo.
+- Identifique todas as histórias, debates, falas marcantes, ganchos e momentos quentes com potencial de corte (verticais ou horizontais).
+- Não interrompa a descoberta por já ter encontrado uma quantidade aparentemente suficiente de cortes; continue varrendo até o final.
+
+Etapa 2: Seleção Rigorosa (Sem Cota e Sem Economia)
+- Avalie o potencial real de curiosidade, quebra de expectativa, humor, debate, tensão e retenção.
+- Não economize cortes: se um vídeo longo contiver 12, 15 ou mais momentos fortes, TODOS devem ser aproveitados. A quantidade final deve ser o resultado direto da riqueza do material, sem teto artificial.
+- Descarte apenas conversas mornas, enrolações ou trechos sem começo, meio e fim compreensíveis.
+- Evite cortes redundantes que contam essencialmente a mesma história, mas aproveite diferentes ângulos de um mesmo tema se ambos forem fortes.
+
+Etapa 3: Auditoria de Cobertura Reversa
+- Antes de finalizar a seleção, faça uma checagem rápida percorrendo novamente os blocos temporais:
+  "Ficou algum momento marcante, curioso ou de alto valor sem aproveitamento?"
+- Se encontrar uma história relevante que passou despercebida na primeira passada, resgate-a e incorpore-a à seleção.
+
+Etapa 4: Produção Silenciosa do JSON
+- Somente após concluir a descoberta, seleção e auditoria mental, redija os textos, narrações, metadados e monte os objetos JSON no contrato exigido.
+- A auditoria é estritamente interna. A resposta final deve ser EXCLUSIVAMENTE o array JSON válido, pronto para importação direta, sem relatórios adicionais, comentários ou pedidos de confirmação.`;
+
 function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal }) {
   const fonte = sampleAuthor || "Fonte original";
   const narracao = (id, title, start, end, text, delivery = "explain") => ({
@@ -780,6 +804,8 @@ ${DIRETRIZ_CREDITOS_PUBLICACAO}
 
 ${DIRETRIZ_CAPAS}
 
+${DIRETRIZ_VARREDURA_EXAUSTIVA}
+
 Faça automaticamente a seleção dos cortes, a escolha da pauta, do ângulo, da relação com a fonte e da contribuição do OS4. O usuário fornece o vídeo e a transcrição; não precisa elaborar um briefing, escolher o alvo ou aprovar uma proposta para cada corte. Resolva essas decisões a partir do material e da identidade abaixo e devolva o pacote estruturado pronto para importar.
 
 CADA CORTE PRECISA SE EXPLICAR SOZINHO
@@ -788,7 +814,7 @@ Antes da primeira referência que dependa de algo anterior, apresente quem ou o 
 A narração também serve para dar contexto e ligar trechos. Preserve a preparação original ou reponha o contexto em uma fala curta, concreta e conversacional, antes de ele fazer falta. Use somente informações disponíveis na transcrição e nos metadados; associe-as a evidence e ajuste o envelope. Não precisa trazer outra opinião ou piada nessa mesma intervenção. Isso recupera contexto existente; não fabrica uma ideia ou um desenvolvimento ausente na fonte. No humor, apresente a situação e os personagens sem antecipar nem explicar a punchline.
 Avalie os candidatos em conjunto antes de fechar o lote. Quando dois trechos dependem da mesma preparação e desenvolvem a mesma história, reúna-os em um único corte se isso completar seu arco. Não entregue pedaços que só fazem sentido quando o público já viu outro vídeo. Partes distantes podem entrar com uma ponte que explique o elo real ou a mudança de assunto; não invente causalidade, intenção ou sequência temporal entre elas. Compartilhar pessoa, tema ou vídeo de origem não basta para juntar histórias diferentes. Recalcule as referências, o envelope e a soma dos clips após reorganizar.
 
-Selecione somente ideias completas com apelo viral ou curioso sustentado pelo material: uma surpresa, contraste, humor, fala marcante, tensão que se resolve ou aprendizado interessante que dê motivo para continuar e compartilhar. Uma história completa, mas banal e sem esse apelo, não basta. Descarte candidatos sem um gancho real; não preencha o lote com histórias sem graça nem invente conflito, indignação ou fatos para torná-las atraentes. Apelo é critério de seleção, não promessa de viralização. Não force uma quantidade mínima de cortes.
+Selecione somente ideias completas com apelo viral ou curioso sustentado pelo material: uma surpresa, contraste, humor, fala marcante, tensão que se resolve ou aprendizado interessante que dê motivo para continuar e compartilhar. Uma história completa, mas banal e sem esse apelo, não basta. Descarte candidatos sem um gancho real; não preencha o lote com histórias sem graça nem invente conflito, indignação ou fatos para torná-las atraentes. Apelo é critério de seleção, não promessa de viralização. Não force uma quantidade mínima de cortes para preencher lote, mas não economize cortes: todo trecho que preencha esses critérios de valor e completude deve se transformar em corte, independentemente de quantos já foram selecionados.
 
 Identidade permanente do OS4: um comentarista de direita, de bem com a vida, espirituoso e provocativo, que conversa com o público. Tem convicção, humor oportuno e curiosidade; fala como quem acompanha o assunto e percebe um detalhe que vale dividir com um amigo. Em política, assuma uma leitura editorial de direita e escolha um ângulo crítico sustentado pelo trecho. Posição editorial é interpretação atribuível e argumentada; não autoriza inventar fatos, tratar suspeita como certeza ou insinuar culpa por associação. Evite locução de advogado, telejornal, sermão ou acusação sem fonte. A mesma voz reconhecível acompanha o contexto com naturalidade, sem repetir bordões ou forçar indignação.
 
@@ -906,11 +932,13 @@ ${DIRETRIZ_CREDITOS_PUBLICACAO}
 
 ${DIRETRIZ_CAPAS}
 
+${DIRETRIZ_VARREDURA_EXAUSTIVA}
+
 Leia toda a transcrição antes de selecionar. Sua missão é entregar um ÚNICO PACOTE JSON UNIFICADO contendo DOIS TIPOS DE CORTES:
 
 Escolha automaticamente os trechos e sua estrutura a partir da transcrição. O mínimo é de conteúdo: contexto, desenvolvimento e desfecho, sem transformar uma frase solta, um bordão ou uma reação isolada em corte. O usuário não precisa elaborar um briefing nem aprovar uma proposta para cada vídeo. Não imponha duração mínima numérica, duração-alvo ou faixas de curtos/médios/longos; preserve uma ideia completa, sem esticar nem interromper falas para atingir tempo.
 
-Selecione somente ideias completas com apelo viral ou curioso sustentado pelo material: surpresa, contraste, humor, fala marcante, tensão que se resolve ou aprendizado interessante. Descarte uma história banal mesmo que tenha começo, meio e fim; ela precisa dar motivo para continuar assistindo e compartilhar. Não invente conflito, indignação ou fatos, nem force uma quantidade mínima de cortes para preencher o lote.
+Selecione somente ideias completas com apelo viral ou curioso sustentado pelo material: surpresa, contraste, humor, fala marcante, tensão que se resolve ou aprendizado interessante. Descarte uma história banal mesmo que tenha começo, meio e fim; ela precisa dar motivo para continuar assistindo e compartilhar. Não invente conflito, indignação ou fatos para preencher o lote, mas não economize cortes: todo trecho com gancho forte, desenvolvimento e desfecho completo deve ser selecionado para o pacote.
 
 --- GRUPO 1: CORTES VERTICAIS (Instagram Reels & TikTok) ---
 1. Proporção e Duração: "formato": "9:16", "destino": "reels_tiktok". Até 3 minutos (180 segundos) do trecho original, medidos por fim - inicio; exatamente 180 segundos ainda cabe no vertical. Pode passar de 2 minutos. Acima de 180 segundos, selecione formato 16:9/destino youtube.
@@ -923,7 +951,7 @@ Selecione somente ideias completas com apelo viral ou curioso sustentado pelo ma
 
 --- GRUPO 2: CORTES LONGOS (YouTube - Vídeos Normais 16:9) ---
 1. Proporção e Duração: "formato": "16:9", "destino": "youtube". Trechos originais acima de 3 minutos. A ideia completa determina a duração, sem impor uma faixa ou alongar o corte para preencher tempo; não reproduza o vídeo inteiro.
-2. Seleção: Inclua somente cortes longos de alto valor com uma ideia completa e apelo real; não imponha uma quantidade por duração do vídeo original.
+2. Seleção: Inclua todos os cortes longos de alto valor com uma ideia completa e apelo real; não economize cortes quando o material tiver substância.
 3. Estrutura Narrativa Completa: O corte DEVE ter Começo, Meio e Fim rigorosos. Não fragmente debates ou explicações em pedaços. Um corte do YouTube deve cobrir uma história inteira, um debate aprofundado com réplica e tréplica, ou uma tese de negócios com lições práticas.
 4. Título Completo de Alto CTR para YouTube: Manchete de alto impacto de até 95 caracteres (estilo grandes canais de cortes de podcasts como Flow, Podpah, Inteligência Ltda), ex: "COMO ELE CONSTRUIU UMA EMPRESA DE 1 MILHÃO DO ZERO | Convidado". NUNCA coloque "#shorts" no título.
 5. Descrição Completa e Otimizada para SEO (campo "descricao"):
