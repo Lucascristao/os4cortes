@@ -1,0 +1,58 @@
+name: OS4 - Reparar capas existentes
+run-name: Reparar capas da sessão ${{ inputs.folder_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      folder_id:
+        description: "Pasta da sessão que já contém o vídeo e as capas"
+        required: true
+      video_file_id:
+        description: "ID do vídeo original nessa mesma pasta"
+        required: true
+      repairs_json:
+        description: "Lista JSON com file_id, aspect, cover, ranges e source_label opcional"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: os4-cover-repair-${{ inputs.folder_id }}
+  cancel-in-progress: false
+
+jobs:
+  reparar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+      OS4_REPAIR_FOLDER_ID: ${{ inputs.folder_id }}
+      OS4_REPAIR_VIDEO_FILE_ID: ${{ inputs.video_file_id }}
+      OS4_REPAIRS_JSON: ${{ inputs.repairs_json }}
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependências de capas e Drive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install Pillow numpy opencv-python-headless google-api-python-client google-auth
+      - name: Validar, compor e substituir somente capas
+        run: python -m processor.repair_covers --work-dir .cover-repair
+      - name: Guardar capas e relatório para conferência
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capas-reparadas
+          retention-days: 1
+          if-no-files-found: ignore
+          path: |
+            .cover-repair/*_capa.jpg
+            .cover-repair/repair-report.json

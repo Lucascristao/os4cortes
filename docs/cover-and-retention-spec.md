@@ -51,3 +51,11 @@ CI executa Node/API/editor, Python e Publicador, com provas reais de áudio/flas
 Liberação pela branch `codex/capas-voz-producao`, PR e CI. Merge em `main` disponibiliza o motor e o Netlify publica pela integração Git existente; não há conexão nem deploy manual. A conferência final usa geração controlada até Drive/Publicador, sem postar testes nas redes. Não há Facebook, novo selo público ou alteração de regras de monetização nesta entrega.
 
 Caches de áudio/roteiro entre jobs seguem desativados em repositórios públicos. O cache local reaproveita os artefatos disponíveis; não presume retomada durável entre execuções.
+
+## Substituir capas já entregues
+
+O workflow manual **OS4 - Reparar capas existentes** recebe `folder_id`, `video_file_id` e `repairs_json`. Exemplo de item: `{"file_id":"ID_DA_CAPA_EXISTENTE","aspect":"9:16","cover":{"version":1,"template_id":"01_central","title":"ACORDO IMPROVÁVEL?"},"ranges":[[120,150]],"source_label":"Papo de Elite"}`. Intervalos são segundos do vídeo original; `lower_third` opcional segue `{ "mode": "off", "height_fraction": 0 }` do compositor.
+
+`processor.repair_covers` valida todos os itens, a pasta, o vídeo e os destinos antes de baixar ou compor. Cada destino deve ser JPEG com nome terminado em `_capa.jpg`, editável pela conta de produção e pertencer à mesma pasta informada. Todas as imagens são preparadas antes do primeiro envio. Uma alteração de nome/conteúdo durante a preparação cancela o lote antes de começar a substituição.
+
+O envio usa `files.update` somente com `media_body`: preserva IDs, nomes, pasta, links e permissões existentes. O MD5 devolvido pelo Drive deve corresponder ao arquivo local. Não há chamada de síntese, montagem de vídeo, atualização de manifestos nem postagem em redes. O artifact guarda apenas as novas capas e um relatório de IDs, modelo aplicado, timestamp e hashes por um dia; o vídeo baixado não é publicado. Falhas remotas durante os envios podem deixar um lote parcialmente aplicado, registrado no relatório, e devem ser conferidas antes de uma nova execução.
