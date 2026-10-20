@@ -168,9 +168,10 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
         "raw_audio_treatment": worker.NO_VOICE_TREATMENT,
         "raw_pitch_semitones": 0.0,
         "master_pitch_semitones": MASTER_PITCH_SEMITONES,
-        "master_pitch_stage": "derived-narration-master-only",
+        "master_pitch_stage": "cached-narration-derivative-before-timeline",
         "master_pitch_applied": False,
-        "master_pitch_instructions": "Apply uniformly once to derived narration only, preserving duration. Never pitch original source clips or overwrite raw WAVs; the compositor records the actual application.",
+        "narrator_speed": 1.10,
+        "master_pitch_instructions": "Apply pitch once with 1.10x speed to a cached narration derivative before building the timeline. Master receives treated audio. Never change original source speech, raw WAVs or canonical alignment; the compositor records the actual application.",
         "voice_tone_reference": VOICE_TONE_REFERENCE,
         "continuity": {
             "session_strategy": worker.VOICE_POLICY["live_runtime"]["session_strategy"],

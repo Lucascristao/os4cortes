@@ -769,14 +769,12 @@ async function importAndEnqueueDriveFolder({ folderUrlOrId, executor, onLog = co
   let skippedCount = 0;
 
   for (const cut of cuts) {
-    // Verifica se este corte DESTA PASTA já foi publicado ou está na fila
+    // Verifica se este arquivo de vídeo já foi publicado ou está na fila pelo ID do arquivo ou nome exato
     const cutJobs = existingJobs.filter(j => {
       if (!j.payload) return false;
-      const sameFolder = (j.id && j.id.startsWith(requestId)) || 
-                         j.payload.requestId === requestId || 
-                         j.payload.folderId === folderId;
-      const sameFile = cut.videoLegenda?.id && (j.payload.driveFileId === cut.videoLegenda.id);
-      return (sameFolder && j.payload.cutIndex === cut.cutIndex) || sameFile;
+      const sameFileId = cut.videoLegenda?.id && (j.payload.driveFileId === cut.videoLegenda.id);
+      const sameFileName = cut.videoLegenda?.name && j.payload.videoPath && path.basename(j.payload.videoPath) === cut.videoLegenda.name;
+      return sameFileId || sameFileName;
     });
 
     const completedJobs = cutJobs.filter(j => j.state === 'completed');

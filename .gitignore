@@ -42,3 +42,4 @@ node_modules/
 scratch/
 *.dat
 *.tmp
+.codex-remote-attachments/

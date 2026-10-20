@@ -1,11 +1,15 @@
 """Small offline contracts for composition timing, integrity, and scene resume."""
 import copy
+from contextlib import nullcontext
 from pathlib import Path
+import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from processor.editorial_renderer import build_timeline, fingerprint, scene_fingerprint, validate_voice_bundle, _cache_valid, _validate_voice_policy, StaleVoicePolicy
+from processor.editorial_renderer import build_timeline, editorial_timing_report, fingerprint, scene_fingerprint, validate_voice_bundle, _cache_valid, _validate_voice_policy, StaleVoicePolicy
 from processor.editorial_renderer import _rejected_alignment_scenes, _ensure_voice_bundle
+from processor.editorial_renderer import render_editorial_cut
 from processor import editorial_alignment
 
 
@@ -53,6 +57,53 @@ class EditorialRendererTests(unittest.TestCase):
             self.assertLess(scene["duration"] - scene["content_duration"], 1/30)
             previous = scene["end"]
         self.assertEqual(timeline[-1]["end"]*30, sum(scene["frames"] for scene in timeline))
+
+    def test_opening_measures_all_assembled_narrations_and_only_warns_above_fifteen(self):
+        first = {"id": "first", "kind": "narration"}
+        second = {"id": "second", "kind": "narration"}
+        clip = {"id": "source", "kind": "clip", "start": 3, "end": 13}
+        plan = {"scenes": [first, second, clip]}
+        timeline = build_timeline(plan, {"first": 8, "second": 8}, fps=30)
+        report = editorial_timing_report(plan, timeline)
+        self.assertEqual(report["first_original_clip_seconds"], 16)
+        self.assertEqual(report["original_content_seconds"], 10)
+        self.assertEqual(report["final_duration_seconds"], 26)
+        self.assertEqual(len(report["editorial_warnings"]), 1)
+        self.assertEqual([row["id"] for row in timeline], ["first", "second", "source"])
+        for scenes, expected in (([clip, first, second], 0), ([first, clip, second], 2), ([first, second, clip], 4)):
+            short = {"scenes": scenes}
+            report = editorial_timing_report(short, build_timeline(short, {"first": 2, "second": 2}))
+            self.assertEqual(report["first_original_clip_seconds"], expected)
+            self.assertEqual(report["editorial_warnings"], [])
+
+    def test_treatment_speed_does_not_invalidate_original_silent_video(self):
+        clip = {"id": "source", "kind": "clip", "start": 1, "end": 3}
+        narration = {"id": "opening", "kind": "narration", "text": "Uma fala."}
+        base = {"source_hash": "source", "canvas": [1080, 1920, 30], "lower_third": ["off", 0], "words": [], "font_hash": "font"}
+        original_key = scene_fingerprint(clip, **base)
+        self.assertNotEqual(scene_fingerprint(narration, **base, voice={"duration": 2}),
+                            scene_fingerprint(narration, **base, voice={"duration": 2/1.1}))
+        self.assertEqual(original_key, scene_fingerprint(clip, **base))
+
+    def test_unrenderable_cover_fails_before_any_voice_synthesis(self):
+        plan = {"source": {"label": "Fonte", "date": ""}, "scenes": [
+            {"id": "opening", "kind": "narration", "visual": {"title": "Um título"}},
+            {"id": "source", "kind": "clip", "start": 1, "end": 3}]}
+        render_cover = Mock(side_effect=ValueError("Título da capa não cabe com tamanho legível."))
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.dict("sys.modules", {"processor.covers": SimpleNamespace(render_cover=render_cover)}), \
+             patch("pathlib.Path.is_file", return_value=True), \
+             patch("processor.editorial_renderer.normalize_editorial_plan", return_value=plan), \
+             patch("processor.editorial_renderer.captions.carregar_palavras", return_value=[]), \
+             patch("processor.editorial_renderer.validate_source_ranges"), \
+             patch("processor.editorial_renderer._font", return_value=(Path("font.ttf"), "Archivo Black")), \
+             patch("processor.editorial_renderer.file_sha256", return_value="source-hash"), \
+             patch("processor.editorial_renderer._tool_path", return_value=nullcontext()), \
+             patch("processor.editorial_renderer._ensure_voice_bundle") as voice:
+            with self.assertRaisesRegex(ValueError, "Título da capa"):
+                render_editorial_cut("source.mp4", "transcript.json", plan, Path(folder)/"output.mp4", work_dir=Path(folder)/"work")
+            voice.assert_not_called()
+            self.assertEqual(render_cover.call_args.args[1], [(1, 3)])
 
     def test_altered_successful_voice_bundle_is_rejected_without_paid_repair(self):
         text = "Ela diz não saber."

@@ -112,6 +112,81 @@ const plan = () => ({
   extensions: { enabled: false, values: [1, 'áudio', null] },
 });
 const cut = extra => ({ titulo: 'Uma pergunta', inicio: '00:10', fim: '00:20', formato: '9:16', saida_suave: false, ...extra });
+const cover = (template_id = '03_close', title = 'O QUE ELA CONFIRMA?') => ({ version: 1, template_id, title });
+
+test('capa permanece no cartão ao editar, reordenar, excluir, exportar, restaurar e enviar', async () => {
+  const h = harness();
+  const original = [
+    cut({ titulo: 'Primeiro', cover: cover('03_close', 'A DECISÃO É ESSA?') }),
+    cut({ titulo: 'Excluir', cover: cover('02_lateral', 'UM OUTRO CAMINHO') }),
+    cut({ titulo: 'Último', cover: cover('04_duas_pessoas', 'O QUE ELES DECIDEM?') }),
+  ];
+  await h.import(original);
+  const [first, middle, last] = h.cards();
+  assert.match(first.querySelector('.cover-template').textContent, /3 — Close/);
+  assert.match(last.querySelector('.cover-template').textContent, /4 — Duas pessoas/);
+  last.querySelector('[data-field="cover_title"]').value = 'A DISCUSSÃO MUDOU?';
+  await last.querySelector('[data-field="cover_title"]').fire('input');
+  assert.equal(JSON.parse(h.storage.get(packageKey))[2].cover.title, 'A DISCUSSÃO MUDOU?');
+  h.get('#cutsEditor').children = [last, middle, first];
+  await middle.querySelector('.btn-delete-cut').fire('click');
+  const exported = JSON.parse(h.get('#pacote').value);
+  assert.deepEqual(exported.map(c => c.cover), [cover('04_duas_pessoas', 'A DISCUSSÃO MUDOU?'), original[0].cover]);
+  assert.deepEqual(JSON.parse(h.storage.get(packageKey)), exported);
+  const restored = harness({ [packageKey]: h.storage.get(packageKey) });
+  restored.context.restaurarSessao();
+  await restored.get('#btnImportar').fire('click');
+  restored.context.mostrarTranscricao({ folderId: 'folder', videoFileId: 'video', transcriptJsonFileId: 'transcript', simpleCuts: true });
+  await restored.get('#btnGerarCortes').fire('click');
+  const sent = restored.requests.find(r => r.path.includes('workflow-start')).body.cuts;
+  assert.deepEqual(sent.map(c => c.cover), exported.map(c => c.cover));
+  assert.equal(original[2].cover.title, 'O QUE ELES DECIDEM?');
+});
+
+test('legados recebem capa conforme formato e título opcional vazio usa o título editado', async () => {
+  const h = harness();
+  const normalized = plain(h.context.normalizarPacote([cut(), cut({ formato: '16:9' }), cut({ inicio: 0, fim: 181 })], { simpleCuts: true }));
+  assert.deepEqual(normalized.map(c => c.cover), [cover('01_central', 'Uma pergunta'), cover('02_lateral', 'Uma pergunta'), cover('02_lateral', 'Uma pergunta')]);
+  await h.import([cut({ cover: cover() })]);
+  const card = h.cards()[0];
+  card.querySelector('[data-field="titulo"]').value = 'Uma nova pergunta';
+  card.querySelector('[data-field="cover_title"]').value = '';
+  await card.querySelector('[data-field="cover_title"]').fire('input');
+  assert.deepEqual(plain(h.context.lerCortesEditor()[0].cover), cover('03_close', 'Uma nova pergunta'));
+});
+
+test('capa inválida é rejeitada sem descartar silenciosamente modelo ou título', () => {
+  const h = harness();
+  const invalid = [null, [], 'close', {}, cover('modelo_inexistente'), { ...cover(), version: true },
+    { ...cover(), version: 2 }, cover('01_central', ''), cover('01_central', 'a'.repeat(61)),
+    cover('01_central', 'Duas\nlinhas'), cover('01_central', '<b>Título</b>'), cover('01_central', '**Título**'),
+    cover('01_central', '`Título`'), cover('01_central', '[Título](https://example.test)'),
+    cover('01_central', 'Título\u200boculto'), cover('01_central', 'Duas\u2028linhas'), { ...cover(), extra: true }];
+  for (const value of invalid) assert.throws(() => h.context.normalizarPacote([cut({ cover: value })]), /Corte 1: cover/);
+  const unicode = cover('01_central', 'á'.repeat(60));
+  assert.deepEqual(plain(h.context.normalizarPacote([cut({ cover: unicode })])[0].cover), unicode);
+});
+
+test('título legado longo fica intacto e pede título curto de capa antes da geração', async () => {
+  const h = harness();
+  const title = 'Um título antigo de publicação que tem mais de sessenta caracteres e continua intacto';
+  await h.import([cut({ titulo: title, formato: '16:9' })]);
+  assert.equal(h.cards()[0].querySelector('[data-field="titulo"]').value, title);
+  assert.equal(Object.hasOwn(JSON.parse(h.storage.get(packageKey))[0], 'cover'), false);
+  const restored = harness({ [packageKey]: h.storage.get(packageKey) });
+  restored.context.restaurarSessao();
+  await restored.get('#btnImportar').fire('click');
+  assert.equal(restored.cards().length, 1, 'o legado continua editável após recarregar antes de definir a capa');
+  h.context.mostrarTranscricao({ folderId: 'folder', videoFileId: 'video', transcriptJsonFileId: 'transcript', simpleCuts: true });
+  await h.get('#btnGerarCortes').fire('click');
+  assert.match(h.alerts.at(-1), /cover.title.*até 60 caracteres/);
+  assert.equal(h.requests.some(r => r.path.includes('workflow-start')), false);
+  h.cards()[0].querySelector('[data-field="cover_title"]').value = 'O QUE MUDA AGORA?';
+  await h.get('#btnGerarCortes').fire('click');
+  const sent = h.requests.find(r => r.path.includes('workflow-start')).body.cuts[0];
+  assert.equal(sent.titulo, title);
+  assert.deepEqual(sent.cover, cover('02_lateral', 'O QUE MUDA AGORA?'));
+});
 
 test('pacote legado atualiza publicação sem alterar fonte, URLs ou narração', () => {
   const h = harness();
@@ -243,6 +318,30 @@ function promptExample(prompt) {
   assert.ok(json, 'o prompt deve incluir um exemplo de array JSON válido');
   return JSON.parse(json);
 }
+
+test('prompts escolhem quatro capas para os dois formatos e delegam a composição ao motor', async () => {
+  for (const simpleCuts of [false, true]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session({ simpleCuts }));
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const prompt = h.copied[0];
+    for (const id of ['01_central', '02_lateral', '03_close', '04_duas_pessoas']) assert.ok(prompt.includes(id));
+    assert.match(prompt, /Escolha aleatoriamente/);
+    assert.match(prompt, /o motor seleciona os frames reais dos trechos originais e monta a capa/);
+    assert.match(prompt, /de 3 a 6 palavras, preferencialmente até 32 caracteres/);
+    assert.match(prompt, /03_close, prefira até 24/);
+    assert.match(prompt, /tanto em 9:16 quanto em 16:9/);
+    for (const example of promptExample(prompt)) assert.deepEqual(Object.keys(example.cover).sort(), ['template_id', 'title', 'version']);
+    if (!simpleCuts) {
+      assert.match(prompt, /Em qualquer tema, comece diretamente por um clip/);
+      assert.match(prompt, /de 8 a 15 segundos finais/);
+      assert.match(prompt, /Some TODAS as narrações anteriores ao primeiro clip/);
+      assert.match(prompt, /1,10×.*−1 semitom/);
+      assert.match(prompt, /Zero ou menos de oito segundos também são válidos/);
+      assert.match(prompt, /Acima de quinze segundos haverá apenas aviso editorial/);
+    }
+  }
+});
 
 test('modo autoral é o padrão no HTML, em sessão legada e no novo prompt', async () => {
   const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
