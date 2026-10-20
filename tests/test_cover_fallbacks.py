@@ -197,73 +197,41 @@ class CoverSceneFallbackTests(unittest.TestCase):
         self.assertGreater(int(frame[450, 80, 2]), 220)
         self.assertGreater(int(frame[450, 1520, 0]), 220)
 
-    def _select_two_primary_detections(self, source, work, aspect, confirmed_count):
+    def test_multiple_detections_never_create_a_second_portrait_or_extra_confirmation_scan(self):
         raw = np.asarray(scene_photo())[:, :, ::-1].copy()
-        cv2 = cv2_without_native_decoder(FakeCapture(raw))
         primary = [
             {"box": [220, 160, 180, 240], "confidence": .99, "score": 1.0, "eye_detail": .9},
             {"box": [1160, 150, 200, 250], "confidence": .98, "score": .75, "eye_detail": .9},
         ]
-        detector = MagicMock(return_value=primary)
-
-        def confirm(_frame, faces, _detector):
-            return [{**face, "pair_verified": True} for face in faces[:confirmed_count]]
-
-        with patch.object(covers, "_cv2", return_value=cv2), \
-                patch.object(covers, "_quality", side_effect=lambda _frame, found: dict(found)), \
-                patch.object(covers, "_measure_activity", return_value=(
-                    {"mouth_activity": 0.0, "mouth_motion": 0.0, "head_motion": 0.0}, None, None)), \
-                patch.object(covers, "_layout_possible", return_value=True), \
-                patch.object(covers, "confirm_pair_faces", side_effect=confirm) as verify:
-            photo, selection = covers._select_frame(
-                source, [(2, 3)], LowerThird(), work, detector=detector, max_candidates=1,
-                aspect=aspect, template_id="04_duas_pessoas")
-        verify.assert_called_once()
-        self.assertEqual(len(verify.call_args.args[1]), 2)
-        self.assertIs(verify.call_args.args[2], detector)
-        self.assertEqual(detector.call_count, 1)
-        image, report = covers.compose_cover(
-            photo, selection, aspect=aspect,
-            cover={"version": 1, "template_id": "04_duas_pessoas", "title": "O QUE MUDOU?"})
-        return image, selection, report
-
-    def test_pair_rejection_reaches_selector_and_keeps_single_person_cover_deliverable(self):
         with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp)/"source.mp4"
-            source.write_bytes(b"two initial detections, only one confirmed face")
-            for aspect, expected in (("9:16", "01_central"), ("16:9", "02_lateral")):
-                with self.subTest(aspect=aspect):
-                    image, selection, report = self._select_two_primary_detections(
-                        source, Path(tmp), aspect, confirmed_count=1)
-                    self.assertFalse(selection["pair_in_same_frame"])
-                    self.assertEqual(len(selection["faces"]), 1)
-                    self.assertEqual(selection["faces"][0]["box"], [220, 160, 180, 240])
-                    self.assertEqual(report["requested_template"], "04_duas_pessoas")
-                    self.assertEqual(report["applied_template"], expected)
-                    self.assertEqual(report["fallback_reason"], "no_usable_pair_in_same_frame")
-                    self.assertEqual(report["framing"], "face")
-                    self.assertEqual(len(report["crops"]), 1)
-                    self.assertIsNotNone(report["crops"][0]["face_box"])
-                    self.assertEqual(image.size, tuple(covers.PRESETS[aspect]["size"]))
-
-    def test_two_confirmed_faces_reach_selector_and_authorize_pair_composition(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp)/"source.mp4"
-            source.write_bytes(b"two confirmed real people in one source frame")
+            root = Path(tmp)
+            source = root/"source.mp4"
+            source.write_bytes(b"foreground speaker and background face")
             for aspect in ("9:16", "16:9"):
-                with self.subTest(aspect=aspect):
-                    image, selection, report = self._select_two_primary_detections(
-                        source, Path(tmp), aspect, confirmed_count=2)
-                    self.assertTrue(selection["pair_in_same_frame"])
-                    self.assertEqual(len(selection["faces"]), 2)
-                    self.assertTrue(all(face["pair_verified"] for face in selection["faces"]))
-                    self.assertEqual(report["requested_template"], "04_duas_pessoas")
-                    self.assertEqual(report["applied_template"], "04_duas_pessoas")
-                    self.assertIsNone(report["fallback_reason"])
-                    self.assertEqual(report["framing"], "face")
-                    self.assertEqual(len(report["crops"]), 2)
-                    self.assertTrue(all(crop["face_box"] is not None for crop in report["crops"]))
-                    self.assertEqual(image.size, tuple(covers.PRESETS[aspect]["size"]))
+                for identifier in (*covers.TEMPLATE_IDS, "04_duas_pessoas"):
+                    with self.subTest(aspect=aspect, identifier=identifier):
+                        cv2 = cv2_without_native_decoder(FakeCapture(raw))
+                        detector = MagicMock(return_value=primary)
+                        with patch.object(covers, "_cv2", return_value=cv2), \
+                                patch.object(covers, "_quality", side_effect=lambda _frame, found: dict(found)), \
+                                patch.object(covers, "_measure_activity", return_value=(
+                                    {"mouth_activity": 0.0, "mouth_motion": 0.0, "head_motion": 0.0}, None, None)), \
+                                patch.object(covers, "_layout_possible", return_value=True):
+                            report = covers.render_cover(
+                                source, [(2, 3)], root/f"{aspect.replace(':', 'x')}-{identifier}.jpg",
+                                cover={"version": 1, "template_id": identifier, "title": "MUDOU?"},
+                                aspect=aspect, detector=detector, max_candidates=1, work_dir=root/"cache")
+                        detector.assert_called_once()
+                        self.assertEqual(len(report["selection"]["faces"]), 1)
+                        self.assertEqual(report["selection"]["faces"][0]["box"], primary[0]["box"])
+                        self.assertEqual(len(report["crops"]), 1)
+                        self.assertEqual(report["requested_template"], identifier)
+                        expected = covers.default_template(aspect) if identifier == "04_duas_pessoas" else identifier
+                        self.assertEqual(report["applied_template"], expected)
+                        self.assertEqual(report["cover"]["template_id"], expected)
+                        if identifier == "04_duas_pessoas":
+                            self.assertEqual(report["fallback_reason"], "retired_two_person_template")
+                        self.assertTrue(Path(report["path"]).is_file())
 
 
 if __name__ == "__main__":

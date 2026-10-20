@@ -507,7 +507,7 @@ test('forty editorial plans cross dispatch losslessly through the shared Python 
 });
 
 test('cover crosses simple, editorial and gzip dispatch without changing its cut association',async()=>{
- const models=['01_central','02_lateral','03_close','04_duas_pessoas'];
+ const models=['01_central','02_lateral','03_close'];
  const covers=models.map((template_id,index)=>({version:1,template_id,title:`A DECISÃO ${index+1} MUDOU?`}));
  for(const simpleCuts of [true,false]) {
   const cuts=covers.map(cover=>({...narratedCut(),cover}));
@@ -516,13 +516,37 @@ test('cover crosses simple, editorial and gzip dispatch without changing its cut
   const sent=JSON.parse(dispatches.at(-1).inputs.cuts_json);
   assert.deepEqual(sent.map(cut=>cut.cover),covers);
  }
- const cuts=fortyEditorialCuts().map((cut,index)=>({...cut,cover:covers[index%4]}));
+ const cuts=fortyEditorialCuts().map((cut,index)=>({...cut,cover:covers[index%3]}));
  const response=await start(req('workflow-start','POST',renderBody({cuts,simpleCuts:false})),context);
  assert.equal(response.status,202);
  const transport=dispatches.at(-1).inputs.cuts_json;
  assert.ok(transport.startsWith('gzip-base64:'));
  const sent=JSON.parse(gunzipSync(Buffer.from(transport.slice('gzip-base64:'.length),'base64')).toString('utf8'));
  assert.deepEqual(sent,cuts);
+});
+
+test('retired two-person covers migrate by effective aspect in simple, editorial and gzip dispatch',async()=>{
+ const legacy={version:1,template_id:'04_duas_pessoas',title:'A DECISÃO É ESSA?'};
+ for(const simpleCuts of [true,false]) {
+  const shortEnvelope=narratedCut();shortEnvelope.inicio=0;shortEnvelope.fim=181;
+  const longOriginal=structuredClone(shortEnvelope);Object.assign(longOriginal.editorial.scenes[1],{start:0,end:181});
+  const cuts=[narratedCut(),{...narratedCut(),formato:'16:9'},
+   {...narratedCut(),destino:'youtube'},shortEnvelope,longOriginal]
+   .map(cut=>({...cut,cover:structuredClone(legacy)}));
+  const response=await start(req('workflow-start','POST',renderBody({cuts,simpleCuts})),context);
+  assert.equal(response.status,202);
+  const sent=JSON.parse(dispatches.at(-1).inputs.cuts_json);
+  assert.deepEqual(sent.map(cut=>cut.cover),['01_central','02_lateral','02_lateral',
+   simpleCuts?'02_lateral':'01_central','02_lateral'].map(template_id=>({...legacy,template_id})));
+  assert.ok(cuts.every(cut=>cut.cover.template_id==='04_duas_pessoas'),'input remains unchanged');
+ }
+ const cuts=fortyEditorialCuts().map((cut,index)=>({...cut,formato:index%2?'16:9':'9:16',cover:structuredClone(legacy)}));
+ const response=await start(req('workflow-start','POST',renderBody({cuts,simpleCuts:false})),context);
+ assert.equal(response.status,202);
+ const transport=dispatches.at(-1).inputs.cuts_json;
+ assert.ok(transport.startsWith('gzip-base64:'));
+ const sent=JSON.parse(gunzipSync(Buffer.from(transport.slice('gzip-base64:'.length),'base64')).toString('utf8'));
+ assert.deepEqual(sent.map(cut=>cut.cover),cuts.map((cut,index)=>({...legacy,template_id:index%2?'02_lateral':'01_central'})));
 });
 
 test('invalid cover fails before dispatch and job creation in both render modes',async()=>{

@@ -7,7 +7,6 @@ facial detail, fixed-person crop coordinates, voice or final-video cache is used
 from __future__ import annotations
 
 import hashlib
-import itertools
 import json
 import math
 import re
@@ -21,14 +20,14 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
 from .lower_third import LowerThird
-from .cover_faces import confirm_pair_faces
 
 
 ASSETS = Path(__file__).resolve().parent / "assets" / "covers"
 PRESET_FILE = ASSETS / "presets-v1.json"
 PRESETS = json.loads(PRESET_FILE.read_text(encoding="utf-8"))
 COVER_VERSION = PRESETS["version"]
-TEMPLATE_IDS = ("01_central", "02_lateral", "03_close", "04_duas_pessoas")
+TEMPLATE_IDS = ("01_central", "02_lateral", "03_close")
+RETIRED_PAIR_TEMPLATE = "04_duas_pessoas"
 TITLE_FONT = ASSETS / "fonts" / "ArchivoBlack-Regular.ttf"
 CREDIT_FONT = ASSETS / "fonts" / "Inter-opsz-wght.ttf"
 MAX_CANDIDATES = 60
@@ -53,7 +52,7 @@ def default_template(aspect):
 
 
 def normalize_cover(raw, title, aspect):
-    """Validate transport metadata; only absent metadata receives legacy defaults."""
+    """Validate metadata and migrate the retired pair layout to one real face."""
     aspect = _aspect(aspect)
     if raw is None:
         raw = {"version": 1, "template_id": default_template(aspect), "title": title}
@@ -61,7 +60,10 @@ def normalize_cover(raw, title, aspect):
         raise CoverError("cover: informe apenas version, template_id e title.")
     if type(raw["version"]) is not int or raw["version"] != 1:
         raise CoverError("cover.version: use 1.")
-    if not isinstance(raw["template_id"], str) or raw["template_id"] not in TEMPLATE_IDS:
+    identifier = raw["template_id"]
+    if identifier == RETIRED_PAIR_TEMPLATE:
+        identifier = default_template(aspect)
+    if not isinstance(identifier, str) or identifier not in TEMPLATE_IDS:
         raise CoverError("cover.template_id: modelo de capa inválido.")
     text = raw["title"]
     if not isinstance(text, str) or not text.strip() or len(text) > 60:
@@ -69,7 +71,7 @@ def normalize_cover(raw, title, aspect):
     if (any(unicodedata.category(char).startswith("C") or char in "\u2028\u2029" for char in text)
             or re.search(r"[<>`]|\*\*|__|\[[^\]]*\]\(", text)):
         raise CoverError("cover.title: use texto simples, sem marcação ou quebras de linha.")
-    return {"version": 1, "template_id": raw["template_id"], "title": text.strip()}
+    return {"version": 1, "template_id": identifier, "title": text.strip()}
 
 
 def _canonical_hash(value):
@@ -296,30 +298,6 @@ def _quality(frame, detection):
             "framing": round(edge, 6), "eye_detail": round(eye_detail, 6), "score": round(score, 8)}
 
 
-def _distinct_pairs(faces):
-    candidates = []
-    for left, right in itertools.combinations(faces, 2):
-        ax, ay, aw, ah = left["box"]
-        bx, by, bw, bh = right["box"]
-        intersection = max(0, min(ax+aw, bx+bw)-max(ax, bx)) * max(0, min(ay+ah, by+bh)-max(ay, by))
-        union = aw*ah + bw*bh - intersection
-        # Suppress duplicate detections of the same face in this frame.
-        if intersection/max(1, union) > .15 or abs((ax+aw/2)-(bx+bw/2)) < min(aw, bw)*.60:
-            continue
-        visual = [face.get("visual_score", face["score"]) for face in (left, right)]
-        activity = max(left.get("mouth_activity", 0), right.get("mouth_activity", 0))
-        eyes = min(left.get("eye_detail", 1), right.get("eye_detail", 1))
-        quality = (10*int(activity >= .12) + 3*int(eyes >= .65) + activity
-                   + min(visual) + .25*max(visual))
-        candidates.append((quality, sorted([left, right], key=lambda face: face["box"][0])))
-    return sorted(candidates, key=lambda pair: -pair[0])
-
-
-def _distinct_pair(faces):
-    pairs = _distinct_pairs(faces)
-    return pairs[0] if pairs else None
-
-
 def _measure_activity(frame, face, previous_mouths, previous_foreheads):
     """Reuse tracking's mouth motion, discounting camera/head appearance changes."""
     from .tracking import calcular_movimento_labial
@@ -371,7 +349,7 @@ def _layout_possible(size, faces, preset):
 
 
 def _select_frame(source, ranges, treatment, work_dir, *, detector=None, max_candidates=MAX_CANDIDATES,
-                  prefer_pair=False, aspect="9:16", template_id="01_central", ffmpeg="ffmpeg"):
+                  aspect="9:16", template_id="01_central", ffmpeg="ffmpeg"):
     cv2 = _cv2()
     use_cache = detector is None
     stat = Path(source).stat()
@@ -439,16 +417,11 @@ def _select_frame(source, ranges, treatment, work_dir, *, detector=None, max_can
             base_record = {"timestamp": timestamp, "source_size": [raw.shape[1], raw.shape[0]],
                            "treated_size": [frame.shape[1], frame.shape[0]]}
             choices = [(face["score"], [face]) for face in faces]
-            # Extra verification is limited to the two-person preset. A weak
-            # second detection must not prevent a usable single-person cover.
-            pair_faces = confirm_pair_faces(frame, faces, detector) if len(faces) >= 2 else []
-            pairs = _distinct_pairs(pair_faces)
             copied = None
             for native_aspect in ("9:16", "16:9"):
                 for identifier in TEMPLATE_IDS:
                     preset = PRESETS[native_aspect][identifier]
-                    options = pairs if identifier == "04_duas_pessoas" else choices
-                    valid = next(((score, group) for score, group in options
+                    valid = next(((score, group) for score, group in choices
                                   if _layout_possible((frame.shape[1], frame.shape[0]), group, preset)), None)
                     if valid is None:
                         continue
@@ -477,9 +450,6 @@ def _select_frame(source, ranges, treatment, work_dir, *, detector=None, max_can
 
 def _selected_photo(best, scanned, usable, aspect, template_id, cv2, fallback_frame=None, fallback_meta=None):
     picked = best.get((aspect, template_id))
-    pair = template_id == "04_duas_pessoas" and picked is not None
-    if picked is None and template_id == "04_duas_pessoas":
-        picked = best.get((aspect, default_template(aspect)))
     if picked is None and best:
         picked = next((val for key, val in best.items() if key[0] == aspect), None)
         if picked is None:
@@ -498,7 +468,6 @@ def _selected_photo(best, scanned, usable, aspect, template_id, cv2, fallback_fr
 
     selection, frame = picked
     selection = {**selection, "sample_count": scanned, "usable_frames": usable,
-                 "pair_in_same_frame": pair,
                  "selection_policy": "active_speaker_then_eye_detail_and_visual_quality",
                  "sampling": "bounded_temporal_triplets",
                  "active_speaker": any(face.get("mouth_activity", 0) >= .12 for face in selection.get("faces", []))}
@@ -683,14 +652,15 @@ def _draw_badge(canvas, preset, face_boxes, title_box):
 def compose_cover(photo, selection, *, cover, aspect, source_label=""):
     """Compose one native preset from a selected real frame (also useful for QA)."""
     aspect = _aspect(aspect)
+    requested = cover.get("template_id")
     cover = normalize_cover(cover, cover.get("title", ""), aspect)
-    requested, applied, reason = cover["template_id"], cover["template_id"], selection.get("fallback_reason")
+    applied = cover["template_id"]
+    reason = ("retired_two_person_template" if requested == RETIRED_PAIR_TEMPLATE
+              else selection.get("fallback_reason"))
     scene_fallback = selection.get("framing") == "scene" or not selection.get("faces")
     if scene_fallback:
         applied = default_template(aspect)
         reason = reason or "no_usable_face_detected_using_scene_frame"
-    elif applied == "04_duas_pessoas" and not selection.get("pair_in_same_frame"):
-        applied, reason = default_template(aspect), "no_usable_pair_in_same_frame"
     preset = PRESETS[aspect][applied]
     try:
         fitted = _fit_title(cover["title"], preset)
@@ -781,10 +751,10 @@ def render_cover(source_video, ranges, output, *, cover=None, title="", aspect="
     output.parent.mkdir(parents=True, exist_ok=True)
     cache_key = _canonical_hash({"version": COVER_VERSION, "source_sha256": _file_hash(source),
                                  "ranges": intervals, "aspect": aspect, "cover": config,
+                                 "requested_template": (cover or config)["template_id"],
                                  "lower_third": vars(treatment), "presets": _file_hash(PRESET_FILE),
                                  "fonts": [_file_hash(TITLE_FONT), _file_hash(CREDIT_FONT)],
                                  "compositor_sha256": _file_hash(__file__),
-                                 "pair_verifier_sha256": _file_hash(Path(__file__).with_name("cover_faces.py")),
                                  "max_candidates": max_candidates, "source_label": source_label})
     cached_image, cached_report = work/f"{cache_key}.jpg", work/f"{cache_key}.json"
     if detector is None and cached_image.is_file() and cached_report.is_file():
@@ -797,9 +767,11 @@ def render_cover(source_video, ranges, output, *, cover=None, title="", aspect="
         except (ValueError, KeyError, OSError):
             pass
     photo, selection = _select_frame(source, intervals, treatment, work, detector=detector,
-                                      max_candidates=max_candidates, prefer_pair=config["template_id"] == "04_duas_pessoas",
+                                      max_candidates=max_candidates,
                                       aspect=aspect, template_id=effective_template, ffmpeg=ffmpeg)
-    image, details = compose_cover(photo, selection, cover=config, aspect=aspect, source_label=source_label)
+    # Preserve the originally requested layout in diagnostics while rendering
+    # only the migrated single-face configuration. It has its own cache key.
+    image, details = compose_cover(photo, selection, cover=cover or config, aspect=aspect, source_label=source_label)
     image.save(cached_image, quality=95, subsampling=0)
     report = {"version": COVER_VERSION, "cover": config, "aspect": aspect, **details,
               "selection": selection, "lower_third": vars(treatment), "cache_key": cache_key,
