@@ -224,9 +224,17 @@ class EditorialBatchModesTests(unittest.TestCase):
                 renderer.assert_called_once()
                 self.assertEqual(batch.render_cover.call_count, 4)
 
-    def test_simple_mode_defaults_to_clean_video_without_burning_captions(self):
+    def test_simple_mode_burns_captions_by_default_and_supports_clean_video_option(self):
+        # Por padrão, queima legendas no corte vertical
         cuts = [cut(aspect="9:16", editorial=False)]
         with Harness(cuts, mode="simple", key="") as h:
+            self.assertEqual(batch.main(), 0)
+            h.tracking.assert_called_once()
+            batch.criar_legendas_corte.assert_called_once()
+            batch.criar_srt_limpo.assert_not_called()
+
+        # Com --burn-captions false, gera o vídeo limpo sem queimar legendas
+        with Harness(cuts, mode="simple", key="", extra=("--burn-captions", "false")) as h:
             self.assertEqual(batch.main(), 0)
             h.tracking.assert_called_once()
             batch.criar_legendas_corte.assert_not_called()

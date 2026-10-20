@@ -270,8 +270,8 @@ test('burn-captions flag accepts only booleans and invalid values never dispatch
  assert.equal(records.size,recordsBefore);
 });
 
-test('burn-captions defaults to false and reaches workflow dispatch when enabled',async()=>{
- for(const [enabled,expected] of [[false,'false'],[true,'true'],[undefined,'false']]) {
+test('burn-captions defaults to true and reaches workflow dispatch when disabled or enabled',async()=>{
+ for(const [enabled,expected] of [[false,'false'],[true,'true'],[undefined,'true']]) {
   const body=renderBody();
   if(enabled!==undefined) body.burnCaptions=enabled;
   const response=await start(req('workflow-start','POST',body),context);

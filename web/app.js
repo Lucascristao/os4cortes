@@ -74,6 +74,11 @@ function atualizarTarjaVideo() {
   if (simpleCutsInput) {
     simpleCutsInput.checked = Boolean(sessaoTranscricao && key === chaveVideo(sessaoTranscricao.videoUrl) && sessaoTranscricao.simpleCuts === true);
   }
+  if (burnCaptionsInput) {
+    burnCaptionsInput.checked = sessaoTranscricao && key === chaveVideo(sessaoTranscricao.videoUrl) && typeof sessaoTranscricao.burnCaptions === "boolean"
+      ? sessaoTranscricao.burnCaptions
+      : true;
+  }
 }
 
 hasLowerThirdInput?.addEventListener("change", () => {
@@ -87,6 +92,13 @@ hasLowerThirdInput?.addEventListener("change", () => {
 simpleCutsInput?.addEventListener("change", () => {
   if (sessaoTranscricao && chaveVideo(videoUrl?.value) === chaveVideo(sessaoTranscricao.videoUrl)) {
     sessaoTranscricao.simpleCuts = simpleCutsInput.checked;
+    salvarSessaoTranscricao();
+  }
+});
+
+burnCaptionsInput?.addEventListener("change", () => {
+  if (sessaoTranscricao && chaveVideo(videoUrl?.value) === chaveVideo(sessaoTranscricao.videoUrl)) {
+    sessaoTranscricao.burnCaptions = burnCaptionsInput.checked;
     salvarSessaoTranscricao();
   }
 });
@@ -668,7 +680,7 @@ function mostrarTranscricao(result) {
     videoUrl: result.videoUrl || "",
     hasLowerThird: result.hasLowerThird === true,
     simpleCuts: result.simpleCuts === true,
-    burnCaptions: result.burnCaptions === true,
+    burnCaptions: typeof result.burnCaptions === "boolean" ? result.burnCaptions : true,
   };
   salvarSessaoTranscricao();
   if (videoUrl) videoUrl.value = sessaoTranscricao.videoUrl;

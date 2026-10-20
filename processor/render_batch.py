@@ -224,7 +224,7 @@ def main() -> int:
     parser.add_argument("--editorial-cache-root", default=".editorial-cache")
     parser.add_argument("--lower-third-mode", choices=("off", "cover", "crop"), default="off")
     parser.add_argument("--lower-third-height", type=float, default=0.0)
-    parser.add_argument("--burn-captions", default="false", type=lambda v: str(v).lower() in ("true", "1", "yes"))
+    parser.add_argument("--burn-captions", default="true", type=lambda v: str(v).lower() in ("true", "1", "yes"))
     args = parser.parse_args()
     lower_third = LowerThird(args.lower_third_mode, args.lower_third_height)
 

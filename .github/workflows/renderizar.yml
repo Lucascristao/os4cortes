@@ -37,7 +37,7 @@ on:
       burn_captions:
         description: "Queimar legendas no vídeo"
         required: false
-        default: "false"
+        default: "true"
 
 permissions:
   contents: read

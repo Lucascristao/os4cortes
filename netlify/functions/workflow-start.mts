@@ -242,7 +242,7 @@ export default safeHandler(async (request, context) => {
   if (Object.hasOwn(body, "burnCaptions") && typeof body.burnCaptions !== "boolean") {
     return json(400, { ok: false, error: "A opção de queimar legendas precisa ser verdadeira ou falsa." });
   }
-  const burnCaptions = body.burnCaptions === true;
+  const burnCaptions = !Object.hasOwn(body, "burnCaptions") || body.burnCaptions === true;
 
   const configStore = blobStore("os4-config", context);
   const jobsStore = blobStore("os4-jobs", context);
