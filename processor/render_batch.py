@@ -294,13 +294,13 @@ def main() -> int:
             metadata = {}
             prefixo = f"corte_{i:02d}_{titulo_arquivo}" + ("_16x9" if formato == "16:9" else "")
             if args.cut_mode == "simple":
+                capa_path = out / f"{prefixo}_capa.jpg"
                 try:
                     cover_report = render_cover(
-                        video, [(inicio_efetivo, corte["fim"])], out / f"{prefixo}_capa.jpg",
-                        cover=corte["cover"], title=corte["titulo"], aspect=formato,
+                        video, [(inicio_efetivo, corte["fim"])], capa_path,
+                        cover=corte.get("cover"), title=corte["titulo"], aspect=formato,
                         lower_third=lower_third, work_dir=cache / "covers",
                     )
-                    capa_path = Path(cover_report["path"])
                     metadata = {"cover": cover_report, "first_original_clip_seconds": 0.0,
                                 "duration_seconds": corte["fim"] - inicio_efetivo,
                                 "source_clip_seconds": corte["fim"] - inicio_efetivo}

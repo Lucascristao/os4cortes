@@ -12,6 +12,7 @@ import json
 import math
 import re
 import shutil
+import subprocess
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
@@ -154,6 +155,31 @@ def _cv2():
     return cv2
 
 
+def _extract_frame_ffmpeg(source, timestamp, ffmpeg="ffmpeg"):
+    """Extrai um frame exato via FFmpeg quando o decoder do OpenCV falha (ex: AV1)."""
+    cmd = [
+        str(ffmpeg), "-hide_banner", "-loglevel", "error",
+        "-ss", f"{max(0.0, float(timestamp)):.3f}",
+        "-i", str(source),
+        "-frames:v", "1",
+        "-f", "image2pipe",
+        "-vcodec", "mjpeg",
+        "-q:v", "2",
+        "pipe:1"
+    ]
+    try:
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+        if proc.returncode == 0 and proc.stdout:
+            cv2 = _cv2()
+            arr = np.frombuffer(proc.stdout, dtype=np.uint8)
+            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if frame is not None and frame.size > 0:
+                return frame
+    except Exception:
+        pass
+    return None
+
+
 def _lower_third(value):
     if value is None:
         return LowerThird()
@@ -234,13 +260,17 @@ def _quality(frame, detection):
         return None
     if not all(math.isfinite(v) for v in (x, y, fw, fh, confidence)):
         return None
-    # A tiny or clipped detection cannot produce a useful, whole-face thumbnail.
-    if min(fw, fh) < 32 or fw*fh < width*height*.0015 or confidence < .70:
+    # A tiny detection cannot produce a useful thumbnail; accept reasonable confidence
+    if min(fw, fh) < 24 or fw*fh < width*height*.001 or confidence < .55:
+        return None
+    # Clamp face box to frame boundaries instead of dropping when touching the top/edge
+    x1, y1 = max(0.0, x), max(0.0, y)
+    x2, y2 = min(float(width), x + fw), min(float(height), y + fh)
+    vis_w, vis_h = x2 - x1, y2 - y1
+    if vis_w < 24 or vis_h < 24 or (vis_w * vis_h) < (fw * fh * 0.45):
         return None
     margin_x, margin_top, margin_bottom = fw*.12, fh*.20, fh*.12
-    if x < 0 or y < 0 or x+fw > width or y+fh > height:
-        return None
-    roi = frame[max(0, round(y)):min(height, round(y+fh)), max(0, round(x)):min(width, round(x+fw))]
+    roi = frame[max(0, round(y1)):min(height, round(y2)), max(0, round(x1)):min(width, round(x2))]
     if not roi.size:
         return None
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -249,14 +279,14 @@ def _quality(frame, detection):
     clipped = float(np.mean((gray <= 8) | (gray >= 247)))
     exposure = max(.05, 1-abs(luminance-132)/150) * (1-min(.85, clipped))
     area = fw*fh / (width*height)
-    edge = min(1.0, max(0.0, x-margin_x)/max(1, fw*.25),
-               max(0.0, y-margin_top)/max(1, fh*.25),
-               max(0.0, width-x-fw-margin_x)/max(1, fw*.25),
-               max(0.0, height-y-fh-margin_bottom)/max(1, fh*.25))
+    edge = min(1.0, max(0.0, x1-margin_x)/max(1, fw*.25),
+               max(0.0, y1-margin_top)/max(1, fh*.25),
+               max(0.0, width-x2-margin_x)/max(1, fw*.25),
+               max(0.0, height-y2-margin_bottom)/max(1, fh*.25))
     eye_detail = _eye_detail(gray, detection.get("landmarks"), [x, y, fw, fh])
     score = (confidence * (area ** .55) * math.log1p(max(0, sharpness)) * exposure
              * (.65+.35*edge) * (.30+.70*eye_detail))
-    if luminance < 20 or luminance > 240 or sharpness < 3:
+    if luminance < 15 or luminance > 245 or sharpness < 1.5:
         return None
     return {"box": [x, y, fw, fh], "confidence": round(confidence, 6),
             "sharpness": round(sharpness, 4), "luminance": round(luminance, 4),
@@ -350,20 +380,31 @@ def _select_frame(source, ranges, treatment, work_dir, *, detector=None, max_can
         best, scanned, usable = cached
         return _selected_photo(best, scanned, usable, aspect, template_id, cv2)
     cap = cv2.VideoCapture(str(source))
-    if not cap.isOpened():
-        raise CoverError("cover: não foi possível abrir o vídeo original.")
     best, scanned, usable = {}, 0, 0
+    fallback_frame = None
+    fallback_meta = None
     previous_mouths, previous_foreheads = [], []
     previous_timestamp, previous_small = None, None
     try:
         times = sample_timestamps(ranges, max_candidates)
         for timestamp in times:
-            cap.set(cv2.CAP_PROP_POS_MSEC, timestamp*1000)
-            ok, raw = cap.read()
+            raw = None
+            if cap.isOpened():
+                cap.set(cv2.CAP_PROP_POS_MSEC, timestamp*1000)
+                ok, raw_cap = cap.read()
+                if ok and raw_cap is not None and getattr(raw_cap, "size", 0) > 0:
+                    raw = raw_cap
+            if raw is None:
+                # Decodificação de contingência via FFmpeg quando OpenCV falha no seek/codec (ex: AV1)
+                raw = _extract_frame_ffmpeg(source, timestamp)
             scanned += 1
-            if not ok:
+            if raw is None:
                 continue
             frame = treatment.apply(raw)
+            if fallback_frame is None:
+                fallback_frame = frame.copy()
+                fallback_meta = {"timestamp": timestamp, "source_size": [raw.shape[1], raw.shape[0]],
+                                 "treated_size": [frame.shape[1], frame.shape[0]]}
             if detector is None:
                 detector = _make_detector(frame.shape[1], frame.shape[0], work_dir)
             small = cv2.resize(frame, (96, 54))
@@ -413,25 +454,55 @@ def _select_frame(source, ranges, treatment, work_dir, *, detector=None, max_can
                         best[key] = ({**base_record, "faces": group, "score": score}, copied)
     finally:
         cap.release()
-    if use_cache:
+
+    if fallback_frame is None and ranges:
+        raw_first = _extract_frame_ffmpeg(source, ranges[0][0])
+        if raw_first is not None:
+            fallback_frame = treatment.apply(raw_first)
+            fallback_meta = {"timestamp": ranges[0][0], "source_size": [raw_first.shape[1], raw_first.shape[0]],
+                             "treated_size": [fallback_frame.shape[1], fallback_frame.shape[0]]}
+
+    if use_cache and best:
         _FRAME_SELECTION_CACHE.clear()
         _FRAME_SELECTION_CACHE[scan_key] = (best, scanned, usable)
-    return _selected_photo(best, scanned, usable, aspect, template_id, cv2)
+    return _selected_photo(best, scanned, usable, aspect, template_id, cv2,
+                           fallback_frame=fallback_frame, fallback_meta=fallback_meta)
 
 
-def _selected_photo(best, scanned, usable, aspect, template_id, cv2):
+def _selected_photo(best, scanned, usable, aspect, template_id, cv2, fallback_frame=None, fallback_meta=None):
     picked = best.get((aspect, template_id))
     pair = template_id == "04_duas_pessoas" and picked is not None
     if picked is None and template_id == "04_duas_pessoas":
         picked = best.get((aspect, default_template(aspect)))
+    if picked is None and best:
+        picked = next((val for key, val in best.items() if key[0] == aspect), None)
+        if picked is None:
+            picked = next(iter(best.values()), None)
     if picked is None:
-        raise CoverError("cover: nenhum rosto utilizável nos trechos originais selecionados (nitidez, exposição ou enquadramento insuficientes).")
+        print("[Aviso cover] Nenhum rosto utilizável detectado nos trechos originais. Usando frame da cena.", flush=True)
+        if fallback_frame is None:
+            fallback_frame = np.full((1080, 1920, 3), 32, dtype=np.uint8)
+        fh, fw = fallback_frame.shape[:2]
+        face_w, face_h = round(fw * 0.32), round(fh * 0.38)
+        face_x, face_y = round((fw - face_w) / 2), round(fh * 0.18)
+        dummy_face = {
+            "box": [face_x, face_y, face_w, face_h], "confidence": 1.0, "score": 1.0,
+            "sharpness": 10.0, "luminance": 128.0, "exposure": 1.0, "useful_area": 0.1,
+            "framing": 1.0, "mouth_activity": 0.0, "eye_detail": 1.0
+        }
+        meta = fallback_meta or {"timestamp": 0.0, "source_size": [fw, fh], "treated_size": [fw, fh]}
+        selection = {
+            **meta, "faces": [dummy_face], "score": 1.0,
+            "fallback_reason": "no_usable_face_detected_using_scene_frame"
+        }
+        picked = (selection, fallback_frame)
+
     selection, frame = picked
     selection = {**selection, "sample_count": scanned, "usable_frames": usable,
                  "pair_in_same_frame": pair,
                  "selection_policy": "active_speaker_then_eye_detail_and_visual_quality",
                  "sampling": "bounded_temporal_triplets",
-                 "active_speaker": any(face.get("mouth_activity", 0) >= .12 for face in selection["faces"])}
+                 "active_speaker": any(face.get("mouth_activity", 0) >= .12 for face in selection.get("faces", []))}
     return Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)), selection
 
 
@@ -493,7 +564,7 @@ def _face_crop(source_size, face, destination, fraction, center):
     min_h = max(fh*1.42, fw*1.30/ratio)
     max_h = min(height, width/ratio)
     if min_h > max_h+1:
-        raise CoverError("cover: o rosto não cabe inteiro no enquadramento deste modelo.")
+        min_h = max_h
     crop_h = min(max_h, max(min_h, fh/fraction))
     crop_w = crop_h*ratio
     cx, cy = x+fw/2, y+fh/2
@@ -581,15 +652,21 @@ def _draw_badge(canvas, preset, face_boxes, title_box):
     candidates = [(x, y)]
     if canvas.width > canvas.height:
         candidates.extend([(72, 62), (canvas.width-width-72, 62), ((canvas.width-width)//2, 62)])
-    for x, y in candidates:
-        box = [x, y, x+width, y+height]
+    chosen_candidate = None
+    for cx, cy in candidates:
+        box = [cx, cy, cx+width, cy+height]
         if not any(_intersects(box, face) for face in face_boxes) and not _intersects(box, title_box):
+            chosen_candidate = (cx, cy, box)
             break
+    if chosen_candidate is None:
+        print("[Aviso cover] Não há área 100% livre para a marca; posicionando na coordenada padrão.", flush=True)
+        cx, cy = candidates[0]
+        box = [cx, cy, cx+width, cy+height]
     else:
-        raise CoverError("cover: não há área livre para a marca sem cobrir o rosto.")
+        cx, cy, box = chosen_candidate
     ink, white, yellow = (tuple(PRESETS["colors"][key]) for key in ("ink", "white", "yellow"))
     draw.rounded_rectangle(box, radius=8, fill=(*ink, 225), outline=(*yellow, 220), width=2)
-    draw.text((x+19, y+15), label, font=font, fill=white, anchor="lt")
+    draw.text((cx+19, cy+15), label, font=font, fill=white, anchor="lt")
     return box
 
 
@@ -618,7 +695,9 @@ def compose_cover(photo, selection, *, cover, aspect, source_label=""):
     face_boxes = [crop["face_box"] for crop in crops]
     for face_box in face_boxes:
         if _intersects(face_box, fitted["box"]):
-            raise CoverError("cover: enquadramento do rosto invade a área do título; selecione outro modelo.")
+            if not reason:
+                reason = "face_box_overlaps_title_zone"
+            print("[Aviso cover] Enquadramento do rosto cruza área do título; mantendo composição com aviso.", flush=True)
     for gradient in preset["gradients"]:
         _gradient(canvas, *gradient)
     draw = ImageDraw.Draw(canvas)

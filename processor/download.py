@@ -22,7 +22,7 @@ def achar_video(pasta: str | Path) -> Path | None:
 
 def _opts_base(pasta_saida: Path, altura_maxima: int) -> dict:
     return {
-        "format": f"bv*[height<={altura_maxima}]+ba/b[height<={altura_maxima}]/b",
+        "format": f"bv*[vcodec^=avc][height<={altura_maxima}]+ba/bv*[height<={altura_maxima}]+ba/b[height<={altura_maxima}]/b",
         "outtmpl": str(pasta_saida / "video.%(ext)s"),
         "merge_output_format": "mp4",
         "noplaylist": True,
