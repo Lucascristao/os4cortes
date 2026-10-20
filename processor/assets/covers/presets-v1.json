@@ -1,18 +1,16 @@
 {
-  "version": "os4-covers-v1-approved-v3",
+  "version": "os4-covers-v1-approved-v3-single-face",
   "colors": {"ink": [11, 13, 17], "white": [247, 247, 244], "yellow": [255, 201, 40]},
   "9:16": {
     "size": [1080, 1920],
     "01_central": {"photos": [[0, 160, 1080, 1680]], "face_fraction": 0.32, "face_center": [0.5, 0.36], "fade": [130, 130, 0, 0], "gradients": [["y", 1110, 1720, 0.81], ["y", 1660, 1920, 0.45]], "title": {"box": [62, 1265, 1018, 1410], "size": 58, "min": 50, "lines": 2, "align": "center"}, "badge": [540, 1440, 24, "center"]},
     "02_lateral": {"photos": [[-160, 155, 925, 1715]], "face_fraction": 0.32, "face_center": [0.48, 0.35], "fade": [140, 170, 200, 0], "gradients": [["x", 660, 1080, 0.75], ["y", 1120, 1770, 0.76], ["y", 1660, 1920, 0.45]], "line": [905, 1198, 1008, 1198, 4], "title": {"box": [62, 1244, 1008, 1385], "size": 54, "min": 50, "lines": 2, "align": "right"}, "badge": [756, 1428, 24, "left"]},
-    "03_close": {"photos": [[0, -60, 1080, 1770]], "face_fraction": 0.46, "face_center": [0.5, 0.35], "fade": [0, 150, 0, 0], "gradients": [["y", 1260, 1840, 0.62], ["y", 1730, 1920, 0.42]], "title": {"box": [88, 1345, 992, 1405], "band": [64, 1320, 1016, 1430], "size": 52, "min": 48, "lines": 1, "align": "center"}, "badge": [540, 1442, 24, "center"]},
-    "04_duas_pessoas": {"photos": [[0, 245, 498, 1660], [504, 215, 1080, 1670]], "face_fraction": 0.30, "face_center": [0.5, 0.34], "fade": [130, 170, 0, 0], "gradients": [["y", 1070, 1740, 0.86], ["y", 1660, 1920, 0.45]], "line": [501, 470, 501, 1170, 3], "title": {"box": [62, 1280, 1018, 1425], "size": 58, "min": 50, "lines": 2, "align": "center"}, "badge": [540, 1440, 24, "center"]}
+    "03_close": {"photos": [[0, -60, 1080, 1770]], "face_fraction": 0.46, "face_center": [0.5, 0.35], "fade": [0, 150, 0, 0], "gradients": [["y", 1260, 1840, 0.62], ["y", 1730, 1920, 0.42]], "title": {"box": [88, 1345, 992, 1405], "band": [64, 1320, 1016, 1430], "size": 52, "min": 48, "lines": 1, "align": "center"}, "badge": [540, 1442, 24, "center"]}
   },
   "16:9": {
     "size": [1920, 1080],
     "01_central": {"photos": [[0, 0, 1920, 1080]], "face_fraction": 0.52, "face_center": [0.5, 0.39], "fade": [0, 0, 0, 0], "gradients": [["y", 685, 1080, 0.88]], "title": {"box": [72, 810, 1848, 1035], "size": 86, "min": 70, "lines": 2, "align": "center"}, "badge": [72, 62, 27, "left"]},
     "02_lateral": {"photos": [[0, 0, 1080, 1080]], "face_fraction": 0.57, "face_center": [0.48, 0.47], "fade": [0, 0, 180, 0], "gradients": [["x", 840, 1300, 0.77], ["y", 880, 1080, 0.28]], "line": [1080, 344, 1190, 344, 5], "title": {"box": [1080, 397, 1848, 705], "size": 78, "min": 70, "lines": 2, "align": "left"}, "badge": [72, 62, 27, "left"]},
-    "03_close": {"photos": [[0, -35, 1920, 1045]], "face_fraction": 0.64, "face_center": [0.5, 0.43], "fade": [0, 0, 0, 0], "gradients": [["y", 850, 1080, 0.48]], "title": {"box": [104, 930, 1350, 1015], "band": [64, 902, 1390, 1028], "size": 74, "min": 70, "lines": 1, "align": "left"}, "badge": [72, 62, 27, "left"]},
-    "04_duas_pessoas": {"photos": [[0, 0, 957, 1008], [963, 0, 1920, 1008]], "face_fraction": 0.52, "face_center": [0.5, 0.39], "fade": [0, 0, 0, 0], "gradients": [["y", 730, 1080, 0.94]], "line": [960, 150, 960, 770, 3], "title": {"box": [72, 815, 1848, 1040], "size": 86, "min": 70, "lines": 2, "align": "center"}, "badge": [960, 62, 27, "center"]}
+    "03_close": {"photos": [[0, -35, 1920, 1045]], "face_fraction": 0.64, "face_center": [0.5, 0.43], "fade": [0, 0, 0, 0], "gradients": [["y", 850, 1080, 0.48]], "title": {"box": [104, 930, 1350, 1015], "band": [64, 902, 1390, 1028], "size": 74, "min": 70, "lines": 1, "align": "left"}, "badge": [72, 62, 27, "left"]}
   }
 }

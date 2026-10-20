@@ -1,4 +1,4 @@
-"""Reproducible source-media visual proof for all eight native cover presets.
+"""Reproducible source-media visual proof for all six native cover presets.
 
 Run locally against authorized source media; only reduced approved references,
 fonts and geometry are versioned. Generated QA media stays in ignored output/.
@@ -17,7 +17,7 @@ from .lower_third import LowerThird
 
 def _sheet(images, output, *, portrait=False, square=False, small=False):
     width, height = (320, 180) if small else (270, 270 if square else 480) if portrait else (640, 360)
-    columns, gap, pad = (4 if portrait else 2), 20, 30
+    columns, gap, pad = (3 if portrait else 2), 20, 30
     rows = (len(images)+columns-1)//columns
     canvas = Image.new("RGB", (pad*2+width*columns+gap*(columns-1),
                                 85+rows*(height+45)+pad), "#101217")

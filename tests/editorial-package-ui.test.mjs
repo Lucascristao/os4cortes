@@ -124,14 +124,14 @@ test('capa permanece no cartão ao editar, reordenar, excluir, exportar, restaur
   await h.import(original);
   const [first, middle, last] = h.cards();
   assert.match(first.querySelector('.cover-template').textContent, /3 — Close/);
-  assert.match(last.querySelector('.cover-template').textContent, /4 — Duas pessoas/);
+  assert.match(last.querySelector('.cover-template').textContent, /1 — Central/);
   last.querySelector('[data-field="cover_title"]').value = 'A DISCUSSÃO MUDOU?';
   await last.querySelector('[data-field="cover_title"]').fire('input');
   assert.equal(JSON.parse(h.storage.get(packageKey))[2].cover.title, 'A DISCUSSÃO MUDOU?');
   h.get('#cutsEditor').children = [last, middle, first];
   await middle.querySelector('.btn-delete-cut').fire('click');
   const exported = JSON.parse(h.get('#pacote').value);
-  assert.deepEqual(exported.map(c => c.cover), [cover('04_duas_pessoas', 'A DISCUSSÃO MUDOU?'), original[0].cover]);
+  assert.deepEqual(exported.map(c => c.cover), [cover('01_central', 'A DISCUSSÃO MUDOU?'), original[0].cover]);
   assert.deepEqual(JSON.parse(h.storage.get(packageKey)), exported);
   const restored = harness({ [packageKey]: h.storage.get(packageKey) });
   restored.context.restaurarSessao();
@@ -153,6 +153,23 @@ test('legados recebem capa conforme formato e título opcional vazio usa o títu
   card.querySelector('[data-field="cover_title"]').value = '';
   await card.querySelector('[data-field="cover_title"]').fire('input');
   assert.deepEqual(plain(h.context.lerCortesEditor()[0].cover), cover('03_close', 'Uma nova pergunta'));
+});
+
+test('modelo aposentado migra conforme formato efetivo sem trocar título nem close', () => {
+  const h = harness();
+  const legacy = cover('04_duas_pessoas', 'A DECISÃO É ESSA?');
+  const input = [cut({ cover: legacy }), cut({ formato: '16:9', cover: legacy }),
+    cut({ destino: 'youtube', cover: legacy }), cut({ inicio: 0, fim: 181, cover: legacy }),
+    cut({ formato: '16:9', cover: cover() })];
+  const normalized = plain(h.context.normalizarPacote(input, { simpleCuts: true }));
+  assert.deepEqual(normalized.map(c => c.cover), [cover('01_central', legacy.title),
+    cover('02_lateral', legacy.title), cover('02_lateral', legacy.title),
+    cover('02_lateral', legacy.title), cover()]);
+  assert.equal(legacy.template_id, '04_duas_pessoas', 'não altera o pacote de origem');
+
+  const editorial = { scenes: [{ kind: 'clip', start: 10, end: 20 }] };
+  const shortEditorial = cut({ inicio: 0, fim: 181, cover: legacy, editorial });
+  assert.equal(h.context.normalizarPacote([shortEditorial], { simpleCuts: false })[0].cover.template_id, '01_central');
 });
 
 test('capa inválida é rejeitada sem descartar silenciosamente modelo ou título', () => {
@@ -319,13 +336,15 @@ function promptExample(prompt) {
   return JSON.parse(json);
 }
 
-test('prompts escolhem quatro capas para os dois formatos e delegam a composição ao motor', async () => {
+test('prompts escolhem três capas para os dois formatos e delegam a composição ao motor', async () => {
   for (const simpleCuts of [false, true]) {
     const h = harness();
     h.context.mostrarTranscricao(session({ simpleCuts }));
     await h.get('#btnCopiarPromptIA').fire('click');
     const prompt = h.copied[0];
-    for (const id of ['01_central', '02_lateral', '03_close', '04_duas_pessoas']) assert.ok(prompt.includes(id));
+    for (const id of ['01_central', '02_lateral', '03_close']) assert.ok(prompt.includes(id));
+    assert.ok(!prompt.includes('04_duas_pessoas'));
+    assert.match(prompt, /um dos três modelos/);
     assert.match(prompt, /Escolha aleatoriamente/);
     assert.match(prompt, /o motor seleciona os frames reais dos trechos originais e monta a capa/);
     assert.match(prompt, /de 3 a 6 palavras, preferencialmente até 32 caracteres/);

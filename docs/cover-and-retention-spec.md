@@ -15,17 +15,16 @@ O pacote escolhe modelo e título; o motor seleciona frames reais e monta a capa
 | `01_central` | Rosto dominante central e título abaixo. |
 | `02_lateral` | Pessoa à esquerda e texto à direita, com preset vertical próprio. |
 | `03_close` | Close maior, faixa discreta e título de uma linha. |
-| `04_duas_pessoas` | Dois rostos distintos presentes no mesmo frame, título compartilhado. |
 
-Pacotes legados sem `cover` usam central no vertical e lateral no horizontal, com o título existente. Títulos legados acima de 60 caracteres são importados sem truncamento no editor; a geração solicita título de capa curto. O executor também valida o contrato.
+Pacotes legados sem `cover` usam central no vertical e lateral no horizontal, com o título existente. O modelo `04_duas_pessoas` foi retirado: pacotes antigos que o contenham são migrados para central no vertical ou lateral no horizontal, preservando o título da capa. O editor e o prompt oferecem somente os três modelos ativos. Títulos legados acima de 60 caracteres são importados sem truncamento no editor; a geração solicita título de capa curto. O executor também valida o contrato.
 
 ## Compositor e cache
 
-`processor/covers.py` consome os oito presets de `processor/assets/covers/presets-v1.json`. Fontes Archivo Black e Inter, licenças, hashes e referências v3 reduzidas ficam nessa árvore versionada. A produção não lê as pastas de prévias.
+`processor/covers.py` consome os seis presets de `processor/assets/covers/presets-v1.json`: três composições em cada formato. Fontes Archivo Black e Inter, licenças, hashes e referências v3 reduzidas ficam nessa árvore versionada. A produção não lê as pastas de prévias.
 
 O seletor amostra deterministicamente até 60 frames na união dos intervalos originais, após tratar a tarja. YuNet/OpenCV avalia rosto, tamanho útil, nitidez facial, exposição e enquadramento. O crop mantém proporções e margens de testa/queixo. Detecção fornece geometria, sem inferir nomes ou identidade entre cenas.
 
-No modelo 4, cada rosto do par precisa passar pela confirmação em um recorte próprio e pela validação dos landmarks faciais. A checagem reduz falsos positivos, como uma estampa de roupa ampliada como a segunda pessoa, sem pretender reconhecer identidades ou garantir que toda detecção esteja correta. Sem par confirmado, aplica central/lateral conforme o formato.
+Cada composição destaca somente um rosto selecionado. A presença de várias pessoas no frame não habilita montagem de par nem amplia um segundo rosto do fundo. A seleção continua priorizando atividade de fala, detalhe dos olhos e qualidade visual. Editor, API e executor migram pacotes antigos antes da composição; seus relatórios usam o modelo individual normalizado. Chamadas diretas ao compositor com o modelo retirado também o migram e registram `requested_template: 04_duas_pessoas`, o modelo realmente aplicado e `fallback_reason: retired_two_person_template`.
 
 Sem rosto detectado, o fallback preserva a cena inteira dentro do painel de foto, mantendo a proporção e sem inventar um rosto no centro para calcular o recorte. A ausência de rosto, a nitidez baixa ou margens imperfeitas não bloqueiam por si só a capa. Se nenhum dos frames puder ser extraído ou decodificado, somente esse corte falha com motivo claro, antes da síntese de voz; o motor não fabrica um fundo cinza para registrar sucesso.
 
@@ -47,7 +46,7 @@ O relatório separa `source_clip_seconds`, `first_original_clip_seconds`, duraç
 
 ## Validação e liberação
 
-CI executa Node/API/editor, Python e Publicador, com provas reais de áudio/flash e FFmpeg obrigatório. A matriz visual confere oito presets, rostos variados, par/fallback, acentos, títulos, material menos nítido, horizontal em 320×180 e recorte central quadrado vertical. A prova A/B usa WAVs existentes, sem síntese adicional.
+CI executa Node/API/editor, Python e Publicador, com provas reais de áudio/flash e FFmpeg obrigatório. A matriz visual confere seis presets, rostos variados, migração do modelo retirado, fallback de cena, acentos, títulos, material menos nítido, horizontal em 320×180 e recorte central quadrado vertical. A prova A/B usa WAVs existentes, sem síntese adicional.
 
 Liberação pela branch `codex/capas-voz-producao`, PR e CI. Merge em `main` disponibiliza o motor e o Netlify publica pela integração Git existente; não há conexão nem deploy manual. A conferência final usa geração controlada até Drive/Publicador, sem postar testes nas redes. Não há Facebook, novo selo público ou alteração de regras de monetização nesta entrega.
 

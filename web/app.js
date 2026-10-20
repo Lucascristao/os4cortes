@@ -707,8 +707,8 @@ Identifique somente quem participa do vídeo; alguém apenas citado no assunto n
 
 const DIRETRIZ_CAPAS = `CAPAS PARA INSTAGRAM, TIKTOK E YOUTUBE
 Inclua cover na raiz de CADA corte, simples ou autoral, tanto em 9:16 quanto em 16:9: {"version":1,"template_id":"03_close","title":"O QUE ELA CONFIRMA?"}.
-Escolha aleatoriamente um dos quatro modelos permitidos por corte, variando o lote: 01_central (pessoa central), 02_lateral (pessoa ao lado), 03_close (rosto maior e faixa de uma linha) ou 04_duas_pessoas (duas pessoas presentes juntas no mesmo frame). A IA escolhe o modelo e escreve o título; o motor seleciona os frames reais dos trechos originais e monta a capa, com o rosto em destaque e letras menores. Não gere imagem, recorte, coordenadas ou descrições de rostos.
-cover.title é texto simples em uma linha, sem HTML, Markdown, hashtags ou instruções: de 3 a 6 palavras, preferencialmente até 32 caracteres; no 03_close, prefira até 24. O limite do contrato é 60 caracteres. Escreva uma chamada curta e fiel ao trecho, separada do titulo de publicação. O motor limita a capa a duas linhas nos modelos 1, 2 e 4 e uma linha no close; adapta o enquadramento e pode substituir um modelo sem frame ou título utilizável. Não invente participantes nem reúna pessoas ausentes do mesmo frame.`;
+Escolha aleatoriamente um dos três modelos permitidos por corte, variando o lote: 01_central (pessoa central), 02_lateral (pessoa ao lado) ou 03_close (rosto maior e faixa de uma linha). A IA escolhe o modelo e escreve o título; o motor seleciona os frames reais dos trechos originais e monta a capa, com o rosto em destaque e letras menores. Não gere imagem, recorte, coordenadas ou descrições de rostos.
+cover.title é texto simples em uma linha, sem HTML, Markdown, hashtags ou instruções: de 3 a 6 palavras, preferencialmente até 32 caracteres; no 03_close, prefira até 24. O limite do contrato é 60 caracteres. Escreva uma chamada curta e fiel ao trecho, separada do titulo de publicação. O motor limita a capa a duas linhas nos modelos 1 e 2 e uma linha no close; adapta o enquadramento e pode substituir um modelo sem frame ou título utilizável. Destaque uma pessoa real do trecho.`;
 
 function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal }) {
   const fonte = sampleAuthor || "Fonte original";
@@ -1084,27 +1084,27 @@ const MODELOS_CAPA = {
   "01_central": "1 — Central",
   "02_lateral": "2 — Lateral",
   "03_close": "3 — Close",
-  "04_duas_pessoas": "4 — Duas pessoas",
 };
 
 function capaPadrao(titulo, formato) {
   return { version: 1, template_id: formato === "16:9" ? "02_lateral" : "01_central", title: titulo };
 }
 
-function normalizarCapa(cover) {
+function normalizarCapa(cover, formato = "9:16") {
   if (!cover || typeof cover !== "object" || Array.isArray(cover)) throw new Error("cover precisa ser um objeto JSON.");
   if (Object.keys(cover).length !== 3 || !["version", "template_id", "title"].every(key => Object.hasOwn(cover, key))) {
     throw new Error("cover precisa conter somente version, template_id e title.");
   }
   if (cover.version !== 1) throw new Error("cover.version precisa ser 1.");
-  if (typeof cover.template_id !== "string" || !Object.hasOwn(MODELOS_CAPA, cover.template_id)) {
-    throw new Error("cover.template_id precisa ser 01_central, 02_lateral, 03_close ou 04_duas_pessoas.");
+  const templateId = cover.template_id === "04_duas_pessoas" ? capaPadrao("", formato).template_id : cover.template_id;
+  if (typeof templateId !== "string" || !Object.hasOwn(MODELOS_CAPA, templateId)) {
+    throw new Error("cover.template_id precisa ser 01_central, 02_lateral ou 03_close.");
   }
   if (typeof cover.title !== "string" || !cover.title.trim() || Array.from(cover.title).length > 60
       || /[\p{C}\u2028\u2029<>`]|\*\*|__|\[[^\]]*\]\(/u.test(cover.title)) {
     throw new Error("cover.title precisa ser texto simples em uma linha, não vazio, com até 60 caracteres. Edite o título da capa.");
   }
-  return { version: 1, template_id: cover.template_id, title: cover.title.trim() };
+  return { version: 1, template_id: templateId, title: cover.title.trim() };
 }
 
 function normalizarPacote(data, { simpleCuts = simpleCutsInput?.checked === true } = {}) {
@@ -1141,7 +1141,7 @@ function normalizarPacote(data, { simpleCuts = simpleCutsInput?.checked === true
     const titulo = String(c?.titulo || `Corte ${i + 1}`).trim();
     let cover;
     try {
-      cover = Object.hasOwn(c || {}, "cover") ? normalizarCapa(c.cover) : normalizarCapa(capaPadrao(titulo, formato));
+      cover = Object.hasOwn(c || {}, "cover") ? normalizarCapa(c.cover, formato) : normalizarCapa(capaPadrao(titulo, formato), formato);
     } catch (erro) {
       if (Object.hasOwn(c || {}, "cover")) throw new Error(`Corte ${i + 1}: ${erro.message}`);
       // Import legacy publication titles intact; the editor asks for a short cover title before rendering.
@@ -1573,7 +1573,7 @@ btnGerarCortes?.addEventListener("click", async () => {
   try {
     rotas = normalizarPacote(cortesEditados, { simpleCuts });
     rotas.forEach((corte, i) => {
-      try { corte.cover = normalizarCapa(corte.cover || capaPadrao(corte.titulo, corte.formato)); }
+      try { corte.cover = normalizarCapa(corte.cover || capaPadrao(corte.titulo, corte.formato), corte.formato); }
       catch (erro) { throw new Error(`Corte ${i + 1}: ${erro.message}`); }
     });
   } catch (erro) {

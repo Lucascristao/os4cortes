@@ -80,7 +80,7 @@ const EDITORIAL_TOPICS = ["politics", "economy", "business", "humor", "general"]
 const EDITORIAL_TONES = ["conversational", "provocative", "ironic", "playful", "explanatory", "serious"];
 const EDITORIAL_INTENSITIES = ["low", "medium", "high"];
 const COMMENTARY_MODES = ["support_source", "challenge_source", "direct_commentary"];
-const COVER_TEMPLATES = ["01_central", "02_lateral", "03_close", "04_duas_pessoas"];
+const COVER_TEMPLATES = ["01_central", "02_lateral", "03_close"];
 
 function coverShapeError(cover) {
   if (!cover || typeof cover !== "object" || Array.isArray(cover)) return "cover precisa ser um objeto JSON.";
@@ -88,7 +88,8 @@ function coverShapeError(cover) {
     return "cover precisa conter somente version, template_id e title.";
   }
   if (cover.version !== 1) return "cover.version precisa ser 1.";
-  if (!COVER_TEMPLATES.includes(cover.template_id)) return "cover.template_id precisa ser 01_central, 02_lateral, 03_close ou 04_duas_pessoas.";
+  // Retired selections are accepted only as legacy input and migrated before dispatch.
+  if (!COVER_TEMPLATES.includes(cover.template_id) && cover.template_id !== "04_duas_pessoas") return "cover.template_id precisa ser 01_central, 02_lateral ou 03_close.";
   if (typeof cover.title !== "string" || !cover.title.trim() || Array.from(cover.title).length > 60
       || /[\p{C}\u2028\u2029<>`]|\*\*|__|\[[^\]]*\]\(/u.test(cover.title)) {
     return "cover.title precisa ser texto simples em uma linha, não vazio, com até 60 caracteres.";
@@ -287,6 +288,7 @@ export default safeHandler(async (request, context) => {
       return json(400, { ok: false, error: "O pacote precisa ter pelo menos um corte." });
     }
 
+    const normalizedCuts = [];
     for (const [index, cut] of cuts.entries()) {
       const seconds = (value) => {
         const text = String(value ?? "").trim().replace(/\s*:\s*/g, ":").replace(",", ".");
@@ -314,9 +316,21 @@ export default safeHandler(async (request, context) => {
           return json(400, { ok: false, error: `Corte ${index + 1}: ${error}` });
         }
       }
+      if (cut.cover?.template_id === "04_duas_pessoas") {
+        const originalSeconds = !simpleCuts && cut.editorial
+          ? Number(cut.editorial.scenes.filter(scene => scene.kind === "clip")
+            .reduce((total, scene) => total + scene.end - scene.start, 0).toFixed(6))
+          : Number((end - start).toFixed(6));
+        const horizontal = String(cut.formato || "").trim().toLowerCase() === "16:9"
+          || String(cut.destino || cut.plataforma || "").trim().toLowerCase() === "youtube"
+          || originalSeconds > 180;
+        normalizedCuts.push({ ...cut, cover: { ...cut.cover, template_id: horizontal ? "02_lateral" : "01_central" } });
+      } else {
+        normalizedCuts.push(cut);
+      }
     }
 
-    const renderCuts = simpleCuts ? cuts.map(({ editorial, ...cut }) => cut) : cuts;
+    const renderCuts = simpleCuts ? normalizedCuts.map(({ editorial, ...cut }) => cut) : normalizedCuts;
     let cutsJson = JSON.stringify(renderCuts);
     if (simpleCuts) {
       if (cutsJson.length > 60000) {

@@ -1,4 +1,4 @@
-const CACHE = "os4-de-direita-v26";
+const CACHE = "os4-de-direita-v27";
 const APP_SHELL = ["/", "/index.html", "/style.css", "/app.js", "/enhancements.js", "/manifest.webmanifest", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {

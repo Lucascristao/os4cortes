@@ -1,5 +1,5 @@
 {
-  "version": "os4-covers-v1-approved-v3",
+  "version": "os4-covers-v1-approved-v3-single-face",
   "fonts": [
     {
       "file": "fonts/ArchivoBlack-Regular.ttf",
@@ -47,15 +47,6 @@
       "sha256": "b8bfde687e4ca0991411dccbc9bb331a0ea1dd1c26c1c7c5f0ddd2053213d603"
     },
     {
-      "file": "references/9x16-04_duas_pessoas.jpg",
-      "approved_source": "cover-models-preview-v3/9x16/04_duas_pessoas.jpg",
-      "size": [
-        270,
-        480
-      ],
-      "sha256": "0b61ca75006aeef447c70e42a72951a9997e22a1df5d11684f9049d9d38ce7bb"
-    },
-    {
       "file": "references/16x9-01_central.jpg",
       "approved_source": "cover-models-preview-v3/16x9/01_central.jpg",
       "size": [
@@ -81,15 +72,6 @@
         270
       ],
       "sha256": "1993d28620f6b161b30d337585225a4e45c7739669203b4403354c0d7297651e"
-    },
-    {
-      "file": "references/16x9-04_duas_pessoas.jpg",
-      "approved_source": "cover-models-preview-v3/16x9/04_duas_pessoas.jpg",
-      "size": [
-        480,
-        270
-      ],
-      "sha256": "c082786abb026967b6b5280cbb498d4e9b1eb2e95fb765f0349c29cae2ef3d47"
     }
   ],
   "reference_note": "Reduced approved visual guides only; production renders from source frames and presets-v1.json. Source crop coordinates from the visual prototypes are not used."

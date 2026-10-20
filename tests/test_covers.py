@@ -9,12 +9,31 @@ import numpy as np
 from PIL import Image
 
 from processor.covers import (
-    CoverError, PRESETS, TEMPLATE_IDS, _distinct_pair, compose_cover,
+    ASSETS, CoverError, PRESETS, TEMPLATE_IDS, compose_cover,
     normalize_cover, render_cover, sample_timestamps,
 )
 
 
 class CoverContractTests(unittest.TestCase):
+    def test_only_three_single_face_templates_and_six_packaged_presets_remain(self):
+        self.assertEqual(TEMPLATE_IDS, ("01_central", "02_lateral", "03_close"))
+        for aspect in ("9:16", "16:9"):
+            self.assertEqual(set(PRESETS[aspect]), {"size", *TEMPLATE_IDS})
+            self.assertTrue(all(len(PRESETS[aspect][key]["photos"]) == 1 for key in TEMPLATE_IDS))
+        manifest = json.loads((ASSETS/"manifest-v1.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["version"], PRESETS["version"])
+        self.assertEqual(len(manifest["references"]), 6)
+        for item in manifest["references"]:
+            self.assertTrue((ASSETS/item["file"]).is_file())
+            self.assertNotIn("04_duas_pessoas", item["file"])
+
+    def test_retired_pair_is_migrated_for_each_aspect_without_mutating_legacy_title(self):
+        raw = {"version": 1, "template_id": "04_duas_pessoas", "title": "AÇÃO E REAÇÃO?"}
+        for aspect, expected in (("9:16", "01_central"), ("16:9", "02_lateral")):
+            self.assertEqual(normalize_cover(raw, "Título de publicação", aspect),
+                             {"version": 1, "template_id": expected, "title": "AÇÃO E REAÇÃO?"})
+        self.assertEqual(raw["template_id"], "04_duas_pessoas")
+
     def test_legacy_defaults_and_unicode_title(self):
         self.assertEqual(normalize_cover(None, "AÇÃO E REAÇÃO?", "9:16"),
                          {"version": 1, "template_id": "01_central", "title": "AÇÃO E REAÇÃO?"})
@@ -66,8 +85,7 @@ class CoverCompositionTests(unittest.TestCase):
     def test_all_native_presets_keep_real_faces_free_of_text(self):
         for aspect in ("9:16", "16:9"):
             for identifier in TEMPLATE_IDS:
-                selection = {"faces": [_face(300, 140, 180, 245), _face(1270, 130, 190, 250)],
-                             "pair_in_same_frame": True} if identifier == "04_duas_pessoas" else {"faces": [_face()]}
+                selection = {"faces": [_face()]}
                 with self.subTest(aspect=aspect, identifier=identifier):
                     image, report = compose_cover(self.photo, selection,
                                                   cover={"version": 1, "template_id": identifier, "title": "AÇÃO E REAÇÃO?"},
@@ -88,17 +106,14 @@ class CoverCompositionTests(unittest.TestCase):
                     # Reports must travel through batch results without Path/numpy values.
                     json.dumps(report)
 
-    def test_two_people_without_pair_falls_back_per_aspect_and_reports_why(self):
+    def test_retired_pair_always_composes_one_face_even_when_source_has_two(self):
         for aspect, expected in (("9:16", "01_central"), ("16:9", "02_lateral")):
-            _, report = compose_cover(self.photo, {"faces": [_face()]},
+            _, report = compose_cover(self.photo, {"faces": [_face(), _face(1100)], "pair_in_same_frame": True},
                                       cover={"version": 1, "template_id": "04_duas_pessoas", "title": "O QUE MUDOU?"}, aspect=aspect)
             self.assertEqual(report["requested_template"], "04_duas_pessoas")
             self.assertEqual(report["applied_template"], expected)
-            self.assertEqual(report["fallback_reason"], "no_usable_pair_in_same_frame")
-
-    def test_duplicate_boxes_are_not_two_people(self):
-        self.assertIsNone(_distinct_pair([_face(), _face(715, 125)]))
-        self.assertIsNotNone(_distinct_pair([_face(100), _face(1100)]))
+            self.assertEqual(report["fallback_reason"], "retired_two_person_template")
+            self.assertEqual(len(report["crops"]), 1)
 
     def test_close_long_title_falls_back_without_shrinking_below_floor(self):
         _, report = compose_cover(self.photo, {"faces": [_face()]},
@@ -139,6 +154,33 @@ class CoverCompositionTests(unittest.TestCase):
                     render_cover(source, [(2, 3)], root/"invalid.jpg", title="W"*60, work_dir=root/"cache")
                 self.assertEqual(select.call_count, 2)
             self.assertEqual(before, hashlib.sha256(source.read_bytes()).hexdigest())
+
+    def test_retired_template_migration_and_diagnostics_survive_cached_delivery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root/"source.mp4"
+            source.write_bytes(b"source media")
+            legacy = {"version": 1, "template_id": "04_duas_pessoas", "title": "O QUE MUDOU?"}
+            for aspect, expected in (("9:16", "01_central"), ("16:9", "02_lateral")):
+                with self.subTest(aspect=aspect), patch("processor.covers._select_frame", return_value=(
+                        self.photo, {"faces": [_face(), _face(1100)], "timestamp": 2.5})) as select:
+                    first = render_cover(source, [(2, 3)], root/"legacy.jpg", cover=legacy,
+                                         aspect=aspect, work_dir=root/"cache")
+                    direct = render_cover(source, [(2, 3)], root/"current.jpg",
+                                          cover={**legacy, "template_id": expected}, aspect=aspect, work_dir=root/"cache")
+                    cached = render_cover(source, [(2, 3)], root/"cached.jpg", cover=legacy,
+                                          aspect=aspect, work_dir=root/"cache")
+                    self.assertEqual(select.call_count, 2)
+                    self.assertEqual(select.call_args.kwargs["template_id"], expected)
+                    self.assertEqual(direct["requested_template"], expected)
+                    self.assertEqual(first["sha256"], direct["sha256"])
+                    self.assertTrue(cached["cache_hit"])
+                    for report in (first, cached):
+                        self.assertEqual(report["requested_template"], "04_duas_pessoas")
+                        self.assertEqual(report["applied_template"], expected)
+                        self.assertEqual(report["fallback_reason"], "retired_two_person_template")
+                        self.assertEqual(report["cover"], {**legacy, "template_id": expected})
+                        self.assertEqual(len(report["crops"]), 1)
 
 
 if __name__ == "__main__":
