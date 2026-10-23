@@ -136,16 +136,22 @@ jobs:
               result_path = Path("output/render-batch-result.json")
               result = json.loads(result_path.read_text(encoding="utf-8")) if result_path.is_file() else None
               detail = "A geração dos cortes falhou no GitHub Actions."
+              percent = 0
+              error = "Falha no workflow de geração de cortes"
               if result:
-                  detail = f"{result.get('completedCount', 0)}/{result.get('requestedCount', 0)} cortes autorais salvos; {len(result.get('errors', []))} falhou/falharam."
+                  saved = result.get('completedCount', 0)
+                  requested = result.get('requestedCount', 0)
+                  detail = f"{saved}/{requested} cortes salvos; {len(result.get('errors', []))} falhou/falharam."
+                  percent = 10 + 85 * saved / requested if requested else 0
+                  error = result.get('stoppedReason') or (result.get('errors') or [{}])[-1].get('error') or detail
               payload = json.dumps({
                   "request_id": rid,
                   "token": token,
                   "status": "cancelled" if "${{ job.status }}" == "cancelled" else "error",
                   "stage": "erro",
-                  "percent": 100,
+                  "percent": percent,
                   "detail": detail,
-                  "error": detail if result else "Falha no workflow de geração de cortes",
+                  "error": error,
                   **({"result": result} if result else {})
               }).encode("utf-8")
               try:
@@ -153,3 +159,11 @@ jobs:
               except Exception as exc:
                   print(f"Não foi possível reportar a falha: {exc}")
           PY
+
+      - name: Preservar relatório de cortes e falhas
+        if: ${{ always() && hashFiles('output/render-batch-result.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado-cortes-${{ inputs.request_id }}
+          path: output/render-batch-result.json
+          retention-days: 1

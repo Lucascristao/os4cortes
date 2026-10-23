@@ -599,14 +599,55 @@ def _probe_output(output, *, ffmpeg, ffprobe):
             "format": {"duration": duration}, "probe_method": "OpenCV geometry/duration plus ffmpeg codec metadata"}
 
 
+def preflight_editorial_visuals(plan, *, canvas, font_path, cover=None, title="", cut_label="corte"):
+    """Validate every text stage and cover typography without scanning media.
+
+    This gate precedes voice generation, source-frame decoding and FFmpeg.
+    Overlay errors stop early. A cover-only error becomes a visible pending
+    asset so the narration and video can still be saved without discarding work.
+    """
+    from .editorial_visuals import EditorialScene, layout_overlay
+    from .covers import normalize_cover, _fit_title, PRESETS, default_template, CoverError
+    credit = "Fonte: " + plan["source"]["label"] + (" | " + plan["source"]["date"] if plan["source"]["date"] else "")
+    for scene in plan["scenes"]:
+        if scene["kind"] != "narration":
+            continue
+        visual = scene["visual"]
+        try:
+            overlay = EditorialScene(title=visual["title"], kicker=visual.get("kicker", ""),
+                                     lines=tuple(visual.get("lines", [])), credit=credit)
+            layout_overlay(overlay, canvas=canvas, font_path=font_path)
+        except (ValueError, OSError) as error:
+            raise ValueError(f"{cut_label} / cena {scene['id']} / {error}") from error
+    aspect = "9:16" if canvas.portrait else "16:9"
+    try:
+        config = normalize_cover(cover, title, aspect)
+        try:
+            _fit_title(config["title"], PRESETS[aspect][config["template_id"]])
+        except CoverError:
+            # Match render_cover's close-to-default policy without scanning.
+            if config["template_id"] != "03_close":
+                raise
+            _fit_title(config["title"], PRESETS[aspect][default_template(aspect)])
+    except CoverError as error:
+        warning = _cover_pending(error, cut_label=cut_label, stage="preflight")
+        return {"cover_error": warning["message"], "cover_warning": warning}
+    return {"cover_error": None, "cover_warning": None}
+
+
+def _cover_pending(error, *, cut_label, stage):
+    message = f"{cut_label} / capa / {error}"
+    return {"status": "pending", "stage": stage, "field": str(error).split(":", 1)[0], "message": message}
+
+
 def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9:16", lower_third=None,
                          voice_dir=None, font_dir=None, ffmpeg="ffmpeg", ffprobe="ffprobe", width=None,
                          fps=30, asr_model="base", allow_synthesis=True, delivery_overrides=None,
                          target_active_dbfs=-18.0, peak_ceiling=.95,
                          narrator_pitch_semitones=DEFAULT_NARRATOR_PITCH_SEMITONES,
                          narrator_speed=DEFAULT_NARRATOR_SPEED, cover=None, title="",
-                         burn_captions=False):
-    """Return {video,srt,capa,report}; output is the final MP4 file path."""
+                         burn_captions=False, voice_checkpoint=None):
+    """Return rendered assets and any cover-only pending error; retain the MP4."""
     from .editorial_visuals import Canvas, VISUAL_STYLE_VERSION
     video, transcript, output = Path(video).resolve(), Path(transcript).resolve(), Path(output).resolve()
     work = Path(work_dir).resolve()
@@ -631,18 +672,36 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
     shared.mkdir(exist_ok=True)
     voice_dir = Path(voice_dir).resolve() if voice_dir else work / "voice"
     font_path, font_name = _font(font_dir)
+    cover_title = title or next((scene["visual"]["title"] for scene in normalized["scenes"] if scene["kind"] == "narration"), normalized["source"]["label"])
+    visual_preflight = preflight_editorial_visuals(normalized, canvas=canvas, font_path=font_path, cover=cover,
+                                                  title=cover_title, cut_label=output.stem)
+    cover_error, cover_warning = visual_preflight["cover_error"], visual_preflight["cover_warning"]
     source_hash, font_hash = file_sha256(video), file_sha256(font_path)
     with _tool_path(ffmpeg, ffprobe):
-        from .covers import render_cover
-        cover_path = output.with_name(output.stem + "_capa.jpg")
-        cover_title = title or next((scene["visual"]["title"] for scene in normalized["scenes"] if scene["kind"] == "narration"), normalized["source"]["label"])
-        cover_report = render_cover(video, [(scene["start"], scene["end"]) for scene in normalized["scenes"] if scene["kind"] == "clip"],
-            cover_path, cover=cover, title=cover_title, aspect=aspect, lower_third=treatment,
-            work_dir=voice_dir.parent / "covers", ffmpeg=ffmpeg, ffprobe=ffprobe,
-            source_label=normalized["source"]["label"])
-        # A failed cover is reported before a missing voice bundle can buy TTS.
-        manifest, voices, aligned = _ensure_voice_bundle(normalized, voice_dir, allow_synthesis=allow_synthesis,
-                                                        delivery_overrides=delivery_overrides, asr_model=asr_model)
+        from .covers import render_cover, CoverError
+        cover_path, cover_report = None, None
+        if not cover_error:
+            candidate_path = output.with_name(output.stem + "_capa.jpg")
+            try:
+                cover_report = render_cover(video, [(scene["start"], scene["end"]) for scene in normalized["scenes"] if scene["kind"] == "clip"],
+                    candidate_path, cover=cover, title=cover_title, aspect=aspect, lower_third=treatment,
+                    work_dir=voice_dir.parent / "covers", ffmpeg=ffmpeg, ffprobe=ffprobe,
+                    source_label=normalized["source"]["label"])
+                cover_path = candidate_path
+            except CoverError as error:
+                cover_warning = _cover_pending(error, cut_label=output.stem, stage="render")
+                cover_error = cover_warning["message"]
+        if cover_error:
+            print(f"Capa pendente; preservando vídeo e narração: {cover_error}", flush=True)
+            cover_report = {"status": "pending", "error": cover_error, "warning": cover_warning}
+        try:
+            manifest, voices, aligned = _ensure_voice_bundle(normalized, voice_dir, allow_synthesis=allow_synthesis,
+                                                            delivery_overrides=delivery_overrides, asr_model=asr_model)
+        finally:
+            # An accepted scene may be reusable even if a later voice/alignment
+            # operation failed. The caller owns its durable checkpoint policy.
+            if voice_checkpoint is not None:
+                voice_checkpoint(voice_dir)
         treated_voices = {key: derive_narration(item, voice_dir / "derived", ffmpeg=ffmpeg,
                                                speed=narrator_speed, pitch_semitones=narrator_pitch_semitones)
                           for key, item in voices.items()}
@@ -725,7 +784,8 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
         # The raw voice files must remain identical after all master operations.
         if any(file_sha256(item["path"]) != item["sha256"] for item in voices.values()):
             raise RuntimeError("Raw narration WAV changed during rendering.")
-        report = {"version": VERSION, "status": "success", "video": str(output), "srt": str(srt), "capa": str(cover_path),
+        report = {"version": VERSION, "status": "success", "video": str(output), "srt": str(srt), "capa": str(cover_path) if cover_path else None,
+                  "cover_error": cover_error, "cover_warning": cover_warning,
                   "aspect": aspect, "width": canvas.width, "height": canvas.height, "fps": fps,
                   "cover": cover_report, **timing_report, "duration_seconds": final_duration,
                   "final_duration_seconds": final_duration, "timeline_duration_seconds": total,
@@ -746,7 +806,8 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                   "final_resumed": final_resumed, "scenes": records}
         report_file = output.with_suffix(".render-report.json")
         _write_json(report_file, report)
-        return {"video": output, "srt": srt, "capa": cover_path, "report": report_file}
+        return {"video": output, "srt": srt, "capa": cover_path, "report": report_file,
+                "cover_error": cover_error, "cover_warning": cover_warning}
 
 
 def main(argv=None):
@@ -768,7 +829,7 @@ def main(argv=None):
         aspect=args.aspect, lower_third=LowerThird(args.lower_third_mode, args.lower_third_height),
         voice_dir=args.voice_dir, font_dir=args.font_dir, width=args.width, fps=args.fps,
         ffmpeg=args.ffmpeg, ffprobe=args.ffprobe, allow_synthesis=not args.no_synthesis)
-    print(json.dumps({key: str(value) for key, value in result.items()}, ensure_ascii=False))
+    print(json.dumps(result, ensure_ascii=False, default=str))
 
 
 if __name__ == "__main__":

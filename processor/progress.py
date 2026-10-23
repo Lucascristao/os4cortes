@@ -10,17 +10,20 @@ import threading
 from typing import Any
 
 _last_payload: dict[str, Any] = {}
+_last_control: dict[str, Any] = {}
 _post_lock = threading.RLock()
 
 
 def start_heartbeat(interval: float = 60.0) -> threading.Event:
     """Keep long FFmpeg/download operations alive without inventing progress."""
     stop = threading.Event()
+    with _post_lock:
+        _last_control.clear()
     def run() -> None:
         while not stop.wait(interval):
             with _post_lock:
                 if _last_payload and _last_payload.get("status") not in ("completed", "error", "cancelled"):
-                    _post(dict(_last_payload))
+                    _remember_control(_post(dict(_last_payload)))
     threading.Thread(target=run, daemon=True, name="os4-progress-heartbeat").start()
     return stop
 
@@ -41,7 +44,30 @@ def _callback_token(request_id: str) -> str:
     ).hexdigest()
 
 
-def _post(payload: dict[str, Any]) -> None:
+def callback_configured() -> bool:
+    # A URL with missing credentials is a broken callback, not an offline run.
+    return bool(os.getenv("OS4_PROGRESS_URL", "").strip())
+
+
+def latest_control() -> dict[str, Any]:
+    with _post_lock:
+        return dict(_last_control)
+
+
+def _remember_control(response: dict[str, Any] | None) -> None:
+    control = response.get("control") if isinstance(response, dict) else None
+    if not isinstance(control, dict) or control.get("action") not in ("continue", "stop"):
+        return
+    decision_id = _last_payload.get("decision_id")
+    if control.get("decisionId") != decision_id:
+        return
+    # A heartbeat receiving "wait" must never erase a pending user decision.
+    if _last_control.get("action") != "stop":
+        _last_control.clear()
+        _last_control.update(control)
+
+
+def _post(payload: dict[str, Any]) -> dict[str, Any] | None:
     url = os.getenv("OS4_PROGRESS_URL", "").strip()
     request_id = os.getenv("OS4_REQUEST_ID", "").strip()
     token = _callback_token(request_id)
@@ -65,8 +91,11 @@ def _post(payload: dict[str, Any]) -> None:
                 headers={"Content-Type": "application/json"},
             )
             with urllib.request.urlopen(req, timeout=8) as response:
-                response.read()
-            return
+                raw = response.read()
+            result = json.loads(raw.decode("utf-8")) if raw else {}
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                raise ValueError("Resposta de progresso inválida")
+            return result
         except Exception as exc:
             if attempt == 2:
                 print(f"OS4_PROGRESS_CALLBACK_WARNING|{type(exc).__name__}: {exc}", flush=True)
@@ -88,7 +117,12 @@ def emit(
     result: dict[str, Any] | None = None,
     error: str | None = None,
     ready_cut: dict[str, Any] | None = None,
-) -> None:
+    cut_error: dict[str, Any] | None = None,
+    completed_count: int | None = None,
+    failed_count: int | None = None,
+    consecutive_failures: int | None = None,
+    decision_id: str | None = None,
+) -> dict[str, Any] | None:
     parts = [
         "OS4_PROGRESS",
         f"stage={stage}",
@@ -132,15 +166,32 @@ def emit(
 
     if ready_cut is not None:
         payload["ready_cut"] = ready_cut
+    if cut_error is not None:
+        payload["cut_error"] = cut_error
+    for key, value in (("completed_count", completed_count), ("failed_count", failed_count),
+                       ("consecutive_failures", consecutive_failures), ("decision_id", decision_id)):
+        if value is not None:
+            payload[key] = value
     with _post_lock:
         _last_payload.clear()
-        _last_payload.update({k: v for k, v in payload.items() if k != "ready_cut"})
-        _post(payload)
+        _last_payload.update({k: v for k, v in payload.items()
+                              if k != "ready_cut" and (k != "cut_error" or status == "paused")})
+        response = _post(payload)
+        _remember_control(response)
+        return response
 
 
 def completed(detail: str, result: dict[str, Any]) -> None:
-    emit("concluido", 100.0, detail, status="completed", result=result)
+    failed_count = int(result.get("failedCount", len(result.get("errors", []))))
+    completed_count = int(result.get("completedCount", len(result.get("cuts", []))))
+    requested_count = int(result.get("requestedCount", completed_count))
+    overall = 10.0 + 85.0 * completed_count / requested_count if failed_count and requested_count else 100.0
+    emit("concluido", overall, detail, status="completed", result=result,
+         completed_count=completed_count, failed_count=failed_count,
+         consecutive_failures=int(result.get("consecutiveFailures", 0)))
 
 
 def failed(detail: str, error: str | None = None) -> None:
-    emit("erro", 100.0, detail, status="error", error=error or detail)
+    with _post_lock:
+        overall = _last_payload.get("percent", 0.0)
+    emit("erro", overall, detail, status="error", error=error or detail)

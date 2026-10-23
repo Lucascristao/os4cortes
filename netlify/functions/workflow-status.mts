@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { blobStore, safeHandler } from "./_shared/platform.mts";
+import { controlledJob, pendingDecision, readControl } from "./_shared/workflow.mts";
 
 function fromBase64url(value) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -55,10 +56,12 @@ export default safeHandler(async (request, context) => {
   if (!requestId) return json(400, { ok: false, error: "ID do processamento ausente." });
 
   const store = blobStore("os4-jobs", context);
-  const job = await getJSON(store, requestId);
-  if (!job || job.ownerHash !== ownerHash(user.email)) {
+  const stored = await getJSON(store, requestId);
+  if (!stored || stored.ownerHash !== ownerHash(user.email)) {
     return json(404, { ok: false, error: "Processamento não encontrado." });
   }
+  const control = await readControl(store, requestId, stored.pendingDecision?.id);
+  const job = controlledJob(stored, control);
 
   const now = Date.now();
   const createdTime = new Date(job.createdAt || 0).getTime();
@@ -85,6 +88,13 @@ export default safeHandler(async (request, context) => {
     totalCuts: job.totalCuts == null ? null : Number(job.totalCuts),
     result: job.result || null,
     error: job.error || null,
+    failureHistory: job.failureHistory || job.result?.errors || [],
+    completedCount: job.completedCount ?? job.result?.completedCount ?? job.result?.cuts?.length ?? 0,
+    failedCount: job.failedCount ?? job.result?.failedCount ?? job.result?.errors?.length ?? 0,
+    pendingCount: job.pendingCount ?? job.result?.pendingCuts?.length ?? 0,
+    consecutiveFailures: job.consecutiveFailures ?? job.result?.consecutiveFailures ?? 0,
+    pendingDecision: pendingDecision(job, control),
+    stopRequested: control?.action === "stop",
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
   };

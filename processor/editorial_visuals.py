@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw, ImageFont
 from .lower_third import LowerThird
 from .branding import CHANNEL_BADGE, normalize_branding
 
-VISUAL_STYLE_VERSION = "os4-creator-black-motion-2026-v3-os4dedireita"
+VISUAL_STYLE_VERSION = "os4-creator-black-motion-2026-v4-fitted-safe-text"
 BACKGROUND_STYLE_VERSION = "os4-creator-black-motion-2026-v1"
 
 
@@ -212,52 +212,77 @@ def _wrap(draw, value: str, font, width: int) -> str:
     return "\n".join(lines)
 
 
-def render_overlay_png(
-    scene: EditorialScene, output: str | Path, *, canvas: Canvas = Canvas(),
-    stage: int | None = None, font_path: str | Path | None = None,
-    body_font_path: str | Path | None = None,
-) -> Path:
-    """Creator typography on a transparent canvas; no news or slide furniture.
+def layout_overlay(
+    scene: EditorialScene, *, canvas: Canvas = Canvas(),
+    font_path: str | Path | None = None, body_font_path: str | Path | None = None,
+) -> dict:
+    """Measure every staged text item before media or paid narration work.
 
-    stage 0: compact brand/kicker/credit; 1: oversized title with an amber
-    emphasis line; 2: title plus first support line; 3: title plus second
-    support line, REPLACING the first. Later stages follow the same rule.
-    None previews the final stage. Persistent elements are pixel-identical
-    between stages so a compositor can animate only the changed region.
+    Bounds describe actual ink, rather than Pillow's font-origin bearing. The
+    support items replace one another, so each may use the free space below
+    the title. Fit font size and interline spacing without deleting any text.
+    Coordinates are supersampled, matching the final PNG renderer exactly.
     """
-    if stage is not None and (isinstance(stage, bool) or not isinstance(stage, int) or stage < 0):
-        raise ValueError("stage must be a nonnegative integer or None.")
     scale = 2
     w, h = canvas.width*scale, canvas.height*scale
-    image = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
+    draw = ImageDraw.Draw(Image.new("L", (1, 1)))
     zones = canvas.safe_zones()
     left, top, right, bottom = (value*scale for value in zones["content"])
     short = min(w, h)
     title_size = round(short*(.126 if canvas.portrait else .118))
     body_size = round(short*(.043 if canvas.portrait else .040))
     small_size = round(short*.023)
-    text_width = right-left-24*scale if canvas.portrait else round(w*.64)
+    padding = round(short*.009)
+    text_left = left + padding
+    # Include the emphasis strip and shadow in the safe horizontal bounds.
+    text_width = min(right-text_left-padding-scale,
+                     right-left-24*scale if canvas.portrait else round(w*.64))
+    spacing = round(short*.006)
+    blocks = []
 
-    def paint(xy, value, font, fill=(247, 247, 247, 255), spacing=None, shadow=True):
-        spacing = round(short*.006) if spacing is None else spacing
-        if shadow:
-            draw.multiline_text((xy[0]+scale, xy[1]+scale), value, font=font,
-                                fill=(0, 0, 0, 110), spacing=spacing)
-        draw.multiline_text(xy, value, font=font, fill=fill, spacing=spacing)
+    def block(kind, value, font, x, y, *, gap=spacing, fill=(247, 247, 247, 255),
+              shadow=True, highlight=False, index=None):
+        box = draw.multiline_textbbox((0, 0), value, font=font, spacing=gap)
+        # y is the actual ink top. A positive ascender bearing is not extra
+        # content height and must not cause a false overflow.
+        origin = (x-box[0], y-box[1])
+        bounds = (x, y, x+box[2]-box[0], y+box[3]-box[1])
+        return {"kind": kind, "index": index, "text": value, "font": font,
+                "font_size": font.size, "xy": origin, "bounds": bounds,
+                "spacing": gap, "fill": fill, "shadow": shadow, "highlight": highlight}
+
+    def fit_text(value, field, *, maximum, minimum, x, y, width, floor,
+                 max_lines=None, movable=False, fill=(247, 247, 247, 255)):
+        for size in range(maximum, minimum-1, -1):
+            font = _font(body_font_path or font_path, size)
+            wrapped = _wrap(draw, value, font, width)
+            if max_lines is not None and len(wrapped.splitlines()) > max_lines:
+                continue
+            for gap in range(spacing, max(1, round(short*.002))-1, -1):
+                measured = block(field, wrapped, font, x, y, gap=gap, fill=fill)
+                bounds = measured["bounds"]
+                ink_height = bounds[3]-bounds[1]
+                actual_top = min(y, floor-scale-ink_height) if movable else y
+                if (bounds[2] <= x+width and actual_top >= top
+                        and (not movable or actual_top >= title_bottom+round(short*.03))
+                        and actual_top+ink_height+scale <= floor):
+                    return block(field, wrapped, font, x, actual_top, gap=gap, fill=fill)
+        raise ValueError(f"{field}: texto não cabe na área segura com fonte legível; revise este campo.")
 
     brand_y = round(h*(.055 if canvas.portrait else .066))
-    paint((left, brand_y), scene.brand, _font(font_path, round(short*.023)))
-    kicker_font = _font(body_font_path or font_path, small_size)
+    blocks.append(block("brand", scene.brand, _font(font_path, round(short*.023)), left, brand_y))
+    kicker_bottom = top
     if scene.kicker:
-        kicker = _wrap(draw, scene.kicker.upper(), kicker_font, text_width)
-        if len(kicker.splitlines()) > 2:
-            raise ValueError("The kicker is too long for the overlay safe zone.")
-        paint((left, top), kicker, kicker_font, (255, 201, 40, 255))
-    title_y = round(h*(.232 if canvas.portrait else .235))
+        kicker = fit_text(scene.kicker.upper(), "visual.kicker", maximum=small_size,
+                          minimum=round(short*.018), x=text_left, y=top, width=text_width,
+                          floor=round(h*.225), max_lines=2, fill=(255, 201, 40, 255))
+        blocks.append(kicker)
+        kicker_bottom = kicker["bounds"][3]
+    title_y = max(round(h*(.232 if canvas.portrait else .235)),
+                  kicker_bottom+round(short*.025))
     max_title_height = round(h*(.27 if canvas.portrait else .30))
     title_font, title_lines, line_advance = None, [], 0
-    for size in range(title_size, round(title_size*.48), -2):
+    for size in range(title_size, round(title_size*.48)-1, -2):
         candidate_font = _font(font_path, size)
         candidate = _wrap(draw, scene.title.upper(), candidate_font, text_width).splitlines()
         if len(candidate) > 1 and any(line.strip("?!.,:") in {"A", "O", "AS", "OS", "E", "É", "DE", "DO", "DA", "UM", "UMA"} for line in candidate):
@@ -269,47 +294,66 @@ def render_overlay_png(
             advance = max(advance, raw_boxes[index][3]-raw_boxes[index+1][1]+emphasis_padding+round(short*.004))
         boxes = [draw.textbbox((0, index*advance), line, font=candidate_font)
                  for index, line in enumerate(candidate)]
-        if max(box[2] for box in boxes) <= text_width and boxes[-1][3]-boxes[0][1] <= max_title_height:
+        if (max(box[2]-box[0] for box in boxes) <= text_width
+                and boxes[-1][3]-boxes[0][1]+2*padding <= max_title_height
+                and title_y+boxes[-1][3]-boxes[0][1]+padding < bottom):
             title_font, title_lines, line_advance = candidate_font, candidate, advance
             break
     if title_font is None:
-        raise ValueError("The title is too long to remain readable in the overlay safe zone.")
-    if stage is None or stage >= 1:
-        first_top = draw.textbbox((0, 0), title_lines[0], font=title_font)[1]
-        origin = title_y-first_top
-        for index, line in enumerate(title_lines):
-            xy = (left, origin+index*line_advance)
-            if index == len(title_lines)-1:
-                # A fitted emphasis strip, not an opaque card over the source.
-                box = draw.textbbox(xy, line, font=title_font)
-                px, py = round(short*.009), round(short*.009)
-                draw.rectangle((box[0]-px, box[1]-py, box[2]+px, box[3]+py), fill="#ffc928")
-                paint(xy, line, title_font, (8, 8, 8, 255), shadow=False)
-            else:
-                paint(xy, line, title_font)
-
-    body_y = round(h*(.590 if canvas.portrait else .575))
-    body_font = _font(body_font_path or font_path, body_size)
-    selected_line = len(scene.lines)-1 if stage is None else min(len(scene.lines)-1, stage-2)
+        raise ValueError("visual.title: título não cabe na área segura com fonte legível; revise este campo.")
+    first_top = draw.textbbox((0, 0), title_lines[0], font=title_font)[1]
+    for index, line in enumerate(title_lines):
+        ink_top = title_y+index*line_advance+draw.textbbox((0, 0), line, font=title_font)[1]-first_top
+        emphasis = index == len(title_lines)-1
+        blocks.append(block("title", line, title_font, text_left, ink_top,
+                            fill=(8, 8, 8, 255) if emphasis else (247, 247, 247, 255),
+                            shadow=not emphasis, highlight=emphasis))
+    title_bottom = blocks[-1]["bounds"][3]+padding
     for index, line in enumerate(scene.lines):
-        wrapped = _wrap(draw, line, body_font, text_width)
-        bounds = draw.multiline_textbbox((left, body_y), wrapped, font=body_font,
-                                         spacing=round(short*.006))
-        if bounds[3] > bottom or bounds[2] > right:
-            raise ValueError("Overlay lines overflow the content zone; shorten the scene text.")
-        if (stage is None or stage >= 2) and index == selected_line:
-            paint((left, body_y), wrapped, body_font, (229, 229, 229, 255))
+        item = fit_text(line, f"visual.lines[{index}]", maximum=body_size,
+                        minimum=round(short*.030), x=text_left,
+                        y=round(h*(.590 if canvas.portrait else .575)), width=text_width,
+                        floor=bottom, movable=True, fill=(229, 229, 229, 255))
+        item.update(kind="body", index=index)
+        blocks.append(item)
 
     if scene.credit:
         credit_left, credit_top, credit_right, credit_bottom = (value*scale for value in zones["credit"])
-        credit_font = _font(body_font_path or font_path, round(short*.019))
-        wrapped = _wrap(draw, scene.credit, credit_font, credit_right-credit_left)
-        bounds = draw.multiline_textbbox((credit_left, credit_top), wrapped, font=credit_font,
-                                         spacing=round(short*.005))
-        if bounds[3] > credit_bottom:
-            raise ValueError("Credit is too long for the credit safe zone.")
-        paint((credit_left, credit_top), wrapped, credit_font, (180, 180, 180, 220),
-              spacing=round(short*.005))
+        # Credit has its own zone, so pass its ink top through the same fitter.
+        credit = fit_text(scene.credit, "credit", maximum=round(short*.019),
+                          minimum=round(short*.014), x=credit_left, y=credit_top,
+                          width=credit_right-credit_left-scale, floor=credit_bottom,
+                          fill=(180, 180, 180, 220))
+        blocks.append(credit)
+    return {"scale": scale, "size": (w, h), "blocks": blocks, "padding": padding}
+
+
+def render_overlay_png(
+    scene: EditorialScene, output: str | Path, *, canvas: Canvas = Canvas(),
+    stage: int | None = None, font_path: str | Path | None = None,
+    body_font_path: str | Path | None = None,
+) -> Path:
+    """Render the measured creator overlay; support items replace one another."""
+    if stage is not None and (isinstance(stage, bool) or not isinstance(stage, int) or stage < 0):
+        raise ValueError("stage must be a nonnegative integer or None.")
+    layout = layout_overlay(scene, canvas=canvas, font_path=font_path, body_font_path=body_font_path)
+    image = Image.new("RGBA", layout["size"], (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    scale, padding = layout["scale"], layout["padding"]
+    selected_line = len(scene.lines)-1 if stage is None else min(len(scene.lines)-1, stage-2)
+    for item in layout["blocks"]:
+        if item["kind"] == "title" and stage is not None and stage < 1:
+            continue
+        if item["kind"] == "body" and ((stage is not None and stage < 2) or item["index"] != selected_line):
+            continue
+        x, y = item["xy"]
+        if item["highlight"]:
+            box = item["bounds"]
+            draw.rectangle((box[0]-padding, box[1]-padding, box[2]+padding, box[3]+padding), fill="#ffc928")
+        if item["shadow"]:
+            draw.multiline_text((x+scale, y+scale), item["text"], font=item["font"],
+                                fill=(0, 0, 0, 110), spacing=item["spacing"])
+        draw.multiline_text((x, y), item["text"], font=item["font"], fill=item["fill"], spacing=item["spacing"])
 
     image = image.resize((canvas.width, canvas.height), Image.Resampling.LANCZOS)
     output = Path(output)

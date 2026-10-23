@@ -29,7 +29,7 @@ export function readyCut(value) {
 }
 
 export async function publicationCuts(store, requestId, job) {
-  const complete = job.status === "completed" ? (job.result?.cuts || []).map(readyCut).filter(Boolean) : [];
+  const complete = (job.result?.cuts || []).map(readyCut).filter(Boolean);
   const records = [];
   const total = Number.isSafeInteger(job.totalCuts) && job.totalCuts > 0 ? job.totalCuts : 0;
   for (let offset = 0; offset < total; offset += 20) {

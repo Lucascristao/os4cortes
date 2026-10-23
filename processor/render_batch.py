@@ -7,6 +7,7 @@ import os
 import shutil
 from pathlib import Path
 
+from .batch_control import BatchControl, BatchStopped
 from .branding import normalize_branding
 from .captions import (
     CaptionStyle,
@@ -20,10 +21,12 @@ from .captions import (
 from .covers import CoverError, normalize_cover, render_cover
 from .drive import uploader_por_env
 from .cut_transport import decode_cuts_json
-from .editorial_plan import editorial_fingerprint, normalize_editorial_plan
+from .editorial_plan import normalize_editorial_plan
 from .progress import completed, emit, failed, start_heartbeat
 from .publisher import save_publisher_manifest
 from .lower_third import LowerThird
+from .pending_cut import PendingCutStore, pending_cut_key
+from .voice_cache import SessionVoiceCache, voice_cache_identity
 try:
     from .tracking import render_cinematic_16x9, render_tracking_9x16
 except ImportError:
@@ -81,15 +84,22 @@ def render_editorial_cut(*args, **kwargs):
     return renderer(*args, **kwargs)
 
 
-def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_third, burn_captions=False):
+def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_third, burn_captions=False,
+                      *, uploader=None, folder_id=None):
     aspect = corte["formato"]
     prefix = f"corte_{index:02d}_{nome_seguro(corte['titulo'])}"
     if aspect == "16:9":
         prefix += "_16x9"
     # The local publisher recognizes the vertical by this suffix.
     output = out / (f"{prefix}.mp4" if aspect == "16:9" else f"{prefix}_legenda.mp4")
-    voice_dir = cache / editorial_fingerprint(corte["editorial"]) / "voice"
+    voice_key = voice_cache_identity(corte["editorial"], cache / "voice-identity")[0]
+    voice_dir = cache / "voice" / voice_key
     voice_dir.mkdir(parents=True, exist_ok=True)
+    voice_checkpoint = None
+    if uploader is not None and folder_id:
+        session_voices = SessionVoiceCache(uploader, folder_id, corte["editorial"], voice_dir)
+        session_voices.restore()
+        voice_checkpoint = session_voices.checkpoint
     font = garantir_archivo_black()
     rendered = render_editorial_cut(
         video, transcript, corte["editorial"], output,
@@ -97,6 +107,7 @@ def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_t
         lower_third=lower_third, voice_dir=voice_dir, font_dir=Path(font).parent,
         cover=corte["cover"], title=corte["titulo"],
         burn_captions=burn_captions,
+        voice_checkpoint=voice_checkpoint,
     )
     video_path, srt_path = Path(rendered["video"]), Path(rendered["srt"])
     cover = Path(rendered["capa"]) if rendered.get("capa") else None
@@ -106,19 +117,15 @@ def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_t
     else:
         post = escrever_post(out / f"{prefix}_post.txt", corte["titulo"], corte["legenda_post"], corte["hashtags"])
     assets = [("video", video_path), ("srt", srt_path), ("post", post)]
-    if not cover or not cover.is_file():
-        raise CoverError("A capa obrigatória do corte autoral não foi gerada.")
-    assets.append(("capa", cover))
+    if cover and cover.is_file():
+        assets.append(("capa", cover))
     metadata = json.loads(report.read_text(encoding="utf-8")) if report and report.exists() else {}
+    if not cover or not cover.is_file():
+        metadata["cover_error"] = rendered.get("cover_error") or "A capa do corte autoral está pendente."
+        metadata["cover_warning"] = rendered.get("cover_warning") or {"status": "pending", "message": metadata["cover_error"]}
     # Reports and synthesis caches stay local; they are not publisher uploads.
     cleanup = [video_path, srt_path, post, cover, report, output.with_suffix(".render-cache.json")]
     return assets, cleanup, metadata
-
-
-def _cut_error(errors, corte, index, total, progress, exc):
-    error = {"index": index, "titulo": corte["titulo"], "error": str(exc)}
-    errors.append(error)
-    emit("cortes", progress, f"Corte {index}/{total} falhou: {exc}", cut=index, total_cuts=total)
 
 
 def ajustar_inicio_sem_silencio(palavras: list[dict], inicio_corte: float, fim_corte: float) -> float:
@@ -235,6 +242,7 @@ def main() -> int:
 
     cleanup_work = True
     heartbeat = start_heartbeat()
+    control = None
     try:
         cortes = normalizar_cortes(args.cuts_json, cut_mode=args.cut_mode)
         total = len(cortes)
@@ -276,229 +284,253 @@ def main() -> int:
         source_sha256 = _file_sha256(video) if args.cut_mode == "simple" else None
 
         palavras_globais = carregar_palavras(transcricao_json)
-        resultados: list[dict] = []
-        errors: list[dict] = []
+        control = BatchControl(args.request_id, args.folder_id, out, total, emit)
+        resultados, errors = control.cuts, control.errors
+        control.persist()
         faixa = 85.0 / total
 
         for i, corte in enumerate(cortes, start=1):
-            base_inicio = 10.0 + (i - 1) * faixa
-            titulo_arquivo = nome_seguro(corte["titulo"])
-            formato = corte.get("formato", "9:16")
-            destino = corte.get("destino", "reels_tiktok")
+            control.check_stop()
+            ids: dict[str, str] = {}
+            try:
+                base_inicio = control.percent
+                titulo_arquivo = nome_seguro(corte["titulo"])
+                formato = corte.get("formato", "9:16")
+                destino = corte.get("destino", "reels_tiktok")
 
-            # Ajuste dinâmico para o som coincidir rigorosamente com os primeiros ~100ms do corte
-            inicio_efetivo = corte["inicio"] if args.cut_mode == "editorial" else ajustar_inicio_sem_silencio(
-                palavras_globais, corte["inicio"], corte["fim"]
-            )
-            usar_fade_visual = not corte.get("saida_suave", True)
+                # Ajuste dinâmico para o som coincidir rigorosamente com os primeiros ~100ms do corte
+                inicio_efetivo = corte["inicio"] if args.cut_mode == "editorial" else ajustar_inicio_sem_silencio(
+                    palavras_globais, corte["inicio"], corte["fim"]
+                )
+                usar_fade_visual = not corte.get("saida_suave", True)
 
-            limpar_arquivos = []
-            metadata = {}
-            prefixo = f"corte_{i:02d}_{titulo_arquivo}" + ("_16x9" if formato == "16:9" else "")
-            if args.cut_mode == "simple":
-                capa_path = out / f"{prefixo}_capa.jpg"
-                try:
-                    cover_report = render_cover(
-                        video, [(inicio_efetivo, corte["fim"])], capa_path,
-                        cover=corte.get("cover"), title=corte["titulo"], aspect=formato,
-                        lower_third=lower_third, work_dir=cache / "covers",
-                    )
-                    metadata = {"cover": cover_report, "first_original_clip_seconds": 0.0,
-                                "duration_seconds": corte["fim"] - inicio_efetivo,
-                                "source_clip_seconds": corte["fim"] - inicio_efetivo}
-                except CoverError as exc:
-                    _cut_error(errors, corte, i, total, base_inicio + faixa, exc)
+                limpar_arquivos = []
+                metadata = {}
+                prefixo = f"corte_{i:02d}_{titulo_arquivo}" + ("_16x9" if formato == "16:9" else "")
+                pending_store = PendingCutStore(uploader, args.folder_id,
+                    pending_cut_key(corte, index=i, video_file_id=args.video_file_id,
+                        transcript_file_id=args.transcript_json_file_id, mode=args.cut_mode,
+                        lower_third=lower_third, burn_captions=args.burn_captions),
+                    out / "pending" / f"{i:02d}", _file_sha256)
+                pending_record = pending_store.load()
+                if pending_record is not None:
+                    pending_cut = dict(pending_record["cut"])
+                    control.pending(pending_cut)
+                    control.emit("capa", detail=f"Refazendo somente a capa do corte {i}/{total}; vídeo e narração preservados", cut=i)
+                    capa_path = out / f"{prefixo}_capa.jpg"
+                    spans = [(scene["start"], scene["end"]) for scene in corte["editorial"]["scenes"] if scene["kind"] == "clip"] if args.cut_mode == "editorial" else [(inicio_efetivo, corte["fim"])]
+                    cover_report = render_cover(video, spans, capa_path, cover=corte["cover"], title=corte["titulo"],
+                        aspect=formato, lower_third=lower_third, work_dir=cache / "covers")
+                    control.check_stop()
+                    cover_id = uploader.upload(capa_path, folder_id=args.folder_id)
+                    pending_cut["files"] = dict(pending_cut["files"])
+                    pending_cut["files"]["capa"] = {"id": cover_id, "url": f"https://drive.google.com/file/d/{cover_id}/view"}
+                    pending_cut["cover"] = corte["cover"]
+                    pending_cut["render"] = {**pending_cut.get("render", {}), "cover": cover_report}
+                    for field in ("pendingReason", "coverPending"):
+                        pending_cut.pop(field, None)
+                    pending_store.resolved(pending_cut)
+                    control.succeeded(pending_cut)
                     continue
+                if args.cut_mode == "simple":
+                    capa_path = out / f"{prefixo}_capa.jpg"
+                    try:
+                        cover_report = render_cover(
+                            video, [(inicio_efetivo, corte["fim"])], capa_path,
+                            cover=corte.get("cover"), title=corte["titulo"], aspect=formato,
+                            lower_third=lower_third, work_dir=cache / "covers",
+                        )
+                    except CoverError as exc:
+                        capa_path = None
+                        metadata["cover_error"] = str(exc)
+                        cover_report = {"status": "pending", "error": str(exc)}
+                    metadata.update({"cover": cover_report, "first_original_clip_seconds": 0.0,
+                                "duration_seconds": corte["fim"] - inicio_efetivo,
+                                "source_clip_seconds": corte["fim"] - inicio_efetivo})
 
-            if args.cut_mode == "editorial":
-                emit("tracking", base_inicio, f"Montando vídeo autoral {i}/{total}: {corte['titulo']}", cut=i, total_cuts=total)
-                try:
+                if args.cut_mode == "editorial":
+                    control.emit("tracking", base_inicio, f"Montando vídeo autoral {i}/{total}: {corte['titulo']}", cut=i, total_cuts=total)
                     arquivos, limpar_arquivos, metadata = _editorial_assets(
                         video, transcricao_json, corte, i, out, work, cache, lower_third,
                         burn_captions=args.burn_captions,
+                        uploader=uploader, folder_id=args.folder_id,
                     )
-                except Exception as exc:
-                    _cut_error(errors, corte, i, total, base_inicio + faixa, exc)
-                    continue
-            elif formato == "16:9":
-                prefixo = f"corte_{i:02d}_{titulo_arquivo}_16x9"
-                video_16x9 = out / f"{prefixo}.mp4"
+                elif formato == "16:9":
+                    prefixo = f"corte_{i:02d}_{titulo_arquivo}_16x9"
+                    video_16x9 = out / f"{prefixo}.mp4"
 
-                emit(
-                    "tracking",
-                    base_inicio,
-                    f"Gerando corte YouTube 16:9 {i}/{total}: {corte['titulo']}",
-                    cut=i,
-                    total_cuts=total,
-                )
-                _render_simple_video(
-                    video,
-                    inicio_efetivo,
-                    corte["fim"],
-                    video_16x9,
-                    aspect=formato,
-                    work_dir=work,
-                    cache_dir=cache / "simple-video",
-                    source_sha256=source_sha256,
-                    fade_out_visual=usar_fade_visual,
-                    lower_third=lower_third,
-                )
-
-                emit(
-                    "legendas",
-                    base_inicio + faixa * 0.48,
-                    f"Preparando metadados YouTube do corte {i}/{total}",
-                    cut=i,
-                    total_cuts=total,
-                )
-                srt_path = criar_srt_limpo(
-                    transcricao_json,
-                    out / f"{prefixo}.srt",
-                    inicio_efetivo,
-                    corte["fim"],
-                )
-                post_path = escrever_post_youtube(
-                    out / f"{prefixo}_post.txt",
-                    corte["titulo"],
-                    corte["descricao"],
-                    corte["tags"],
-                )
-
-                arquivos = [
-                    ("video", video_16x9),
-                    ("srt", srt_path),
-                    ("post", post_path),
-                ]
-                if capa_path and capa_path.exists():
-                    arquivos.append(("capa", capa_path))
-
-                limpar_arquivos = [video_16x9, srt_path, post_path, capa_path]
-            else:
-                prefixo = f"corte_{i:02d}_{titulo_arquivo}"
-                video_corte = out / f"{prefixo}.mp4"
-
-                emit(
-                    "tracking",
-                    base_inicio,
-                    f"Gerando corte vertical {i}/{total}: {corte['titulo']}",
-                    cut=i,
-                    total_cuts=total,
-                )
-                _render_simple_video(
-                    video,
-                    inicio_efetivo,
-                    corte["fim"],
-                    video_corte,
-                    aspect=formato,
-                    work_dir=work,
-                    cache_dir=cache / "simple-video",
-                    source_sha256=source_sha256,
-                    fade_out_visual=usar_fade_visual,
-                    lower_third=lower_third,
-                )
-
-                if args.burn_captions:
-                    emit(
-                        "legendas",
-                        base_inicio + faixa * 0.48,
-                        f"Aplicando legendas no corte {i}/{total}",
+                    control.emit(
+                        "tracking",
+                        base_inicio,
+                        f"Gerando corte YouTube 16:9 {i}/{total}: {corte['titulo']}",
                         cut=i,
                         total_cuts=total,
                     )
-                    srt_path, video_legenda, capa_path = criar_legendas_corte(
-                        transcricao_json,
-                        video_corte,
+                    _render_simple_video(
+                        video,
                         inicio_efetivo,
                         corte["fim"],
-                        titulo=corte["titulo"],
-                        style=CaptionStyle(),
-                        saida_suave=corte.get("saida_suave", True),
-                        capa_pronta=capa_path,
-                        gerar_capa=False,
+                        video_16x9,
+                        aspect=formato,
+                        work_dir=work,
+                        cache_dir=cache / "simple-video",
+                        source_sha256=source_sha256,
+                        fade_out_visual=usar_fade_visual,
+                        lower_third=lower_third,
                     )
-                else:
+
+                    control.emit(
+                        "legendas",
+                        base_inicio + faixa * 0.48,
+                        f"Preparando metadados YouTube do corte {i}/{total}",
+                        cut=i,
+                        total_cuts=total,
+                    )
                     srt_path = criar_srt_limpo(
                         transcricao_json,
                         out / f"{prefixo}.srt",
                         inicio_efetivo,
                         corte["fim"],
                     )
-                    video_legenda = None
+                    post_path = escrever_post_youtube(
+                        out / f"{prefixo}_post.txt",
+                        corte["titulo"],
+                        corte["descricao"],
+                        corte["tags"],
+                    )
 
-                post_path = escrever_post(
-                    out / f"{prefixo}_post.txt",
-                    corte["titulo"],
-                    corte["legenda_post"],
-                    corte["hashtags"],
+                    arquivos = [
+                        ("video", video_16x9),
+                        ("srt", srt_path),
+                        ("post", post_path),
+                    ]
+                    if capa_path and capa_path.exists():
+                        arquivos.append(("capa", capa_path))
+
+                    limpar_arquivos = [video_16x9, srt_path, post_path, capa_path]
+                else:
+                    prefixo = f"corte_{i:02d}_{titulo_arquivo}"
+                    video_corte = out / f"{prefixo}.mp4"
+
+                    control.emit(
+                        "tracking",
+                        base_inicio,
+                        f"Gerando corte vertical {i}/{total}: {corte['titulo']}",
+                        cut=i,
+                        total_cuts=total,
+                    )
+                    _render_simple_video(
+                        video,
+                        inicio_efetivo,
+                        corte["fim"],
+                        video_corte,
+                        aspect=formato,
+                        work_dir=work,
+                        cache_dir=cache / "simple-video",
+                        source_sha256=source_sha256,
+                        fade_out_visual=usar_fade_visual,
+                        lower_third=lower_third,
+                    )
+
+                    if args.burn_captions:
+                        control.emit(
+                            "legendas",
+                            base_inicio + faixa * 0.48,
+                            f"Aplicando legendas no corte {i}/{total}",
+                            cut=i,
+                            total_cuts=total,
+                        )
+                        srt_path, video_legenda, capa_path = criar_legendas_corte(
+                            transcricao_json,
+                            video_corte,
+                            inicio_efetivo,
+                            corte["fim"],
+                            titulo=corte["titulo"],
+                            style=CaptionStyle(),
+                            saida_suave=corte.get("saida_suave", True),
+                            capa_pronta=capa_path if capa_path and capa_path.is_file() else None,
+                            gerar_capa=False,
+                        )
+                    else:
+                        srt_path = criar_srt_limpo(
+                            transcricao_json,
+                            out / f"{prefixo}.srt",
+                            inicio_efetivo,
+                            corte["fim"],
+                        )
+                        video_legenda = None
+
+                    post_path = escrever_post(
+                        out / f"{prefixo}_post.txt",
+                        corte["titulo"],
+                        corte["legenda_post"],
+                        corte["hashtags"],
+                    )
+
+                    arquivos = [
+                        ("video", video_corte),
+                        ("srt", srt_path),
+                        ("post", post_path),
+                    ]
+                    if video_legenda and Path(video_legenda).is_file():
+                        arquivos.append(("videoLegenda", video_legenda))
+                    if capa_path and capa_path.exists() and not metadata.get("cover_error"):
+                        arquivos.append(("capa", capa_path))
+
+                    limpar_arquivos = [video_corte, video_legenda, srt_path, post_path, capa_path]
+
+                control.emit(
+                    "drive",
+                    base_inicio + faixa * 0.68,
+                    f"Salvando corte {i}/{total} no Google Drive",
+                    cut=i,
+                    total_cuts=total,
                 )
 
-                arquivos = [
-                    ("video", video_corte),
-                    ("srt", srt_path),
-                    ("post", post_path),
-                ]
-                if video_legenda and Path(video_legenda).is_file():
-                    arquivos.append(("videoLegenda", video_legenda))
-                if capa_path and capa_path.exists():
-                    arquivos.append(("capa", capa_path))
-
-                limpar_arquivos = [video_corte, video_legenda, srt_path, post_path, capa_path]
-
-            emit(
-                "drive",
-                base_inicio + faixa * 0.68,
-                f"Salvando corte {i}/{total} no Google Drive",
-                cut=i,
-                total_cuts=total,
-            )
-
-            ids: dict[str, str] = {}
-
-            try:
-                if not any(key == "capa" and Path(path).is_file() for key, path in arquivos):
-                    raise CoverError("Capa obrigatória ausente; o corte não pode ser marcado como pronto.")
                 for pos, (chave, arquivo) in enumerate(arquivos, start=1):
-                    file_id = uploader.upload(arquivo, folder_id=args.folder_id)
+                    control.check_stop()
+                    try:
+                        file_id = uploader.upload(arquivo, folder_id=args.folder_id)
+                    except Exception as exc:
+                        if chave != "capa":
+                            raise
+                        metadata["cover_error"] = f"Falha ao salvar a capa no Drive: {exc}"
+                        continue
                     ids[chave] = file_id
-                    emit(
+                    control.emit(
                         "drive",
                         base_inicio + faixa * (0.68 + 0.30 * (pos / len(arquivos))),
                         f"Corte {i}/{total}: arquivo {pos}/{len(arquivos)} salvo",
                         cut=i,
                         total_cuts=total,
+                        observe_stop=False,
                     )
-            except Exception as exc:
-                if args.cut_mode == "simple" and not isinstance(exc, CoverError):
-                    raise
-                _cut_error(errors, corte, i, total, base_inicio + faixa, exc)
-                continue
 
-            files_dict = {
-                "video": {
-                    "id": ids["video"],
-                    "url": f"https://drive.google.com/file/d/{ids['video']}/view",
-                },
-                "videoLegenda": {
-                    "id": ids.get("videoLegenda", ids["video"]),
-                    "url": f"https://drive.google.com/file/d/{ids.get('videoLegenda', ids['video'])}/view",
-                },
-                "srt": {
-                    "id": ids["srt"],
-                    "url": f"https://drive.google.com/file/d/{ids['srt']}/view",
-                },
-                "post": {
-                    "id": ids["post"],
-                    "url": f"https://drive.google.com/file/d/{ids['post']}/view",
-                },
-            }
-            if "capa" in ids:
-                files_dict["capa"] = {
-                    "id": ids["capa"],
-                    "url": f"https://drive.google.com/file/d/{ids['capa']}/view",
+                files_dict = {
+                    "video": {
+                        "id": ids["video"],
+                        "url": f"https://drive.google.com/file/d/{ids['video']}/view",
+                    },
+                    "videoLegenda": {
+                        "id": ids.get("videoLegenda", ids["video"]),
+                        "url": f"https://drive.google.com/file/d/{ids.get('videoLegenda', ids['video'])}/view",
+                    },
+                    "srt": {
+                        "id": ids["srt"],
+                        "url": f"https://drive.google.com/file/d/{ids['srt']}/view",
+                    },
+                    "post": {
+                        "id": ids["post"],
+                        "url": f"https://drive.google.com/file/d/{ids['post']}/view",
+                    },
                 }
+                if "capa" in ids:
+                    files_dict["capa"] = {
+                        "id": ids["capa"],
+                        "url": f"https://drive.google.com/file/d/{ids['capa']}/view",
+                    }
 
-            resultados.append(
-                {
+                cut_result = {
                     "index": i,
                     "titulo": corte["titulo"],
                     "inicio": corte["inicio"],
@@ -511,45 +543,45 @@ def main() -> int:
                     ) if key in metadata},
                     "files": files_dict,
                 }
-            )
+                if "capa" not in ids:
+                    reason = metadata.get("cover_error") or "A capa está pendente; vídeo e áudio foram preservados."
+                    cut_result.update(coverPending=True, pendingReason=reason)
+                    control.pending(cut_result)
+                    pending_store.save(cut_result, arquivos, ids, reason)
+                    raise CoverError(f"{reason} Vídeo e áudio salvos no Drive; falta concluir apenas a capa.")
+                control.succeeded(cut_result)
 
-            for arquivo in limpar_arquivos:
-                if arquivo:
-                    try:
-                        arquivo.unlink(missing_ok=True)
-                    except Exception:
-                        pass
+                for arquivo in limpar_arquivos:
+                    if arquivo:
+                        try:
+                            arquivo.unlink(missing_ok=True)
+                        except Exception:
+                            pass
 
-            emit(
-                "cortes",
-                base_inicio + faixa,
-                f"Corte {i}/{total} concluído",
-                cut=i,
-                total_cuts=total,
-                ready_cut=resultados[-1],
-            )
+            except BatchStopped:
+                raise
+            except Exception as exc:
+                control.failed_cut(corte, i, exc, uploaded_files=ids)
 
-        result = {
-            "requestId": args.request_id,
-            "folderId": args.folder_id,
-            "driveFolderUrl": f"https://drive.google.com/drive/folders/{args.folder_id}",
-            "cuts": resultados,
-        }
-        if args.cut_mode == "editorial" or errors:
-            result.update(errors=errors, requestedCount=total, completedCount=len(resultados))
-            (out / "render-batch-result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-            detail = f"{len(resultados)}/{total} cortes {'autorais ' if args.cut_mode == 'editorial' else ''}salvos no Drive"
-            if errors:
-                detail += f"; {len(errors)} falhou/falharam"
-            if not resultados:
-                emit("erro", 100.0, detail, status="error", result=result, error=detail)
-                return 1
-            completed(detail, result)
-        else:
-            completed(f"{total} cortes concluídos e salvos no Drive", result)
+        result = control.result()
+        detail = f"{len(resultados)}/{total} cortes {'autorais ' if args.cut_mode == 'editorial' else ''}salvos no Drive"
+        if errors:
+            detail += f"; {len(errors)} falhou/falharam"
+        if not resultados:
+            control.stopped(BatchStopped(detail))
+            return 1
+        if not errors:
+            detail = f"{total} cortes concluídos e salvos no Drive"
+        completed(detail, result)
         return 0
+    except BatchStopped as exc:
+        control.stopped(exc)
+        return 1
     except Exception as exc:
-        failed("Falha ao gerar os cortes", str(exc))
+        if control is not None:
+            control.stopped(BatchStopped(f"Falha ao gerar os cortes: {exc}"))
+        else:
+            failed("Falha ao gerar os cortes", str(exc))
         raise
     finally:
         heartbeat.set()

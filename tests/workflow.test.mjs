@@ -10,6 +10,7 @@ import progress from '../netlify/functions/workflow-progress.mts';
 import publisherFolder from '../netlify/functions/publisher-folder.mts';
 import {publisherToken} from '../netlify/functions/_shared/publisher.mts';
 import status from '../netlify/functions/workflow-status.mts';
+import control from '../netlify/functions/workflow-control.mts';
 import { blobStore } from '../netlify/functions/_shared/platform.mts';
 
 const secret='local-test-session-secret';
@@ -669,6 +670,125 @@ test('terminal callbacks preserve editorial failure details and partial counters
   assert.deepEqual(feed.cuts.map(cut=>cut.index),completedCount?[1]:[]);
   assert.equal(feed.errors,undefined,'Folder capability exposes counts without narration diagnostics');
  }
+});
+
+async function controlledBatch(count=4) {
+ const response=await start(req('workflow-start','POST',renderBody({cuts:Array.from({length:count},()=>narratedCut()),simpleCuts:false})),context);
+ assert.equal(response.status,202);
+ const {requestId}=await response.json();
+ const callback={request_id:requestId,token:crypto.createHmac('sha256',callbackSecret).update('os4-progress:'+requestId).digest('hex')};
+ return {requestId,callback,
+  update:body=>progress(req('workflow-progress','POST',{...callback,...body}),context),
+  get:async()=>(await (await status(req('workflow-status?id='+requestId),context)).json()).job,
+  decide:(action,decisionId,session=cookie())=>control(req('workflow-control','POST',{requestId,action,decisionId},session),context),
+ };
+}
+const failedCut=index=>({index,titulo:`Corte ${index}`,error:`Erro de composição ${index}: <script>alert(1)</script>`});
+const pausedCut=(index,decision_id,streak=index)=>({status:'paused',stage:'aguardando_decisao',cut:index,
+ decision_id,cut_error:failedCut(index),failed_count:index,completed_count:0,consecutive_failures:streak,
+ result:{cuts:[],errors:Array.from({length:index},(_,i)=>failedCut(i+1)),requestedCount:4,completedCount:0,failedCount:index,consecutiveFailures:streak}});
+
+test('paused decisions require the authenticated owner and survive heartbeat and resolved decision replays',async()=>{
+ const batch=await controlledBatch();
+ const pause=pausedCut(1,'decision-one');
+ assert.deepEqual((await (await batch.update(pause)).json()).control,{action:'wait',decisionId:'decision-one'});
+ assert.equal((await batch.decide('continue','decision-one','')).status,401);
+ assert.equal((await batch.decide('continue','decision-one',cookie('other@example.test'))).status,404);
+ const crossSite=req('workflow-control','POST',{requestId:batch.requestId,action:'stop'});
+ crossSite.headers.set('origin','https://untrusted.test');
+ assert.equal((await control(crossSite,context)).status,403);
+ assert.equal((await batch.decide('continue','outdated')).status,409);
+ await batch.update({status:'running',stage:'tracking',error:'',failed_count:0,completed_count:0,consecutive_failures:0,result:{cuts:[],errors:[]}});
+ let job=await batch.get();
+ assert.equal(job.status,'paused');assert.equal(job.stage,'aguardando_decisao');
+ assert.equal(job.pendingDecision.id,'decision-one');assert.equal(job.failedCount,1);assert.equal(job.consecutiveFailures,1);
+ assert.equal(job.failureHistory[0].error,pause.cut_error.error);
+ assert.equal((await batch.decide('continue','decision-one')).status,200);
+ job=await batch.get();assert.equal(job.status,'running');assert.equal(job.pendingDecision,null);assert.equal(job.consecutiveFailures,1);
+ assert.deepEqual((await (await batch.update(pause)).json()).control,{action:'continue',decisionId:'decision-one'});
+ assert.equal((await batch.get()).status,'running');
+ await batch.update({...pausedCut(2,'decision-two'),error:'Segundo erro'});
+ await batch.update(pause);
+ job=await batch.get();assert.equal(job.pendingDecision.id,'decision-two');assert.equal(job.failedCount,2);assert.equal(job.consecutiveFailures,2);
+ assert.equal((await batch.decide('continue','decision-one')).status,200,'Duplicate acknowledgement is harmless');
+ assert.equal((await batch.get()).pendingDecision.id,'decision-two');
+ await batch.decide('continue','decision-two');
+ const ready={index:3,titulo:'Salvo',formato:'9:16',files:{videoLegenda:{id:'saved-video'},post:{id:'saved-post'}}};
+ await batch.update({status:'running',stage:'cortes',ready_cut:ready,completed_count:1,consecutive_failures:0,
+  result:{cuts:[ready],errors:[failedCut(1),failedCut(2)],requestedCount:4,completedCount:1,consecutiveFailures:0}});
+ job=await batch.get();assert.equal(job.completedCount,1);assert.equal(job.failedCount,2);assert.equal(job.consecutiveFailures,0);
+ await batch.update({status:'running',stage:'tracking',completed_count:0,failed_count:0,consecutive_failures:2,result:{cuts:[],errors:[]}});
+ job=await batch.get();assert.equal(job.completedCount,1);assert.equal(job.failedCount,2);assert.equal(job.consecutiveFailures,0);
+ assert.equal(job.result.cuts.length,1);assert.equal(job.result.errors.length,2);
+ assert.equal(job.callbackHash,undefined);
+});
+
+test('stop is sticky independently of continue acknowledgements and returns no old decision ID while running',async()=>{
+ const batch=await controlledBatch();
+ await batch.update(pausedCut(1,'stop-decision'));
+ await batch.decide('continue','stop-decision');
+ assert.equal((await batch.decide('stop')).status,200);
+ let job=await batch.get();assert.equal(job.status,'stopping');assert.equal(job.stopRequested,true);assert.equal(job.pendingDecision,null);
+ assert.equal((await batch.decide('continue','stop-decision')).status,409);
+ const response=await batch.update({status:'running',stage:'tracking',result:{cuts:[],errors:[]}});
+ assert.deepEqual((await response.json()).control,{action:'stop',decisionId:null});
+ assert.equal((await batch.get()).status,'stopping');
+ assert.deepEqual((await (await batch.update(pausedCut(1,'stop-decision'))).json()).control,{action:'stop',decisionId:'stop-decision'});
+ await batch.update({status:'cancelled',stage:'cancelado',error:'Parada solicitada',result:{cuts:[],errors:[failedCut(1)],requestedCount:4,completedCount:0,stoppedReason:'Parada solicitada'}});
+ await batch.update({status:'running',stage:'tracking',result:{cuts:[],errors:[]}});
+ job=await batch.get();assert.equal(job.status,'cancelled');assert.equal(job.failedCount,1);assert.equal(job.result.stoppedReason,'Parada solicitada');
+ const transcription=await start(req('workflow-start','POST',{kind:'transcribe',videoUrl:'https://youtu.be/PMGxFRAea_I'}),context);
+ const {requestId}=await transcription.json();
+ assert.equal((await control(req('workflow-control','POST',{requestId,action:'stop'}),context)).status,400);
+});
+
+test('three consecutive failures remain terminal with complete partial history and counters',async()=>{
+ const batch=await controlledBatch();
+ for(let index=1;index<=2;index++) {await batch.update(pausedCut(index,`third-${index}`));await batch.decide('continue',`third-${index}`);}
+ await batch.update({...pausedCut(3,'unused'),status:'error',stage:'erro',decision_id:undefined,error:'Interrompido após 3 falhas consecutivas',
+  result:{...pausedCut(3,'unused').result,stoppedReason:'Interrompido após 3 falhas consecutivas'}});
+ await batch.update(pausedCut(2,'third-2'));
+ const job=await batch.get();
+ assert.equal(job.status,'error');assert.equal(job.failedCount,3);assert.equal(job.consecutiveFailures,3);assert.equal(job.pendingDecision,null);
+ assert.equal(job.failureHistory.length,3);assert.equal(job.result.errors.length,3);assert.match(job.result.stoppedReason,/3 falhas/);
+ assert.equal((await batch.decide('continue','unused')).status,409);
+});
+
+test('simultaneous continue and stop from separate browsers leave an irreversible stop latch',async()=>{
+ for(const stopFirst of [false,true]) {
+  const batch=await controlledBatch();
+  await batch.update(pausedCut(1,'concurrent-decision'));
+  const actions=stopFirst?['stop','continue']:['continue','stop'];
+  const responses=await Promise.all(actions.map(action=>batch.decide(action,'concurrent-decision')));
+  assert.equal(responses[actions.indexOf('stop')].status,200);
+  assert.ok([200,409].includes(responses[actions.indexOf('continue')].status));
+  assert.equal((await batch.get()).status,'stopping');
+  const callback=await batch.update({status:'running',stage:'tracking'});
+  assert.deepEqual((await callback.json()).control,{action:'stop',decisionId:null});
+  assert.equal((await batch.decide('continue','concurrent-decision')).status,409);
+ }
+});
+
+test('a saved video awaiting its cover remains visible but never enters the publication feed',async()=>{
+ const batch=await controlledBatch();
+ const draft={index:1,titulo:'Vídeo preservado',formato:'9:16',cover:{version:1,template_id:'03_close',title:'CAPA'},
+  pendingReason:'cover',error:'Não foi possível montar a capa',files:{videoLegenda:{id:'draft-video'},srt:{id:'draft-srt'},post:{id:'draft-post'}}};
+ const pause={...pausedCut(1,'cover-decision'),result:{...pausedCut(1,'cover-decision').result,pendingCuts:[draft]}};
+ await batch.update(pause);
+ let job=await batch.get();
+ assert.equal(job.completedCount,0);assert.equal(job.pendingCount,1);assert.deepEqual(job.result.pendingCuts,[draft]);
+ await batch.decide('continue','cover-decision');
+ await batch.update({status:'running',stage:'tracking',result:{cuts:[],errors:[],pendingCuts:[]}});
+ job=await batch.get();assert.equal(job.pendingCount,1);assert.deepEqual(job.result.pendingCuts,[draft]);
+ const folderId=renderBody().folderId;
+ const feed=await (await publisherFolder(new Request(`https://os4.example.test/.netlify/functions/publisher-folder?folderId=${folderId}`,
+  {headers:{Authorization:`Bearer ${publisherToken(callbackSecret,folderId)}`}}),context)).json();
+ assert.equal(feed.completedCount,0);assert.equal(feed.readyCount,0);assert.equal(feed.pendingCount,1);assert.equal(feed.cuts.length,0);
+ assert.equal(feed.pendingCuts,undefined,'Folder capability does not expose drafts for publishing');
+ const final={...draft,files:{...draft.files,capa:{id:'finished-cover'}}};delete final.pendingReason;delete final.error;
+ await batch.update({status:'running',stage:'cortes',ready_cut:final,completed_count:1,consecutive_failures:0,
+  result:{cuts:[final],errors:[],pendingCuts:[],requestedCount:4,completedCount:1}});
+ job=await batch.get();assert.equal(job.completedCount,1);assert.equal(job.pendingCount,0);assert.deepEqual(job.result.pendingCuts,[]);assert.equal(job.consecutiveFailures,0);
 });
 
 

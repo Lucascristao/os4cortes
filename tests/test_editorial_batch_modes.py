@@ -7,7 +7,6 @@ import unittest
 from unittest.mock import Mock, patch
 
 from processor import render_batch as batch
-from processor.editorial_plan import editorial_fingerprint
 from processor.lower_third import LowerThird
 
 
@@ -38,15 +37,30 @@ class FakeUploader:
     def __init__(self):
         self.downloads = []
         self.uploads = []
+        self.checkpoints = {}
 
     def download(self, file_id, path, progress_cb=None):
         self.downloads.append(file_id)
-        Path(path).write_text("{}", encoding="utf-8")
+        if file_id.startswith("checkpoint-"):
+            content = next(value[1] for value in self.checkpoints.values() if value[0] == file_id)
+            Path(path).write_bytes(content)
+        elif file_id.startswith("file-"):
+            Path(path).write_bytes(self.uploads[int(file_id.split("-")[-1]) - 1]["data"])
+        else:
+            Path(path).write_text("{}", encoding="utf-8")
 
     def upload(self, path, *, folder_id):
         path = Path(path)
         self.uploads.append({"name": path.name, "data": path.read_bytes(), "folder": folder_id})
         return f"file-{len(self.uploads)}"
+
+    def find_file_by_name(self, name, *, folder_id):
+        return self.checkpoints.get((folder_id, name), (None,))[0]
+
+    def upsert(self, path, name, *, folder_id):
+        file_id = self.find_file_by_name(name, folder_id=folder_id) or f"checkpoint-{len(self.checkpoints)+1}"
+        self.checkpoints[folder_id, name] = (file_id, Path(path).read_bytes())
+        return file_id
 
 
 class Harness:
@@ -163,7 +177,7 @@ class EditorialBatchModesTests(unittest.TestCase):
             batch.garantir_archivo_black.assert_not_called()
             self.assertAlmostEqual(h.tracking.call_args.args[1], 10.72)
             self.assertEqual(h.cinematic.call_args.kwargs["fade_out_visual"], True)
-            self.assertNotIn("errors", h.completed.call_args.args[1])
+            self.assertEqual(h.completed.call_args.args[1]["errors"], [])
             self.assertIn("2 cortes concluídos", h.completed.call_args.args[0])
 
     def test_selected_mode_controls_routing_when_a_simple_package_contains_an_incidental_plan(self):
@@ -188,14 +202,65 @@ class EditorialBatchModesTests(unittest.TestCase):
                     self.assertEqual((result["formato"], result["destino"]), ("16:9", "youtube"))
                 h.tracking.assert_not_called()
 
-    def test_explicit_simple_keeps_legacy_fail_fast(self):
+    def test_simple_render_failures_use_visible_batch_failure_control(self):
         with Harness([cut(editorial=False), cut(editorial=False)], mode="simple", key="") as h:
             h.tracking.side_effect = RuntimeError("legacy render failed")
-            with self.assertRaisesRegex(RuntimeError, "legacy render failed"):
-                batch.main()
-            self.assertEqual(h.tracking.call_count, 1)
+            self.assertEqual(batch.main(), 1)
+            self.assertEqual(h.tracking.call_count, 2)
             h.renderer.assert_not_called()
-            h.failed.assert_called_once()
+            h.failed.assert_not_called()
+            self.assertEqual(h.emit.call_args.kwargs["result"]["failedCount"], 2)
+            self.assertEqual(h.emit.call_args.kwargs["status"], "error")
+
+    def test_three_consecutive_failures_stop_both_modes_before_fourth_cut(self):
+        for mode in ("simple", "editorial"):
+            with self.subTest(mode=mode), Harness([cut(label="Falha") for _ in range(5)], mode=mode) as h:
+                h.tracking.side_effect = RuntimeError("Falha de render")
+                self.assertEqual(batch.main(), 1)
+                renderer = h.renderer if mode == "editorial" else h.tracking
+                self.assertEqual(renderer.call_count, 3)
+                terminal = h.emit.call_args
+                self.assertEqual(terminal.kwargs["status"], "error")
+                self.assertEqual(terminal.kwargs["consecutive_failures"], 3)
+                self.assertEqual(terminal.kwargs["completed_count"], 0)
+                self.assertEqual(terminal.args[1], 10.0, "tentativas sem upload não avançam o lote")
+                self.assertIn("3 falhas consecutivas", terminal.kwargs["error"])
+                result = json.loads((h.out / "render-batch-result.json").read_text(encoding="utf-8"))
+                self.assertEqual([error["index"] for error in result["errors"]], [1, 2, 3])
+                self.assertIn("stoppedReason", result)
+                self.assertFalse(h.work.exists())
+
+    def test_successful_drive_save_resets_failure_streak(self):
+        values = [cut(label=label) for label in ("Falha", "Falha", "Aceita", "Falha", "Falha")]
+        with Harness(values, mode="editorial") as h:
+            self.assertEqual(batch.main(), 0)
+            self.assertEqual(h.renderer.call_count, 5)
+            result = h.completed.call_args.args[1]
+            self.assertEqual(result["completedCount"], 1)
+            self.assertEqual(result["failedCount"], 4)
+            self.assertEqual(result["consecutiveFailures"], 2)
+
+    def test_simple_upload_error_is_visible_and_does_not_mark_incomplete_cut_ready(self):
+        with Harness([cut(editorial=False), cut(editorial=False)], mode="simple", key="") as h:
+            original = h.uploader.upload
+            def upload(path, **kwargs):
+                if Path(path).name.startswith("corte_01_") and str(path).endswith(".srt"):
+                    raise RuntimeError("Drive recusou arquivo")
+                return original(path, **kwargs)
+            h.uploader.upload = upload
+            self.assertEqual(batch.main(), 0)
+            result = h.completed.call_args.args[1]
+            self.assertEqual([row["index"] for row in result["cuts"]], [2])
+            self.assertEqual(result["errors"][0]["uploadedFiles"], {"video": "file-1"})
+            ready = [event.kwargs["ready_cut"] for event in h.emit.call_args_list if "ready_cut" in event.kwargs]
+            self.assertEqual([row["index"] for row in ready], [2])
+
+    def test_stop_response_before_upload_preserves_cut_results_without_uploading(self):
+        with Harness([cut()], mode="editorial") as h:
+            h.emit.side_effect = lambda stage, *args, **kwargs: {"control": {"action": "stop", "decisionId": None}} if stage == "drive" else None
+            self.assertEqual(batch.main(), 1)
+            self.assertEqual(h.uploader.uploads, [])
+            self.assertEqual(h.emit.call_args.kwargs["status"], "cancelled")
 
     def test_simple_cover_changes_reuse_source_video_for_both_formats(self):
         for aspect in ("9:16", "16:9"):
@@ -283,6 +348,43 @@ class EditorialBatchModesTests(unittest.TestCase):
             self.assertEqual(result["errors"][0]["index"], 1)
             self.assertEqual(result["cuts"][0]["render"]["first_original_clip_seconds"], 0)
 
+    def test_cover_failure_keeps_drive_video_pending_and_next_run_retries_only_cover(self):
+        for mode in ("simple", "editorial"):
+            with self.subTest(mode=mode), Harness([cut(editorial=mode == "editorial")], mode=mode) as h:
+                default_cover = batch.render_cover.side_effect
+                default_render = h.renderer.side_effect
+                if mode == "simple":
+                    batch.render_cover.side_effect = batch.CoverError("Título de capa não cabe")
+                else:
+                    def no_cover(*args, **kwargs):
+                        result = default_render(*args, **kwargs)
+                        result["capa"] = None
+                        result["cover_error"] = "Título de capa não cabe"
+                        return result
+                    h.renderer.side_effect = no_cover
+                self.assertEqual(batch.main(), 1)
+                terminal = h.emit.call_args.kwargs["result"]
+                self.assertEqual(terminal["completedCount"], 0)
+                self.assertEqual(len(terminal["pendingCuts"]), 1)
+                self.assertTrue(terminal["pendingCuts"][0]["coverPending"])
+                self.assertNotIn("capa", terminal["pendingCuts"][0]["files"])
+                self.assertTrue(any(row["name"].endswith(".mp4") for row in h.uploader.uploads))
+                self.assertFalse(any("ready_cut" in call.kwargs for call in h.emit.call_args_list))
+                renderer = h.renderer if mode == "editorial" else h.tracking
+                renderer.assert_called_once()
+                upload_count = len(h.uploader.uploads)
+                batch.render_cover.side_effect = default_cover
+                updated = cut(editorial=mode == "editorial")
+                updated["cover"] = {"version": 1, "template_id": "01_central", "title": "TÍTULO MENOR"}
+                h.argv[h.argv.index("--cuts-json") + 1] = json.dumps([updated])
+                self.assertEqual(batch.main(), 0)
+                renderer.assert_called_once()
+                self.assertEqual(len(h.uploader.uploads), upload_count + 1, "retomada envia somente a capa")
+                result = h.completed.call_args.args[1]
+                self.assertEqual(result["completedCount"], 1)
+                self.assertEqual(result["pendingCuts"], [])
+                self.assertIn("capa", result["cuts"][0]["files"])
+
     def test_editorial_cover_upload_failure_never_emits_ready_cut(self):
         with Harness([cut()], mode="editorial") as h:
             upload = h.uploader.upload
@@ -293,6 +395,31 @@ class EditorialBatchModesTests(unittest.TestCase):
             h.uploader.upload = fail_cover
             self.assertEqual(batch.main(), 1)
             self.assertFalse(any("ready_cut" in call.kwargs for call in h.emit.call_args_list))
+
+    def test_cover_upload_failure_preserves_pending_video_and_retry_uploads_only_cover(self):
+        for mode in ("simple", "editorial"):
+            with self.subTest(mode=mode), Harness([cut(editorial=mode == "editorial")], mode=mode) as h:
+                original_upload = h.uploader.upload
+                def upload(path, **kwargs):
+                    if str(path).endswith("_capa.jpg"):
+                        raise RuntimeError("Drive recusou somente a capa")
+                    return original_upload(path, **kwargs)
+                h.uploader.upload = upload
+                self.assertEqual(batch.main(), 1)
+                result = h.emit.call_args.kwargs["result"]
+                self.assertEqual(result["completedCount"], 0)
+                self.assertEqual(len(result["pendingCuts"]), 1)
+                self.assertIn("video", result["pendingCuts"][0]["files"])
+                self.assertNotIn("capa", result["pendingCuts"][0]["files"])
+                self.assertIn("somente a capa", result["pendingCuts"][0]["pendingReason"])
+                renderer = h.renderer if mode == "editorial" else h.tracking
+                renderer.assert_called_once()
+                count = len(h.uploader.uploads)
+                h.uploader.upload = original_upload
+                self.assertEqual(batch.main(), 0)
+                renderer.assert_called_once()
+                self.assertEqual(len(h.uploader.uploads), count + 1)
+                self.assertEqual(h.completed.call_args.args[1]["pendingCuts"], [])
 
     def test_editorial_routes_formats_and_exact_plan_without_silent_span_adjustment(self):
         cuts = [cut(), cut(aspect="16:9")]
@@ -308,7 +435,8 @@ class EditorialBatchModesTests(unittest.TestCase):
                 self.assertEqual(call.kwargs["aspect"], cuts[index]["formato"])
                 self.assertEqual(call.kwargs["lower_third"], LowerThird("crop", .30))
                 self.assertEqual(call.kwargs["font_dir"], h.root/"fonts")
-                self.assertEqual(call.kwargs["voice_dir"], h.cache/editorial_fingerprint(expected[index]["editorial"])/"voice")
+                voice_key = batch.voice_cache_identity(expected[index]["editorial"], h.cache / "voice-identity")[0]
+                self.assertEqual(call.kwargs["voice_dir"], h.cache/"voice"/voice_key)
             self.assertFalse(h.work.exists())
             self.assertTrue(list(h.cache.rglob("accepted.wav")))
 
@@ -387,7 +515,7 @@ class EditorialBatchModesTests(unittest.TestCase):
             self.assertNotIn("2 cortes concluídos", detail)
             self.assertEqual([error["index"] for error in result["errors"]], [1])
             self.assertEqual([row["index"] for row in result["cuts"]], [2])
-            self.assertEqual(len(list(h.cache.rglob("accepted.wav"))), 2)
+            self.assertEqual(len(list(h.cache.rglob("accepted.wav"))), 1, "rótulo da fonte não muda identidade de voz")
             self.assertFalse(h.work.exists())
             self.assertEqual(json.loads((h.out/"render-batch-result.json").read_text(encoding="utf-8"))["errors"], result["errors"])
 
@@ -424,7 +552,8 @@ class EditorialBatchModesTests(unittest.TestCase):
         save = workflow[:workflow.index("actions/cache/save@v4")].split("      - name:")[-1]
         self.assertIn("always()", save)
         self.assertIn("${{ inputs.video_file_id }}-${{ github.run_id }}-${{ github.run_attempt }}", workflow)
-        self.assertNotIn("actions/upload-artifact", workflow)
+        self.assertNotIn("path: .editorial-cache\n          retention", workflow)
+        self.assertIn("path: output/render-batch-result.json", workflow)
 
 
 if __name__ == "__main__":

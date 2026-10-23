@@ -382,6 +382,11 @@ export default safeHandler(async (request, context) => {
     stage: "fila",
     detail: "Enviado para o GitHub Actions",
     percent: 0,
+    completedCount: 0,
+    failedCount: 0,
+    consecutiveFailures: 0,
+    failureHistory: [],
+    pendingDecision: null,
     createdAt: now,
     updatedAt: now,
   };

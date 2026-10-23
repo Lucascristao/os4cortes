@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import unicodedata
 from functools import lru_cache
+from itertools import combinations
 from pathlib import Path
 
 import numpy as np
@@ -482,34 +483,42 @@ def _font(size, credit=False):
 
 
 def _line_options(text, max_lines):
-    yield [text]
-    if max_lines > 1:
-        words = text.split()
-        for index in range(1, len(words)):
-            yield [" ".join(words[:index]), " ".join(words[index:])]
+    words = text.split()
+    for count in range(1, min(max_lines, len(words))+1):
+        for breaks in combinations(range(1, len(words)), count-1):
+            edges = (0, *breaks, len(words))
+            yield [" ".join(words[start:end]) for start, end in zip(edges, edges[1:])]
 
 
 def _fit_title(text, preset):
     box = preset["title"]["box"]
     width, height = box[2]-box[0], box[3]-box[1]
     draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    for size in range(preset["title"]["size"], preset["title"]["min"]-1, -1):
-        font = _font(size)
-        options = []
-        for lines in _line_options(text, preset["title"]["lines"]):
-            widths = [draw.textlength(line, font=font) for line in lines]
-            line_height = size
-            gap = round(size*.22)
-            if max(widths) <= width-4 and len(lines)*line_height+(len(lines)-1)*gap <= height:
-                # Natural two-line balance without splitting words or shrinking below the floor.
-                imbalance = abs(widths[0]-widths[-1]) if len(lines) == 2 else width
-                options.append((max(widths), imbalance, lines))
-        if options:
-            if preset["title"]["lines"] > 1 and len(text.split()) >= 4:
-                two = [option for option in options if len(option[2]) == 2]
-                options = two or options
-            chosen = min(options, key=lambda option: (option[1], option[0]))
-            return {"font_size": size, "lines": chosen[2], "line_count": len(chosen[2]), "box": box}
+    preferred_lines = preset["title"]["lines"]
+    limits = [preferred_lines]
+    # Use the existing title box's unused height only after the preset's normal
+    # wrapping fails. The one-line close design and minimum type size stay fixed.
+    if preferred_lines == 2:
+        minimum = preset["title"]["min"]
+        if 3*minimum+2*round(minimum*.22) <= height:
+            limits.append(3)
+    for line_limit in limits:
+        for size in range(preset["title"]["size"], preset["title"]["min"]-1, -1):
+            font = _font(size)
+            options = []
+            for lines in _line_options(text, line_limit):
+                widths = [draw.textlength(line, font=font) for line in lines]
+                line_height = size
+                gap = round(size*.22)
+                if max(widths) <= width-4 and len(lines)*line_height+(len(lines)-1)*gap <= height-4:
+                    imbalance = max(widths)-min(widths) if len(lines) > 1 else width
+                    options.append((max(widths), imbalance, lines))
+            if options:
+                if preferred_lines > 1 and len(text.split()) >= 4:
+                    two = [option for option in options if len(option[2]) == 2]
+                    options = two or options
+                chosen = min(options, key=lambda option: (option[1], option[0]))
+                return {"font_size": size, "lines": chosen[2], "line_count": len(chosen[2]), "box": box}
     raise CoverError("cover.title: título não cabe com legibilidade mínima; reduza o título da capa.")
 
 
@@ -602,10 +611,10 @@ def _draw_title(canvas, text, preset, fitted):
         draw.rounded_rectangle(band, radius=10, fill=(*ink, 210))
         draw.rounded_rectangle((band[0], band[1]+16, band[0]+4, band[3]-16), radius=2, fill=yellow)
     align = preset["title"]["align"]
-    x, anchor = ((left+right)/2, "mt") if align == "center" else (right, "rt") if align == "right" else (left, "lt")
+    x, anchor = ((left+right)/2, "mt") if align == "center" else (right-2, "rt") if align == "right" else (left+2, "lt")
     boxes = []
     for index, line in enumerate(fitted["lines"]):
-        y = top+index*round(fitted["font_size"]*1.22)
+        y = top+2+index*round(fitted["font_size"]*1.22)
         color = yellow if index else white
         # The close's last word carries the same accent as its approved reference.
         if band and " " in line:

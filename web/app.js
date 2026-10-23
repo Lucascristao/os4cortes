@@ -38,6 +38,8 @@ let sessaoTranscricao = null;
 let pollTimer = null;
 let cortesImportados = [];
 let lowerThirdVideoKey = "";
+let ultimoJob = null;
+let enviandoControle = false;
 
 const STORAGE_SESSION = "os4_transcription_session";
 const STORAGE_JOB = "os4_current_job";
@@ -152,6 +154,10 @@ function tituloEtapa(stage, kind) {
     cortes: "Finalizando cortes",
     concluido: kind === "render" ? "Cortes concluídos" : "Transcrição concluída",
     erro: "O processamento encontrou um erro",
+    aguardando_decisao: "Corte com falha — aguardando sua decisão",
+    retomando: "Retomando o processamento",
+    interrompendo: "Encerrando o processamento",
+    cancelado: "Processamento interrompido",
   };
   return mapa[stage] || (kind === "render" ? "Gerando cortes" : "Processando vídeo");
 }
@@ -402,6 +408,7 @@ btnSalvarGithub?.addEventListener("click", async () => {
 });
 
 function limparFluxo() {
+  ultimoJob = null;
   sessaoTranscricao = null;
   cortesImportados = [];
   localStorage.removeItem(STORAGE_SESSION);
@@ -507,7 +514,11 @@ function alternarBotaoCancelar(visivel) {
   }
 }
 
-function cancelarJobAtual() {
+async function cancelarJobAtual() {
+  let local = null;
+  try { local = JSON.parse(localStorage.getItem(STORAGE_JOB) || "null"); } catch {}
+  if (local?.kind === "render") return controlarCortes("stop");
+  // Transcription does not implement cooperative stop. State this explicitly.
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
@@ -524,18 +535,86 @@ function cancelarJobAtual() {
   atualizarProgresso({
     percent: 0,
     title: "Aguardando processamento",
-    detail: "Processamento cancelado. Cole a URL e inicie a transcrição.",
+    detail: "Acompanhamento encerrado neste navegador. A transcrição já iniciada continua no GitHub Actions.",
     time: "",
   });
 }
 
-btnCancelarJob?.addEventListener("click", () => {
-  if (confirm("Deseja cancelar o acompanhamento e destravar os botões para tentar novamente?")) {
-    cancelarJobAtual();
+btnCancelarJob?.addEventListener("click", cancelarJobAtual);
+
+async function controlarCortes(action) {
+  if (enviandoControle) return;
+  let local = null;
+  try { local = JSON.parse(localStorage.getItem(STORAGE_JOB) || "null"); } catch {}
+  if (!local?.id || local.kind !== "render") return;
+  const message = document.getElementById("cutsControlMessage");
+  enviandoControle = true;
+  for (const id of ["btnContinuarCortes", "btnPararCortes"]) { const button = document.getElementById(id); if (button) button.disabled = true; }
+  if (btnCancelarJob) btnCancelarJob.disabled = true;
+  if (message) message.textContent = action === "stop" ? "Enviando pedido de parada…" : "Confirmando continuação…";
+  try {
+    await api("/.netlify/functions/workflow-control", { method: "POST", body: JSON.stringify({
+      requestId: local.id, action, decisionId: ultimoJob?.pendingDecision?.id || null,
+    }) });
+    if (message) message.textContent = action === "stop"
+      ? "Parada solicitada. Aguarde a confirmação do processador; os cortes já salvos serão preservados."
+      : "Continuação confirmada. O corte com falha será pulado; as falhas consecutivas só zeram quando outro corte for salvo.";
+    const data = await api(`/.netlify/functions/workflow-status?id=${encodeURIComponent(local.id)}`);
+    atualizarTelaJob(data.job, "render");
+  } catch (error) {
+    if (message) message.textContent = `Não foi possível confirmar a ação: ${error.message}. O acompanhamento continua ativo.`;
+  } finally {
+    enviandoControle = false;
+    for (const id of ["btnContinuarCortes", "btnPararCortes"]) { const button = document.getElementById(id); if (button) button.disabled = false; }
+    if (btnCancelarJob) btnCancelarJob.disabled = false;
   }
-});
+}
+
+document.getElementById("btnContinuarCortes")?.addEventListener("click", () => controlarCortes("continue"));
+document.getElementById("btnPararCortes")?.addEventListener("click", () => controlarCortes("stop"));
+
+function atualizarFalhasCortes(job) {
+  document.getElementById("cutsLiveProgress")?.classList.remove("hidden");
+  const errors = Array.isArray(job.failureHistory) ? job.failureHistory : job.result?.errors || [];
+  const completed = job.completedCount ?? job.result?.completedCount ?? job.result?.cuts?.length ?? 0;
+  const failed = job.failedCount ?? errors.length;
+  const streak = job.consecutiveFailures ?? job.result?.consecutiveFailures ?? 0;
+  const pending = job.pendingCount ?? job.result?.pendingCuts?.length ?? 0;
+  const summary = document.getElementById("cutsLiveSummary");
+  if (summary) summary.textContent = `${completed}/${job.totalCuts || job.result?.requestedCount || "?"} salvos no Google Drive${pending ? ` • ${pending} vídeo(s) salvo(s); capa pendente` : ""} • ${failed} com falha • ${streak} falha(s) seguida(s)`;
+  const panel = document.getElementById("cutsFailurePanel");
+  if (errors.length) panel?.classList.remove("hidden"); else panel?.classList.add("hidden");
+  const title = document.getElementById("cutsFailureTitle");
+  if (title) title.textContent = job.status === "paused" ? "O lote está pausado após uma falha"
+    : streak >= 3 ? "Lote interrompido após 3 falhas consecutivas" : "Histórico de falhas do lote";
+  const notice = document.getElementById("cutsFailureNotice");
+  if (notice) notice.textContent = job.status === "paused"
+    ? "Escolha parar ou pular o corte com falha e continuar. Após 3 falhas seguidas, o lote para automaticamente."
+    : ["error", "cancelled"].includes(job.status) ? job.result?.stoppedReason || job.error || job.detail || "Processamento interrompido; os cortes já salvos foram preservados."
+    : job.stopRequested ? "Parada solicitada. Aguardando o encerramento do processador."
+      : "Os erros permanecem neste histórico. Continuar pula o corte com falha; somente um corte salvo zera as falhas consecutivas.";
+  const list = document.getElementById("cutsFailureHistory");
+  if (list) {
+    list.innerHTML = "";
+    for (const error of errors) {
+      const item = document.createElement("li");
+      item.textContent = `Corte ${error.index} — ${error.titulo || "Sem título"}: ${error.error || "Falha no processamento."}`;
+      list.appendChild(item);
+    }
+  }
+  const actions = document.getElementById("cutsFailureActions");
+  if (job.status === "paused" && job.pendingDecision?.id && !job.stopRequested) actions?.classList.remove("hidden");
+  else actions?.classList.add("hidden");
+}
 
 function atualizarTelaJob(job, kind) {
+  ultimoJob = job;
+  if (btnCancelarJob) btnCancelarJob.textContent = kind === "render" ? "Parar processamento" : "Encerrar acompanhamento (transcrição continua)";
+  if (kind === "render") {
+    btnGerarCortes.textContent = job.status === "paused" ? "Aguardando sua decisão" : job.status === "stopping" ? "Encerrando…" : "Gerando cortes…";
+    atualizarFalhasCortes(job);
+    if (job.result?.cuts && (job.result.cuts.length || job.result.errors?.length || job.result.pendingCuts?.length)) mostrarResultados(job.result, false, { live: true });
+  } else btnTranscrever.textContent = "Processando…";
   const timeText = job.current != null && job.total
     ? `${tempo(job.current)} / ${tempo(job.total)}`
     : job.cut && job.totalCuts
@@ -558,7 +637,8 @@ function atualizarTelaJob(job, kind) {
   } else {
     setStatus("video", "Pronto", "ok");
     setStatus("transcricao", "Pronta", "ok");
-    setStatus("cortes", job.stage === "concluido" ? "Concluídos" : (job.detail || "Processando"), job.stage === "concluido" ? "ok" : "active");
+    const failed = job.failedCount || job.result?.errors?.length || 0;
+    setStatus("cortes", job.status === "paused" ? "Aguardando decisão" : job.stage === "concluido" ? (failed ? "Concluído com falhas" : "Concluídos") : (job.detail || "Processando"), failed ? "error" : job.stage === "concluido" ? "ok" : "active");
   }
 }
 
@@ -567,6 +647,7 @@ function acompanharJob(id, kind) {
   let consulting = false;
   btnTranscrever.disabled = true;
   btnGerarCortes.disabled = true;
+  if (kind === "render") btnGerarCortes.textContent = "Gerando cortes…";
   alternarBotaoCancelar(true);
 
   const consultar = async () => {
@@ -610,8 +691,8 @@ function acompanharJob(id, kind) {
         localStorage.removeItem(STORAGE_JOB);
         alternarBotaoCancelar(false);
         setStatus(kind === "render" ? "cortes" : "video", "Erro", "error");
-        atualizarProgresso({ percent: job.percent || 100, title: "Processamento interrompido", detail: job.error || job.detail || "Falha no processamento." });
-        if (job.result?.cuts && job.result?.errors?.length) mostrarResultados(job.result, false);
+        atualizarProgresso({ percent: job.percent ?? 0, title: "Processamento interrompido", detail: job.error || job.detail || "Falha no processamento." });
+        if (job.result?.cuts) mostrarResultados(job.result, false, { interrupted: true });
         btnTranscrever.disabled = false;
         btnTranscrever.textContent = "Transcrever";
         btnGerarCortes.disabled = false;
@@ -624,6 +705,8 @@ function acompanharJob(id, kind) {
       progressDetail.textContent = [401, 403].includes(erro.status)
         ? "Sua sessão expirou. Entre novamente para acompanhar o processamento."
         : `Não foi possível atualizar o andamento: ${erro.message}. Tentando novamente…`;
+      const liveDetail = document.getElementById("cutsLiveDetail");
+      if (kind === "render" && liveDetail) liveDetail.textContent = progressDetail.textContent;
       if ([401, 403, 404].includes(erro.status)) {
         clearInterval(pollTimer);
         pollTimer = null;
@@ -651,11 +734,7 @@ function retomarJob() {
       localStorage.removeItem(STORAGE_JOB);
       return;
     }
-    // Se o job salvo no navegador for anterior a 5 minutos, descarta para evitar travamento
-    if (job.timestamp && (Date.now() - Number(job.timestamp) > 5 * 60 * 1000)) {
-      localStorage.removeItem(STORAGE_JOB);
-      return;
-    }
+    // Long batches and paused decisions remain resumable after a page reload.
     if (job.kind === "transcribe") {
       if (videoUrl) videoUrl.value = job.videoUrl || "";
       lowerThirdVideoKey = chaveVideo(job.videoUrl);
@@ -1653,6 +1732,11 @@ btnGerarCortes?.addEventListener("click", async () => {
   }
   btnGerarCortes.disabled = true;
   btnGerarCortes.textContent = "Iniciando...";
+  ultimoJob = null;
+  document.getElementById("cutsFailurePanel")?.classList.add("hidden");
+  document.getElementById("cutsFailureActions")?.classList.add("hidden");
+  const controlMessage = document.getElementById("cutsControlMessage");
+  if (controlMessage) controlMessage.textContent = "";
   resultsSection.classList.add("hidden");
   document.getElementById("cutsLiveProgress")?.classList.remove("hidden");
   setStatus("cortes", "Preparando", "active");
@@ -1746,16 +1830,17 @@ function resultLink(texto, url, primary = false) {
   return a;
 }
 
-function mostrarResultados(result, autoSend = true) {
+function mostrarResultados(result, autoSend = true, { live = false, interrupted = Boolean(result?.stoppedReason) } = {}) {
   if (!result?.cuts) return;
   const errors = Array.isArray(result.errors) ? result.errors : [];
+  const pendingCuts = Array.isArray(result.pendingCuts) ? result.pendingCuts : [];
   const completedCount = Number.isInteger(result.completedCount) && result.completedCount >= 0
     ? result.completedCount : result.cuts.length;
   const requestedCount = Math.max(completedCount + errors.length,
     Number.isInteger(result.requestedCount) && result.requestedCount >= 0 ? result.requestedCount : result.cuts.length);
-  const partial = errors.length > 0 || completedCount < requestedCount;
+  const partial = errors.length > 0 || pendingCuts.length > 0 || completedCount < requestedCount;
   const summary = partial
-    ? `${completedCount}/${requestedCount} cortes prontos; ${errors.length} com falha`
+    ? `${completedCount}/${requestedCount} cortes prontos; ${errors.length} com falha${pendingCuts.length ? `; ${pendingCuts.length} vídeo(s) com capa pendente` : ""}`
     : `${completedCount}/${requestedCount} cortes concluídos e salvos no Google Drive`;
   resultsList.innerHTML = "";
   resultsDriveLink.href = driveAccountUrl(result.driveFolderUrl || `https://drive.google.com/drive/folders/${result.folderId}`);
@@ -1777,9 +1862,9 @@ function mostrarResultados(result, autoSend = true) {
       links.append(
         resultLink("Vídeo YouTube (16:9)", (corte.files.video || corte.files.videoLegenda).url, true),
         resultLink("Abrir no Drive", (corte.files.video || corte.files.videoLegenda).url),
-        resultLink("SRT", corte.files.srt.url),
         resultLink("Texto da postagem", corte.files.post.url),
       );
+      if (corte.files.srt?.url) links.append(resultLink("SRT", corte.files.srt.url));
       if (corte.files.capa?.url) {
         links.append(resultLink("Capa / Thumbnail", corte.files.capa.url));
       }
@@ -1798,7 +1883,8 @@ function mostrarResultados(result, autoSend = true) {
           resultLink("Abrir no Drive", videoPrincipal.url),
         );
       }
-      links.append(resultLink("SRT", corte.files.srt.url), resultLink("Texto da postagem", corte.files.post.url));
+      if (corte.files.srt?.url) links.append(resultLink("SRT", corte.files.srt.url));
+      if (corte.files.post?.url) links.append(resultLink("Texto da postagem", corte.files.post.url));
       if (corte.files.capa?.url) {
         links.append(resultLink("Capa", corte.files.capa.url));
       }
@@ -1807,7 +1893,26 @@ function mostrarResultados(result, autoSend = true) {
     resultsList.appendChild(card);
   });
 
-  errors.forEach((error) => {
+  pendingCuts.forEach((corte) => {
+    const card = document.createElement("article");
+    card.className = "result-card result-pending";
+    const title = document.createElement("strong");
+    title.textContent = `${String(corte.index).padStart(2, "0")}. ${corte.titulo || "Corte sem título"} — Vídeo salvo; capa pendente`;
+    const message = document.createElement("p");
+    message.className = "hint";
+    message.textContent = `${corte.error || "Não foi possível finalizar a capa."} O vídeo foi preservado no Drive. A publicação aguarda a capa.`;
+    const links = document.createElement("div");
+    links.className = "result-links";
+    const video = corte.files?.videoLegenda || corte.files?.video;
+    const url = file => file?.url || (file?.id ? `https://drive.google.com/file/d/${file.id}/view` : "");
+    if (url(video)) links.append(resultLink("Baixar vídeo salvo", url(video), true), resultLink("Abrir vídeo no Drive", url(video)));
+    if (url(corte.files?.srt)) links.append(resultLink("SRT", url(corte.files.srt)));
+    if (url(corte.files?.post)) links.append(resultLink("Texto da postagem", url(corte.files.post)));
+    card.append(title, message, links);
+    resultsList.appendChild(card);
+  });
+
+  errors.filter(error => !pendingCuts.some(cut => cut.index === error.index)).forEach((error) => {
     const card = document.createElement("article");
     card.className = "result-card result-error";
     const title = document.createElement("strong");
@@ -1824,13 +1929,13 @@ function mostrarResultados(result, autoSend = true) {
     localStorage.setItem(STORAGE_RESULTS, JSON.stringify(result));
   } catch {}
 
-  document.getElementById("cutsLiveProgress")?.classList.add("hidden");
+  if (!live && !errors.length && !interrupted) document.getElementById("cutsLiveProgress")?.classList.add("hidden");
   resultsSection.classList.remove("hidden");
-  resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
-  setStatus("cortes", partial ? summary : `${completedCount} concluídos`, errors.length ? "error" : partial ? "active" : "ok");
-  if (partial) {
+  if (!live) resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!live) setStatus("cortes", interrupted ? "Interrompido" : partial ? summary : `${completedCount} concluídos`, interrupted || errors.length ? "error" : partial ? "active" : "ok");
+  if (partial && !live) {
     atualizarProgresso({ percent: requestedCount ? completedCount / requestedCount * 100 : 0,
-      title: errors.length ? "Lote com falhas" : "Cortes prontos", detail: summary });
+      title: interrupted ? "Processamento interrompido" : errors.length ? "Lote com falhas" : "Cortes prontos", detail: result.stoppedReason ? `${result.stoppedReason} ${summary}` : summary });
   }
   if (!result.cuts.length) document.getElementById("publisherAutoBanner")?.classList.add("hidden");
 

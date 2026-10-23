@@ -308,3 +308,10 @@ button:disabled { opacity: .55; cursor: progress; }
   .mini-button { width: auto; }
   .logout-link { margin-left: auto; }
 }
+.cuts-live-summary { color: #e5e7eb; font-weight: 600; margin: 12px 0 0; }
+.cuts-failure-panel { border: 1px solid #b45309; background: rgba(180, 83, 9, .1); border-radius: 10px; padding: 14px; margin-top: 14px; }
+.cuts-failure-panel > strong { color: #fbbf24; }
+.cuts-failure-history { padding-left: 22px; margin: 10px 0; }
+.cuts-failure-history li { margin: 8px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.cuts-failure-panel .button-row { margin-top: 12px; }
+.result-pending { border-color: #b45309; }

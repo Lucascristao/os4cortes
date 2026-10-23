@@ -86,6 +86,7 @@ function harness(saved = {}) {
     fetch: async (path, options = {}) => {
       requests.push({ path, body: options.body ? JSON.parse(options.body) : null });
       const data = path.includes('workflow-start') ? { requestId: 'request' }
+        : path.includes('workflow-control') ? { ok: true }
         : path.includes('workflow-status') ? { job: state.job } : { ok: false };
       return { ok: true, json: async () => data };
     },
@@ -1074,4 +1075,118 @@ test('lote sem êxitos mostra os erros recebidos pelo polling sem enviar à publ
   assert.equal(sent.length, 0);
   assert.ok(h.get('#publisherAutoBanner').className.includes('hidden'));
   assert.equal(JSON.parse(h.storage.get('os4_last_results_view')).errors.length, 2);
+});
+
+test('pausa mostra erro como texto, contadores e decisão; continuar preserva histórico e arquivos salvos',async()=>{
+ const h=harness({'os4_current_job':JSON.stringify({id:'request',kind:'render',timestamp:Date.now()})});
+ const title=resultHeading(h);
+ const error={index:1,titulo:'<img src=x>',error:'Texto muito grande <script>alert(1)</script>'};
+ const result={folderId:'folder',requestedCount:4,completedCount:1,cuts:[readyCut()],errors:[error]};
+ const paused={status:'paused',stage:'aguardando_decisao',percent:31,totalCuts:4,completedCount:1,failedCount:1,consecutiveFailures:1,
+  pendingDecision:{id:'decision-ui',cutError:error},failureHistory:[error],result,detail:'Escolha parar ou continuar'};
+ h.context.atualizarTelaJob(paused,'render');
+ assert.match(h.get('#cutsLiveSummary').textContent,/1\/4 salvos no Google Drive.*1 com falha.*1 falha/);
+ assert.equal(h.get('#btnGerarCortes').textContent,'Aguardando sua decisão');
+ assert.equal(h.get('#cutsFailureHistory').children.length,1);
+ assert.match(h.get('#cutsFailureHistory').children[0].textContent,/<script>alert\(1\)<\/script>/);
+ assert.equal(h.get('#cutsFailureHistory').children[0].children.length,0,'Error markup is displayed as text');
+ assert.equal(h.get('#cutsFailureActions').className.includes('hidden'),false);
+ assert.equal(h.get('#cutsLiveProgress').className.includes('hidden'),false);
+ assert.match(title.textContent,/1\/4 cortes prontos; 1 com falha/);
+ h.state.job={...paused,status:'running',stage:'tracking',pendingDecision:null,detail:'Montando o próximo corte'};
+ await h.get('#btnContinuarCortes').fire('click');
+ const action=h.requests.find(item=>item.path.includes('workflow-control'));
+ assert.deepEqual(action.body,{requestId:'request',action:'continue',decisionId:'decision-ui'});
+ assert.equal(h.get('#cutsFailurePanel').className.includes('hidden'),false);
+ assert.equal(h.get('#cutsFailureHistory').children.length,1);
+ assert.equal(h.get('#cutsFailureActions').className.includes('hidden'),true);
+ assert.match(h.get('#cutsControlMessage').textContent,/Continuação confirmada/);
+ assert.equal(h.get('#btnGerarCortes').textContent,'Gerando cortes…');
+ assert.match(h.get('#cutsLiveSummary').textContent,/1 falha\(s\) seguida/);
+ assert.equal(JSON.parse(h.storage.get('os4_last_results_view')).cuts.length,1);
+});
+
+test('parar geração chama backend e mantém acompanhamento até confirmação do processador',async()=>{
+ const h=harness({'os4_current_job':JSON.stringify({id:'request',kind:'render',timestamp:Date.now()})});
+ h.context.atualizarTelaJob({status:'running',stage:'tracking',totalCuts:4},'render');
+ h.state.job={status:'stopping',stage:'interrompendo',totalCuts:4,stopRequested:true};
+ await h.get('#btnCancelarJob').fire('click');
+ assert.deepEqual(h.requests.find(item=>item.path.includes('workflow-control')).body,{requestId:'request',action:'stop',decisionId:null});
+ assert.equal(JSON.parse(h.storage.get('os4_current_job')).id,'request');
+ assert.equal(h.get('#btnGerarCortes').textContent,'Encerrando…');
+ assert.match(h.get('#cutsControlMessage').textContent,/Aguarde a confirmação do processador/);
+ assert.equal(h.get('#btnCancelarJob').disabled,false);
+});
+
+test('jobs longos mantêm recuperação após reload e três falhas aparecem como interrupção',async()=>{
+ const h=harness({'os4_current_job':JSON.stringify({id:'old-job',kind:'render',timestamp:Date.now()-60*60*1000})});
+ h.state.job={status:'paused',stage:'aguardando_decisao',totalCuts:4,pendingDecision:{id:'old-decision'},
+  failureHistory:[{index:1,titulo:'Primeiro',error:'Falhou'}],failedCount:1,consecutiveFailures:1};
+ h.context.retomarJob();
+ await new Promise(setImmediate);
+ assert.ok(h.requests.some(item=>item.path.includes('workflow-status?id=old-job')));
+ assert.equal(JSON.parse(h.storage.get('os4_current_job')).id,'old-job');
+ h.context.atualizarTelaJob({...h.state.job,status:'error',pendingDecision:null,failedCount:3,consecutiveFailures:3,
+  error:'Interrompido após 3 falhas consecutivas'},'render');
+ assert.match(h.get('#cutsFailureTitle').textContent,/3 falhas consecutivas/);
+ assert.match(h.get('#cutsFailureNotice').textContent,/Interrompido após 3 falhas/);
+ assert.equal(h.get('#cutsFailureActions').className.includes('hidden'),true);
+});
+
+test('falha exclusiva de capa mantém vídeo, SRT e postagem acessíveis sem anunciar corte pronto',()=>{
+ const h=harness();
+ const title=resultHeading(h);
+ const sent=[];h.context.enviarParaPublicadorLocal=result=>sent.push(result);
+ const draft={...readyCut(),index:1,pendingReason:'cover',error:'Capa não coube <b>no espaço</b>'};
+ const error={index:1,titulo:draft.titulo,error:draft.error};
+ const result={folderId:'folder',requestedCount:4,completedCount:0,cuts:[],pendingCuts:[draft],errors:[error]};
+ h.context.atualizarTelaJob({status:'paused',stage:'aguardando_decisao',totalCuts:4,completedCount:0,failedCount:1,pendingCount:1,
+  consecutiveFailures:1,pendingDecision:{id:'cover-ui'},failureHistory:[error],result},'render');
+ assert.match(title.textContent,/0\/4 cortes prontos.*1 vídeo\(s\) com capa pendente/);
+ const card=h.get('#resultsList').querySelector('.result-pending');
+ assert.ok(card);assert.match(card.textContent,/Vídeo salvo; capa pendente/);
+ assert.match(card.textContent,/Capa não coube <b>no espaço<\/b>/);
+ assert.equal(card.querySelectorAll('a').length,4);
+ assert.match(card.querySelector('a').href,/draft|file-videoLegenda/);
+ assert.equal(h.get('#resultsList').querySelectorAll('.result-error').length,0);
+ assert.match(h.get('#cutsLiveSummary').textContent,/1 vídeo\(s\) salvo\(s\); capa pendente/);
+ assert.equal(sent.length,0);
+ assert.equal(h.get('#cutsFailureActions').className.includes('hidden'),false);
+});
+
+test('erro antes de salvar um corte conserva progresso zero sem sugerir conclusão',async()=>{
+ const h=harness();
+ h.state.job={status:'error',stage:'erro',percent:0,error:'Não foi possível iniciar a montagem.'};
+ h.context.acompanharJob('request','render');
+ await new Promise(setImmediate);
+ assert.equal(h.get('#progressPercent').textContent,'0%');
+ assert.match(h.get('#cutsLiveDetail').textContent,/Não foi possível iniciar/);
+ assert.equal(h.get('#btnGerarCortes').disabled,false);
+});
+
+test('parada voluntária sem falhas preserva estado interrompido e resultados de zero ou alguns cortes',async()=>{
+ for(const saved of [0,1]) {
+  const h=harness({'os4_current_job':JSON.stringify({id:'request',kind:'render',timestamp:Date.now()})});
+  const title=resultHeading(h);
+  const result={folderId:'folder',requestedCount:33,completedCount:saved,cuts:saved?[readyCut()]:[],errors:[],
+   stoppedReason:'Processamento interrompido pelo usuário; os cortes já salvos foram preservados.'};
+  h.state.job={status:'cancelled',stage:'cancelado',percent:10+85*saved/33,totalCuts:33,completedCount:saved,
+   result,error:result.stoppedReason};
+  h.context.acompanharJob('request','render');
+  await new Promise(setImmediate);
+  assert.equal(h.get('#cortesStatus').textContent,'Interrompido');
+  assert.equal(h.get('#cortesDot').className,'status-dot error');
+  assert.equal(h.get('#progressTitle').textContent,'Processamento interrompido');
+  assert.equal(h.get('#cutsLiveStage').textContent,'Processamento interrompido');
+  assert.match(h.get('#cutsLiveDetail').textContent,/interrompido pelo usuário/);
+  assert.match(title.textContent,new RegExp(`${saved}/33 cortes prontos; 0 com falha`));
+  assert.equal(h.get('#cutsLiveProgress').className.includes('hidden'),false);
+  assert.equal(h.get('#resultsList').querySelectorAll('.result-card').length,saved);
+  assert.equal(h.get('#btnGerarCortes').disabled,false);
+  assert.equal(h.storage.has('os4_current_job'),false);
+  // Restoring the saved result after a reload preserves the terminal state.
+  h.context.mostrarResultados(result,false);
+  assert.equal(h.get('#cortesStatus').textContent,'Interrompido');
+  assert.equal(h.get('#progressTitle').textContent,'Processamento interrompido');
+ }
 });

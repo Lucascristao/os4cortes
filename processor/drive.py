@@ -98,6 +98,29 @@ class DriveUploader:
                         pass
         raise RuntimeError(f"Falha ao criar pasta '{nome}' no Drive: {ultimo_erro}") from ultimo_erro
 
+    def find_file_by_name(self, name: str, *, folder_id: str | None = None) -> str | None:
+        """Only a successful empty listing means absent; access errors propagate."""
+        def quote(value):
+            return str(value).replace("\\", "\\\\").replace("'", "\\'")
+        response = self.service.files().list(
+            q=f"'{quote(folder_id or self.folder_id)}' in parents and name = '{quote(name)}' and trashed = false",
+            fields="files(id,name)", orderBy="modifiedTime desc", pageSize=1,
+        ).execute(num_retries=3)
+        files = response.get("files")
+        if not isinstance(files, list):
+            raise RuntimeError("Resposta inválida ao localizar arquivo na pasta da sessão do Drive.")
+        return str(files[0]["id"]) if files else None
+
+    def upsert(self, arquivo: str | Path, nome: str | None = None, *, folder_id: str | None = None) -> str:
+        """Replace a session checkpoint without creating a new public artifact."""
+        arquivo = Path(arquivo)
+        file_id = self.find_file_by_name(nome or arquivo.name, folder_id=folder_id)
+        if file_id is None:
+            return self.upload(arquivo, nome, folder_id=folder_id)
+        media = MediaFileUpload(str(arquivo), resumable=True, chunksize=8 * 1024 * 1024)
+        response = self.service.files().update(fileId=file_id, media_body=media, fields="id").execute(num_retries=5)
+        return str(response["id"])
+
     def upload(
         self,
         arquivo: str | Path,

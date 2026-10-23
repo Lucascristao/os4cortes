@@ -9,7 +9,9 @@ Este documento registra o contrato dos minivídeos autorais: pacote, transporte,
 - `saida_suave` deixa de ser descartado ao ler o editor.
 - `normalizar_cortes` valida a propriedade opcional com `normalize_editorial_plan`, incluindo os limites `inicio`/`fim` do corte. Intervalos invalidados por uma edição de tempos falham antes do acesso ao Drive ou do processamento de mídia. Cortes legados não ganham a propriedade `editorial`.
 - `render_batch` usa um modo global por lote: `simple` conserva o render legado e `editorial` exige plano autoral em todos os cortes, sintetiza as cenas narradas e monta sua sequência com os trechos originais.
-- No modo autoral, uma falha de montagem ou upload é registrada por corte, e os seguintes continuam. O resultado contém somente pacotes completos em `cuts`, além de `errors`, `requestedCount` e `completedCount`.
+- Nos dois modos, uma falha pausa o lote e exige a escolha de parar ou pular o corte e continuar. Três falhas consecutivas interrompem o lote; apenas um pacote integralmente salvo zera a sequência. `cuts` contém somente pacotes completos; vídeos preservados sem capa ficam em `pendingCuts`, com seus links, e não são liberados para publicação.
+
+A revisão de 22/10/2026 corrige o encaixe dos textos nas cenas, preserva as vozes originais no Drive e permite retomar somente uma capa pendente. Consulte [falhas e recuperação](failure-recovery.md) para o contrato atualizado e os limites de recuperação das execuções anteriores.
 
 O prompt da interface solicita o pacote com narração e perfil por corte quando o formato autoral está selecionado. A API valida o perfil, a interpretação contextual de cada cena e seus intervalos antes de iniciar o runner; as políticas completas de voz, visual e evidência continuam validadas pelo Python. O workflow transporta esses dados no mesmo pacote, sem nova chamada de planejamento.
 

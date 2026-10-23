@@ -174,6 +174,17 @@
           </div>
           <div class="cuts-live-track"><div id="cutsLiveBar" class="cuts-live-bar"></div></div>
           <p id="cutsLiveDetail" class="cuts-live-detail">O andamento aparecerá aqui.</p>
+          <p id="cutsLiveSummary" class="cuts-live-summary">0 cortes salvos no Google Drive</p>
+          <div id="cutsFailurePanel" class="cuts-failure-panel hidden" role="region" aria-label="Falhas na geração dos cortes">
+            <strong id="cutsFailureTitle">Falhas na geração</strong>
+            <p id="cutsFailureNotice" class="hint"></p>
+            <ol id="cutsFailureHistory" class="cuts-failure-history"></ol>
+            <div id="cutsFailureActions" class="button-row hidden">
+              <button id="btnContinuarCortes" type="button" class="secondary">Pular este corte e continuar</button>
+              <button id="btnPararCortes" type="button" class="secondary">Parar processamento</button>
+            </div>
+            <p id="cutsControlMessage" class="hint" role="status"></p>
+          </div>
         </div>
         <button id="btnGerarCortes" class="generate-button hidden" type="button">Gerar todos os cortes</button>
       </section>

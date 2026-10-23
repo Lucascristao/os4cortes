@@ -133,6 +133,23 @@ class CoverCompositionTests(unittest.TestCase):
             crops.append(report["crops"][0]["source_crop"])
         self.assertEqual(len({tuple(crop) for crop in crops}), 3)
 
+    def test_actual_cut30_title_uses_three_readable_lines_without_losing_words(self):
+        title = "POR QUE TUDO PASSA POR BRASÍLIA?"
+        image, report = compose_cover(self.photo, {"faces": [_face()]},
+                                     cover={"version": 1, "template_id": "03_close", "title": title}, aspect="16:9")
+        typography = report["typography"]
+        self.assertEqual(report["applied_template"], "02_lateral")
+        self.assertEqual(" ".join(typography["lines"]), title)
+        self.assertEqual(typography["line_count"], 3)
+        self.assertGreaterEqual(typography["font_size"], PRESETS["16:9"]["02_lateral"]["title"]["min"])
+        left, top, right, bottom = typography["box"]
+        for bounds in typography["drawn_boxes"]:
+            self.assertGreaterEqual(bounds[0], left)
+            self.assertGreaterEqual(bounds[1], top)
+            self.assertLessEqual(bounds[2], right)
+            self.assertLessEqual(bounds[3], bottom)
+        self.assertEqual(image.size, (1920, 1080))
+
     def test_cover_cache_is_independent_and_title_preflight_precedes_frame_scan(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

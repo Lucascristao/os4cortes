@@ -28,7 +28,9 @@ class PublisherTests(unittest.TestCase):
             progress.emit("cortes", 20, ready_cut={"index": 1})
             stop = progress.start_heartbeat(0.01)
             try:
-                time.sleep(0.04)
+                deadline = time.monotonic() + 1
+                while post.call_count < 2 and time.monotonic() < deadline:
+                    time.sleep(0.01)
                 self.assertGreaterEqual(post.call_count, 2)
                 self.assertIn("ready_cut", post.call_args_list[0].args[0])
                 self.assertNotIn("ready_cut", post.call_args_list[-1].args[0])
