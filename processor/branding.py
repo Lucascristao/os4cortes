@@ -7,7 +7,7 @@ import re
 CHANNEL_NAME = "OS4 de Direita"
 CHANNEL_HANDLE = "@os4dedireita"
 CHANNEL_BADGE = "OS4 DE DIREITA"
-CHANNEL_SIGNATURE = f"Siga {CHANNEL_HANDLE} para mais análises e comentários de direita."
+CHANNEL_SIGNATURE = f"Siga {CHANNEL_HANDLE} para mais insights com análises e comentários."
 
 _URL = re.compile(r"(https?://[^\s<>]+)", re.IGNORECASE)
 _LEGACY_HANDLE = re.compile(r"(?<![\w@])@os4[._]?cortes(?!\w|\.\w)", re.IGNORECASE)
@@ -15,7 +15,8 @@ _LEGACY_HASHTAG = re.compile(r"(?<![\w#])#os4[._]?cortes(?!\w|\.\w)", re.IGNOREC
 _LEGACY_NAME = re.compile(r"(?<![\w/@#\\])os4\s+cortes\b", re.IGNORECASE)
 _LEGACY_SLUG = re.compile(r"(?<![\w/@#\\])os4[._]?cortes(?!\w|\.\w)", re.IGNORECASE)
 _LEGACY_SIGNATURE = re.compile(
-    r"Siga\s+@os4(?:[._]?cortes|dedireita)\s+para mais insights diários sobre negócios e liderança\.?",
+    r"Siga\s+@os4(?:[._]?cortes|dedireita)\s+para mais "
+    r"(?:insights diários sobre negócios e liderança|análises e comentários de direita)\.?",
     re.IGNORECASE,
 )
 

@@ -57,7 +57,7 @@ class EditorialIntentTests(unittest.TestCase):
                 self.assertEqual(turn.rsplit("\n\nROTEIRO:\n", 1)[1], raw["scenes"][0]["text"])
                 self.assertEqual(manifest["voice"], "Charon")
                 self.assertEqual(manifest["raw_audio_treatment"], "none")
-                self.assertEqual(manifest["master_pitch_semitones"], -1)
+                self.assertEqual(manifest["master_pitch_semitones"], -0.5)
                 directions.add(jobs[0]["direction_fingerprint"])
                 speech_hashes.add(manifest["speech_profile_fingerprint"])
                 source_hashes.add(editorial_fingerprint(normalized))

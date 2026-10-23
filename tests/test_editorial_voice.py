@@ -76,7 +76,7 @@ class EditorialVoiceTests(unittest.TestCase):
         self.assertIn("cadência de repórter", prompt)
         self.assertEqual(first["raw_audio_treatment"], "none")
         self.assertEqual(first["raw_pitch_semitones"], 0)
-        self.assertEqual(first["master_pitch_semitones"], -1)
+        self.assertEqual(first["master_pitch_semitones"], -0.5)
         self.assertFalse(first["master_pitch_applied"])
         self.assertEqual(first["narrator_speed"], 1.10)
         self.assertEqual(first["master_pitch_stage"], "cached-narration-derivative-before-timeline")

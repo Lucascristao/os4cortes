@@ -2,7 +2,7 @@ const crypto = require('node:crypto');
 
 const BRAND_NAME = 'OS4 de Direita';
 const BRAND_ACCOUNT = '@os4dedireita';
-const BRAND_SIGNATURE = `Siga ${BRAND_ACCOUNT} para mais análises e comentários de direita.`;
+const BRAND_SIGNATURE = `Siga ${BRAND_ACCOUNT} para mais insights com análises e comentários.`;
 const NETWORKS = ['tiktok', 'instagram', 'youtube'];
 const TEXT_FIELDS = ['titulo', 'title', 'postText', 'caption', 'description', 'descricao'];
 
@@ -25,7 +25,7 @@ function rebrandText(text) {
   // Match processor/branding.py: only owned text changes, never source URLs,
   // repository URLs or paths that happen to contain the old project name.
   return text.split(/(https?:\/\/[^\s<>]+)/gi).map((part, index) => index % 2 ? part : part
-    .replace(/Siga\s+@os4(?:[._]?cortes|dedireita)\s+para mais insights diários sobre negócios e liderança\.?/gi, BRAND_SIGNATURE)
+    .replace(/Siga\s+@os4(?:[._]?cortes|dedireita)\s+para mais (?:insights diários sobre negócios e liderança|análises e comentários de direita)\.?/gi, BRAND_SIGNATURE)
     .replace(/(?<![\w@])@os4[._]?cortes(?!\w|\.\w)/gi, BRAND_ACCOUNT)
     .replace(/(?<![\w#])#os4[._]?cortes(?!\w|\.\w)/gi, '#os4dedireita')
     .replace(/(?<![\w\/@#\\])os4\s+cortes\b/gi, BRAND_NAME)

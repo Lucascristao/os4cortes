@@ -216,7 +216,7 @@ test('pacote legado atualiza publicação sem alterar fonte, URLs ou narração'
     hashtags: ['#politica', '#os4cortes'] });
   const [updated] = h.context.normalizarPacote([original]);
   assert.equal(updated.titulo, 'OS4 de Direita comenta');
-  assert.match(updated.legenda_post, /Siga @os4dedireita para mais análises e comentários de direita\./);
+  assert.match(updated.legenda_post, /Siga @os4dedireita para mais insights com análises e comentários\./);
   assert.match(updated.legenda_post, /https:\/\/os4cortes.netlify.app/);
   assert.match(updated.legenda_post, /@os4cortes.extra/);
   assert.equal(updated.hashtags, '#politica #os4dedireita');
@@ -356,7 +356,7 @@ test('prompts escolhem três capas para os dois formatos e delegam a composiçã
       assert.match(prompt, /Em qualquer tema, comece diretamente por um clip/);
       assert.match(prompt, /de 8 a 15 segundos finais/);
       assert.match(prompt, /Some TODAS as narrações anteriores ao primeiro clip/);
-      assert.match(prompt, /1,10×.*−1 semitom/);
+      assert.match(prompt, /1,10×.*−0,5 semitom/);
       assert.match(prompt, /Zero ou menos de oito segundos também são válidos/);
       assert.match(prompt, /Acima de quinze segundos haverá apenas aviso editorial/);
     }

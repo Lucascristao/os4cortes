@@ -19,7 +19,7 @@ if (os.environ.get("CI") or os.environ.get("OS4_REQUIRE_FFMPEG") == "1") and not
 
 @unittest.skipUnless(FFMPEG, "Set OS4_TEST_FFMPEG or install ffmpeg for the real PCM check")
 class EditorialMasterAudioTests(unittest.TestCase):
-    def test_narrator_is_accelerated_once_and_lower_with_source_unchanged(self):
+    def test_narrator_is_accelerated_once_and_half_semitone_lower_with_source_unchanged(self):
         with tempfile.TemporaryDirectory() as folder:
             source, output = Path(folder) / "raw.wav", Path(folder) / "master.wav"
             samples = array.array("h", (round(5000*math.sin(2*math.pi*200*n/24000)) for n in range(48000)))
@@ -53,7 +53,7 @@ class EditorialMasterAudioTests(unittest.TestCase):
             def frequency(start):
                 part = data[round((start+.4)*48000):round((start+1.4)*48000)]
                 return sum(a <= 0 < b for a, b in zip(part, part[1:]))
-            expected = 200*2**(-1/12)
+            expected = 200*2**(-0.5/12)
             self.assertAlmostEqual(frequency(0), expected, delta=2)
             self.assertAlmostEqual(frequency(2+derived["duration"]), expected, delta=2)
             self.assertAlmostEqual(frequency(derived["duration"]), 200, delta=1)

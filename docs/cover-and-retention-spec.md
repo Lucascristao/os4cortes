@@ -36,7 +36,7 @@ Nomes `_capa.jpg` e `files.capa` continuam compatíveis com o Publicador. Todo c
 
 ## Narração e abertura
 
-Cada narração possui um derivado PCM em cache com velocidade 1,10× e pitch −1 semitom aplicados uma vez. WAV bruto, alinhamento canônico, voz, direção e política de TTS são preservados. A chave do derivado inclui hash bruto, velocidade, pitch, formato e versão.
+Cada narração possui um derivado PCM em cache com velocidade 1,10× e pitch −0,5 semitom aplicados uma vez. WAV bruto, alinhamento canônico, voz, direção e política de TTS são preservados. A chave do derivado inclui hash bruto, velocidade, pitch, formato e versão.
 
 O compositor mede a duração efetiva, divide os tempos das palavras por 1,10 e calcula a timeline em frames, arredondando para cima. Volume ativo e picos são medidos nos derivados; mantém ganho comum do narrador e teto atuais. O master recebe áudio já tratado. Falas originais conservam velocidade 1,00× e tom.
 

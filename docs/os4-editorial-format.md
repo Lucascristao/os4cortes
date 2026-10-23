@@ -89,7 +89,7 @@ Exemplo de entrada: `python -m processor.editorial_voice --plan CAMINHO_PLANO --
 
 O adaptador acrescenta direção global de conversa próxima e questionadora, preservando leitura literal e identidade Charon. A instrução global participa dos fingerprints de política e perfil de fala. Mudar essa direção invalida cache incompatível. Não há troca automática de modelo/voz nem fallback; áudio rejeitado continua rejeitado conforme a política preservada.
 
-O perfil atual acrescenta ressonância suave de peito e registro confortável mais grave, tomando somente o tom do Plotquake como referência. O master aplica −1 semitom comum a todas as narrações, com compensação de duração, sem modificar os WAVs brutos ou as vozes da fonte. A configuração não alterna entre cenas. Veja [a direção vocal e sua proveniência](../processor/voice_runtime/DIRECTION.md).
+O perfil atual acrescenta ressonância suave de peito e registro confortável mais grave, tomando somente o tom do Plotquake como referência. O master aplica −0,5 semitom comum a todas as narrações, com compensação de duração, sem modificar os WAVs brutos ou as vozes da fonte. A configuração não alterna entre cenas. Veja [a direção vocal e sua proveniência](../processor/voice_runtime/DIRECTION.md).
 
 A prova real do OS4 em 18/10/2026 gerou as três falas, refez automaticamente uma fala rejeitada pela conferência ASR e preservou os áudios já aprovados. Os dois formatos finais do piloto têm 67,6 segundos. Falhas de alinhamento têm uma única recuperação por execução, limitada às cenas rejeitadas e com hashes atuais; o motor não reduz o rigor da conferência para aceitar o áudio.
 

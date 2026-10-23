@@ -30,7 +30,7 @@ Esta é uma adaptação local em `tts_config.py`, `voice-policy.json` e no adapt
 
 O sintetizador entrega PCM16 mono 24 kHz bruto, sem transposição, EQ, velocidade ou regravação. O manifesto registra `raw_audio_treatment: none`, `raw_pitch_semitones: 0` e `effects_applied: false`, com escopo explícito dos WAVs brutos.
 
-O mesmo manifesto solicita `master_pitch_semitones: -1` e `master_pitch_stage: derived-narration-master-only`. `master_pitch_applied: false` significa que a síntese ainda não executou essa etapa. O compositor deve aplicar a mesma calibração **uma vez** sobre as narrações derivadas, conservar duração, deixar os excertos originais sem pitch e registrar o que de fato aplicou. Nunca executar novamente a transposição sobre um master já tratado nem alterar os WAVs de origem.
+O mesmo manifesto solicita `master_pitch_semitones: -0.5` e `master_pitch_stage: derived-narration-master-only`. Essa calibração mantém a voz discretamente mais grave, com efeito menor que o −1 semitom da referência. `master_pitch_applied: false` significa que a síntese ainda não executou essa etapa. O compositor deve aplicar a mesma calibração **uma vez** sobre as narrações derivadas, conservar duração, deixar os excertos originais sem pitch e registrar o que de fato aplicou. Nunca executar novamente a transposição sobre um master já tratado nem alterar os WAVs de origem.
 
 A direção gerativa participa dos fingerprints e invalida voz antiga incompatível. A calibração separada do master não entra no cache de síntese: mudar apenas esse valor não deve comprar outra geração. A versão e o ganho/pitch do master precisam participar do cache do compositor.
 

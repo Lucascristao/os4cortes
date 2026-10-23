@@ -26,7 +26,7 @@ else:  # Portable cloud bundle: editorial_plan.py resides beside this file.
 
 
 VOICE_ADAPTER_VERSION = "os4-editorial-live-adapter-v5-os4dedireita"
-MASTER_PITCH_SEMITONES = -1.0
+MASTER_PITCH_SEMITONES = -0.5
 VOICE_TONE_REFERENCE = {
     "repository": "https://github.com/Lucascristao/Plotquake",
     "commit": "7a4e5f6d572cabd18138f9667ddc1109dd4e9db7",

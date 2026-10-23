@@ -27,7 +27,7 @@ from .voice_runtime.gemini_live_fidelity import evaluate_transcription
 VERSION = "os4-editorial-compositor-v2-bounded-overlay-input"
 MASTER_AUDIO_VERSION = "os4-editorial-master-v3-treated-narration"
 DERIVED_NARRATION_VERSION = "os4-narration-derived-v2-measured-tail"
-DEFAULT_NARRATOR_PITCH_SEMITONES = -1.0
+DEFAULT_NARRATOR_PITCH_SEMITONES = -0.5
 DEFAULT_NARRATOR_SPEED = 1.10
 
 
