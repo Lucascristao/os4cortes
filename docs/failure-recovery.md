@@ -16,13 +16,13 @@ O processador antigo avançava ao próximo corte após cada erro. A porcentagem 
 - Somente um pacote completo salvo no Drive zera a sequência. A porcentagem e os contadores distinguem pacotes completos, vídeos com capa pendente e falhas.
 - Parar a geração envia um pedido real ao processador; uma operação de mídia já iniciada pode concluir antes do próximo ponto de parada. A transcrição tem uma ação separada para encerrar somente o acompanhamento.
 
-## Preservação das vozes
+## Áudio de trabalho
 
-Os checkpoints `_os4_vozes_<hash>.zip` ficam na mesma pasta da sessão do Drive. Contêm WAVs PCM16 mono 24 kHz originais, sidecars, manifesto e alinhamento aprovado quando disponível. Não incluem áudio derivado, credenciais ou logs do runner. O armazenamento não recodifica o áudio.
+Os WAVs e seus metadados continuam sendo gerados e validados localmente para compor o vídeo, sem alterar os parâmetros de qualidade da voz. Não há upload de ZIPs de áudio ao Drive nem salvamento de cache remoto de vozes no GitHub Actions.
 
-A identidade inclui roteiro literal, IDs das cenas, interpretação, política global, modelo e voz. Alterar somente texto visual ou capa não invalida as vozes. A restauração verifica os hashes, formato PCM, fidelidade do texto e as mesmas políticas de qualidade usadas na síntese; arquivos corrompidos não passam como aprovados. Checkpoints parciais preservam as cenas já aprovadas para gerar somente as ausentes.
+O cache local só pode ser reutilizado quando ainda existe na mesma máquina e passa pela validação de roteiro, direção e qualidade. Um novo runner não recupera os áudios de outro job. A recuperação de capa pendente continua usando o vídeo já montado, sem precisar guardar um arquivo de áudio separado.
 
-O resultado parcial é gravado atomicamente em `output/render-batch-result.json` após cada sucesso ou falha e preservado como artefato diagnóstico do workflow. Relatórios e checkpoints do Drive não são cadastrados como mídia para publicação.
+O resultado parcial é gravado atomicamente em `output/render-batch-result.json` após cada sucesso ou falha e preservado como artefato diagnóstico do workflow. Relatórios não são cadastrados como mídia para publicação.
 
 ## Limite das execuções anteriores
 
@@ -30,4 +30,4 @@ O workflow anterior não enviava os WAVs ao Drive. O cache de voz do GitHub era 
 
 ## Validação
 
-Os testes cobrem encaixe visual nos dois formatos, título real da capa 30, preservação de vídeo com capa ausente, integridade e retomada das vozes, resultados parciais, pausa e limite de três falhas, decisões antigas, concorrência de parada/continuação, autenticação e publicação somente de pacotes completos. As prévias de tipografia representam a camada de texto da narração; na composição final o vídeo da fonte aparece ao fundo, escurecido e levemente desfocado.
+Os testes cobrem encaixe visual nos dois formatos, título real da capa 30, preservação de vídeo com capa ausente, cache local e qualidade das vozes, resultados parciais, pausa e limite de três falhas, decisões antigas, concorrência de parada/continuação, autenticação e publicação somente de pacotes completos. As prévias de tipografia representam a camada de texto da narração; na composição final o vídeo da fonte aparece ao fundo, escurecido e levemente desfocado.

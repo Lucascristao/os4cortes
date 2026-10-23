@@ -37,12 +37,12 @@ class FakeUploader:
     def __init__(self):
         self.downloads = []
         self.uploads = []
-        self.checkpoints = {}
+        self.remote_records = {}
 
     def download(self, file_id, path, progress_cb=None):
         self.downloads.append(file_id)
-        if file_id.startswith("checkpoint-"):
-            content = next(value[1] for value in self.checkpoints.values() if value[0] == file_id)
+        if file_id.startswith("metadata-"):
+            content = next(value[1] for value in self.remote_records.values() if value[0] == file_id)
             Path(path).write_bytes(content)
         elif file_id.startswith("file-"):
             Path(path).write_bytes(self.uploads[int(file_id.split("-")[-1]) - 1]["data"])
@@ -55,11 +55,11 @@ class FakeUploader:
         return f"file-{len(self.uploads)}"
 
     def find_file_by_name(self, name, *, folder_id):
-        return self.checkpoints.get((folder_id, name), (None,))[0]
+        return self.remote_records.get((folder_id, name), (None,))[0]
 
     def upsert(self, path, name, *, folder_id):
-        file_id = self.find_file_by_name(name, folder_id=folder_id) or f"checkpoint-{len(self.checkpoints)+1}"
-        self.checkpoints[folder_id, name] = (file_id, Path(path).read_bytes())
+        file_id = self.find_file_by_name(name, folder_id=folder_id) or f"metadata-{len(self.remote_records)+1}"
+        self.remote_records[folder_id, name] = (file_id, Path(path).read_bytes())
         return file_id
 
 
@@ -435,8 +435,8 @@ class EditorialBatchModesTests(unittest.TestCase):
                 self.assertEqual(call.kwargs["aspect"], cuts[index]["formato"])
                 self.assertEqual(call.kwargs["lower_third"], LowerThird("crop", .30))
                 self.assertEqual(call.kwargs["font_dir"], h.root/"fonts")
-                voice_key = batch.voice_cache_identity(expected[index]["editorial"], h.cache / "voice-identity")[0]
-                self.assertEqual(call.kwargs["voice_dir"], h.cache/"voice"/voice_key)
+                voice_key = batch.editorial_fingerprint(expected[index]["editorial"])
+                self.assertEqual(call.kwargs["voice_dir"], h.cache/voice_key/"voice")
             self.assertFalse(h.work.exists())
             self.assertTrue(list(h.cache.rglob("accepted.wav")))
 
@@ -448,7 +448,7 @@ class EditorialBatchModesTests(unittest.TestCase):
             self.assertTrue(any(name.endswith("_16x9.mp4") for name in names))
             self.assertEqual(sum(name.endswith("_post.txt") for name in names), 2)
             self.assertEqual(sum(name.endswith(".srt") for name in names), 2)
-            self.assertFalse(any("report" in name or "cache" in name or name.endswith(".wav") for name in names))
+            self.assertFalse(any("report" in name or "cache" in name or name.endswith((".wav", ".zip")) for name in names))
             result = h.completed.call_args.args[1]
             self.assertEqual(result["completedCount"], 2)
             self.assertEqual(result["errors"], [])
@@ -515,7 +515,7 @@ class EditorialBatchModesTests(unittest.TestCase):
             self.assertNotIn("2 cortes concluídos", detail)
             self.assertEqual([error["index"] for error in result["errors"]], [1])
             self.assertEqual([row["index"] for row in result["cuts"]], [2])
-            self.assertEqual(len(list(h.cache.rglob("accepted.wav"))), 1, "rótulo da fonte não muda identidade de voz")
+            self.assertEqual(len(list(h.cache.rglob("accepted.wav"))), 2, "WAVs aprovados de ambos os planos ficam no cache local")
             self.assertFalse(h.work.exists())
             self.assertEqual(json.loads((h.out/"render-batch-result.json").read_text(encoding="utf-8"))["errors"], result["errors"])
 
@@ -543,16 +543,11 @@ class EditorialBatchModesTests(unittest.TestCase):
             self.assertEqual([error["index"] for error in result["errors"]], [1])
             self.assertIn("upload", result["errors"][0]["error"])
 
-    def test_workflow_never_caches_voice_on_public_repositories(self):
+    def test_workflow_keeps_only_local_voice_cache_and_uploads_result_report(self):
         workflow = (Path(__file__).parents[1]/".github/workflows/renderizar.yml").read_text(encoding="utf-8")
-        for action in ("actions/cache/restore@v4", "actions/cache/save@v4"):
-            prefix = workflow[:workflow.index(action)].split("      - name:")[-1]
-            self.assertIn("github.event.repository.private == true", prefix)
-            self.assertIn("inputs.cut_mode == 'editorial'", prefix)
-        save = workflow[:workflow.index("actions/cache/save@v4")].split("      - name:")[-1]
-        self.assertIn("always()", save)
-        self.assertIn("${{ inputs.video_file_id }}-${{ github.run_id }}-${{ github.run_attempt }}", workflow)
-        self.assertNotIn("path: .editorial-cache\n          retention", workflow)
+        self.assertNotIn("actions/cache/restore@", workflow)
+        self.assertNotIn("actions/cache/save@", workflow)
+        self.assertNotIn("path: .editorial-cache", workflow)
         self.assertIn("path: output/render-batch-result.json", workflow)
 
 

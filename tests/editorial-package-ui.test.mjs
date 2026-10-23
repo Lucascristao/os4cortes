@@ -603,30 +603,34 @@ test('prompt autoral dá personalidade e adapta comentário e interpretação a 
   assert.equal(profile.tone, 'provocative');
 });
 
-test('prompt autoral separa campos internos de quadros limpos com apenas um destaque curto', async () => {
+test('prompt autoral mantém rótulo em português, destaque e apoio curto sem truncar palavras', async () => {
   const h = harness();
   h.context.mostrarTranscricao(session());
   await h.get('#btnCopiarPromptIA').fire('click');
   const prompt = h.copied[0];
-  assert.match(prompt, /visual\.title é o único destaque editorial escrito sobre o vídeo ao fundo/);
+  assert.match(prompt, /rótulo temático acima, destaque principal e uma frase curta de apoio abaixo/);
+  assert.match(prompt, /não apague o rótulo ou o apoio para resolver excesso de texto/);
   assert.match(prompt, /3 a 7 palavras, até 60 caracteres/);
   assert.match(prompt, /reescreva com menos palavras; nunca corte por número de caracteres/);
-  assert.match(prompt, /sempre envie visual\.kicker: "" e visual\.lines: \[\]/);
-  assert.match(prompt, /Não escreva categoria acima do destaque nem parágrafo, subtítulo, frase de apoio ou resumo abaixo dele/);
+  assert.match(prompt, /visual\.kicker em português, com até 24 caracteres/);
+  assert.match(prompt, /exatamente uma frase completa e curta.*4 a 8 palavras.*9 palavras e 55 caracteres/);
+  assert.match(prompt, /sem parágrafo, resumo do argumento inteiro ou repetição literal da legenda da voz/);
   assert.match(prompt, /profile\.topic mantém os valores técnicos em inglês do contrato/);
-  assert.match(prompt, /Nunca copie profile\.topic para visual\.kicker, visual\.title ou visual\.lines/);
+  assert.match(prompt, /nunca copie o valor inglês de profile\.topic para visual\.kicker, visual\.title ou visual\.lines/);
   assert.match(prompt, /profile\.angle, intent\.source_point e intent\.contribution.*nunca copie esses campos automaticamente para a tela/);
-  assert.doesNotMatch(prompt, /kicker temático|no máximo 3 frases curtas de apoio|preferencialmente de 4 a 8 palavras/);
+  assert.doesNotMatch(prompt, /sempre envie visual\.kicker: ""|visual\.lines: \[\]|visual\.title é o único destaque/);
   const [example] = promptExample(prompt);
   assert.equal(example.editorial.profile.topic, 'politics', 'o enum interno continua compatível com o contrato');
   for (const scene of example.editorial.scenes.filter(scene => scene.kind === 'narration')) {
-    assert.equal(scene.visual.kicker, '');
-    assert.deepEqual(scene.visual.lines, []);
+    assert.equal(scene.visual.kicker, 'Política');
+    assert.equal(scene.visual.lines.length, 1);
+    assert.ok(scene.visual.lines[0].length <= 55);
+    assert.ok(scene.visual.lines[0].split(/\s+/).length <= 9);
     assert.ok(scene.visual.title.length <= 60);
   }
 });
 
-test('importação aceita quadros limpos e conserva os visuais de pacotes anteriores', async () => {
+test('importação conserva rótulos e apoio e aceita pacotes anteriores com campos vazios', async () => {
   for (const cleanVisual of [true, false]) {
     const h = harness();
     h.context.mostrarTranscricao(session());

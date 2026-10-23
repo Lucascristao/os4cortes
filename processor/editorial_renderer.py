@@ -646,7 +646,7 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                          target_active_dbfs=-18.0, peak_ceiling=.95,
                          narrator_pitch_semitones=DEFAULT_NARRATOR_PITCH_SEMITONES,
                          narrator_speed=DEFAULT_NARRATOR_SPEED, cover=None, title="",
-                         burn_captions=False, voice_checkpoint=None):
+                         burn_captions=False):
     """Return rendered assets and any cover-only pending error; retain the MP4."""
     from .editorial_visuals import Canvas, VISUAL_STYLE_VERSION
     video, transcript, output = Path(video).resolve(), Path(transcript).resolve(), Path(output).resolve()
@@ -694,14 +694,8 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
         if cover_error:
             print(f"Capa pendente; preservando vídeo e narração: {cover_error}", flush=True)
             cover_report = {"status": "pending", "error": cover_error, "warning": cover_warning}
-        try:
-            manifest, voices, aligned = _ensure_voice_bundle(normalized, voice_dir, allow_synthesis=allow_synthesis,
-                                                            delivery_overrides=delivery_overrides, asr_model=asr_model)
-        finally:
-            # An accepted scene may be reusable even if a later voice/alignment
-            # operation failed. The caller owns its durable checkpoint policy.
-            if voice_checkpoint is not None:
-                voice_checkpoint(voice_dir)
+        manifest, voices, aligned = _ensure_voice_bundle(normalized, voice_dir, allow_synthesis=allow_synthesis,
+                                                        delivery_overrides=delivery_overrides, asr_model=asr_model)
         treated_voices = {key: derive_narration(item, voice_dir / "derived", ffmpeg=ffmpeg,
                                                speed=narrator_speed, pitch_semitones=narrator_pitch_semitones)
                           for key, item in voices.items()}

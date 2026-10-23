@@ -187,7 +187,7 @@ class EditorialRendererTests(unittest.TestCase):
                 voice.assert_called_once()
                 self.assertEqual(cover_render.call_count, 0 if stage == "preflight" else 1)
 
-    def test_voice_checkpoint_runs_after_voice_including_partial_failure_before_derivatives(self):
+    def test_local_raw_voice_survives_synthesis_or_derivative_failure(self):
         plan = {"source": {"label": "Fonte", "date": ""}, "scenes": [
             {"id": "opening", "kind": "narration", "visual": {"title": "Um título"}},
             {"id": "source", "kind": "clip", "start": 1, "end": 3}]}
@@ -196,6 +196,9 @@ class EditorialRendererTests(unittest.TestCase):
 
             def ensure(*args, **kwargs):
                 events.append("voice")
+                voice_dir = Path(args[1])
+                voice_dir.mkdir(parents=True, exist_ok=True)
+                (voice_dir / "accepted.wav").write_bytes(b"accepted raw voice")
                 if voice_failed:
                     raise RuntimeError("partial voice failure")
                 return {}, {"opening": {}}, None
@@ -204,7 +207,6 @@ class EditorialRendererTests(unittest.TestCase):
                 events.append("derivative")
                 raise RuntimeError("derivative boundary")
 
-            checkpoint = Mock(side_effect=lambda folder: events.append("checkpoint"))
             with self.subTest(voice_failed=voice_failed), tempfile.TemporaryDirectory() as folder, \
                  patch("pathlib.Path.is_file", return_value=True), \
                  patch("processor.editorial_renderer.normalize_editorial_plan", return_value=plan), \
@@ -219,9 +221,9 @@ class EditorialRendererTests(unittest.TestCase):
                  patch("processor.editorial_renderer.derive_narration", side_effect=derive):
                 with self.assertRaisesRegex(RuntimeError, "partial voice failure" if voice_failed else "derivative boundary"):
                     render_editorial_cut("source.mp4", "transcript.json", plan, Path(folder)/"CORTE01.mp4",
-                                         work_dir=Path(folder)/"work", voice_checkpoint=checkpoint)
-                checkpoint.assert_called_once_with(Path(folder).resolve()/"work"/"voice")
-                self.assertEqual(events, ["voice", "checkpoint"] if voice_failed else ["voice", "checkpoint", "derivative"])
+                                         work_dir=Path(folder)/"work")
+                self.assertEqual((Path(folder)/"work"/"voice"/"accepted.wav").read_bytes(), b"accepted raw voice")
+                self.assertEqual(events, ["voice"] if voice_failed else ["voice", "derivative"])
 
     def test_altered_successful_voice_bundle_is_rejected_without_paid_repair(self):
         text = "Ela diz não saber."

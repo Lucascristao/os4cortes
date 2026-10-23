@@ -21,12 +21,11 @@ from .captions import (
 from .covers import CoverError, normalize_cover, render_cover
 from .drive import uploader_por_env
 from .cut_transport import decode_cuts_json
-from .editorial_plan import normalize_editorial_plan
+from .editorial_plan import editorial_fingerprint, normalize_editorial_plan
 from .progress import completed, emit, failed, start_heartbeat
 from .publisher import save_publisher_manifest
 from .lower_third import LowerThird
 from .pending_cut import PendingCutStore, pending_cut_key
-from .voice_cache import SessionVoiceCache, voice_cache_identity
 try:
     from .tracking import render_cinematic_16x9, render_tracking_9x16
 except ImportError:
@@ -84,22 +83,15 @@ def render_editorial_cut(*args, **kwargs):
     return renderer(*args, **kwargs)
 
 
-def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_third, burn_captions=False,
-                      *, uploader=None, folder_id=None):
+def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_third, burn_captions=False):
     aspect = corte["formato"]
     prefix = f"corte_{index:02d}_{nome_seguro(corte['titulo'])}"
     if aspect == "16:9":
         prefix += "_16x9"
     # The local publisher recognizes the vertical by this suffix.
     output = out / (f"{prefix}.mp4" if aspect == "16:9" else f"{prefix}_legenda.mp4")
-    voice_key = voice_cache_identity(corte["editorial"], cache / "voice-identity")[0]
-    voice_dir = cache / "voice" / voice_key
+    voice_dir = cache / editorial_fingerprint(corte["editorial"]) / "voice"
     voice_dir.mkdir(parents=True, exist_ok=True)
-    voice_checkpoint = None
-    if uploader is not None and folder_id:
-        session_voices = SessionVoiceCache(uploader, folder_id, corte["editorial"], voice_dir)
-        session_voices.restore()
-        voice_checkpoint = session_voices.checkpoint
     font = garantir_archivo_black()
     rendered = render_editorial_cut(
         video, transcript, corte["editorial"], output,
@@ -107,7 +99,6 @@ def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_t
         lower_third=lower_third, voice_dir=voice_dir, font_dir=Path(font).parent,
         cover=corte["cover"], title=corte["titulo"],
         burn_captions=burn_captions,
-        voice_checkpoint=voice_checkpoint,
     )
     video_path, srt_path = Path(rendered["video"]), Path(rendered["srt"])
     cover = Path(rendered["capa"]) if rendered.get("capa") else None
@@ -353,7 +344,6 @@ def main() -> int:
                     arquivos, limpar_arquivos, metadata = _editorial_assets(
                         video, transcricao_json, corte, i, out, work, cache, lower_third,
                         burn_captions=args.burn_captions,
-                        uploader=uploader, folder_id=args.folder_id,
                     )
                 elif formato == "16:9":
                     prefixo = f"corte_{i:02d}_{titulo_arquivo}_16x9"

@@ -85,19 +85,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-render.txt
 
-      # Áudio/roteiro não entram em cache compartilhado de repositório público.
-      # Em repo público, há reuso local durante o job; retomada entre execuções
-      # ainda exige armazenamento privado, que este workflow não implementa.
-      - name: Restaurar vozes autorais (somente repositório privado)
-        if: ${{ inputs.cut_mode == 'editorial' && github.event.repository.private == true }}
-        continue-on-error: true
-        uses: actions/cache/restore@v4
-        with:
-          path: .editorial-cache
-          key: ${{ runner.os }}-os4-editorial-v1-${{ inputs.video_file_id }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ runner.os }}-os4-editorial-v1-${{ inputs.video_file_id }}-
-
       - name: Gerar todos os cortes
         run: |
           python -m processor.render_batch \
@@ -112,14 +99,6 @@ jobs:
             --burn-captions "$OS4_BURN_CAPTIONS" \
             --workdir ".work" \
             --output "output"
-
-      - name: Preservar vozes aceitas mesmo com falha (somente repositório privado)
-        if: ${{ always() && inputs.cut_mode == 'editorial' && github.event.repository.private == true && hashFiles('.editorial-cache/**') != '' }}
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: .editorial-cache
-          key: ${{ runner.os }}-os4-editorial-v1-${{ inputs.video_file_id }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Reportar falha ao front
         if: failure() || cancelled()
