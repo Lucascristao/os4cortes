@@ -13,6 +13,8 @@ Este documento registra o contrato dos minivídeos autorais: pacote, transporte,
 
 A revisão de 22/10/2026 corrige o encaixe dos textos nas cenas, preserva as vozes originais no Drive e permite retomar somente uma capa pendente. Consulte [falhas e recuperação](failure-recovery.md) para o contrato atualizado e os limites de recuperação das execuções anteriores.
 
+O prompt atual usa quadros de narração com apenas `visual.title` como destaque editorial, preferencialmente de 3 a 7 palavras e até 60 caracteres. Envia `visual.kicker: ""` e `visual.lines: []`: não copia categorias técnicas ou parágrafos do planejamento para a imagem, nem trunca palavras para atingir limites. `profile.topic` conserva seus enums internos em inglês e não é texto de tela. O contrato e o motor ainda aceitam os campos visuais dos pacotes anteriores; limpar somente `kicker` e `lines` preserva as identidades das vozes e permite reaproveitar os WAVs aprovados.
+
 O prompt da interface solicita o pacote com narração e perfil por corte quando o formato autoral está selecionado. A API valida o perfil, a interpretação contextual de cada cena e seus intervalos antes de iniciar o runner; as políticas completas de voz, visual e evidência continuam validadas pelo Python. O workflow transporta esses dados no mesmo pacote, sem nova chamada de planejamento.
 
 ## Seleção de modo e compatibilidade

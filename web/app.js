@@ -838,7 +838,7 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideo
   const narracao = (id, title, start, end, text, delivery = "explain") => ({
     id, kind: "narration", text,
     background: { start, end },
-    visual: { title, kicker: "[Tema ou contexto curto]", lines: ["[Ponto verificável da fala]"] },
+    visual: { title, kicker: "", lines: [] },
     tts: { delivery, cues: [] },
     evidence: [{ start, end }],
   });
@@ -958,7 +958,9 @@ Contrato editorial obrigatório:
 - background escolhe vídeo real para o fundo em movimento; evidence traz de 1 a 8 intervalos da transcrição que sustentam a narração. Todos os intervalos precisam ter end > start e caber entre inicio/fim do corte, em segundos absolutos do vídeo original.
 - inicio/fim são o envelope da fonte: use o menor start e o maior end de TODAS as referências em clips, backgrounds e evidence. A duração final é a soma dos áudios narrados e dos clips na montagem; ela não é a duração desse envelope da fonte.
 - Preserve as frações de segundo: 101.7 segundos corresponde a "00:01:41.7". Não arredonde inicio/fim para dentro dos intervalos usados nas cenas.
-- Use títulos visuais curtos e fortes, preferencialmente de 4 a 8 palavras, até 100 caracteres; kicker temático até 60; no máximo 3 frases curtas de apoio, mostradas uma por vez. Evite rótulos de telejornal e não repita a legenda da voz na tela de apoio. A montagem cuida do vídeo ao fundo, blur, preto neutro, movimento do texto, voz e legendas.
+- QUADROS DE NARRAÇÃO LIMPOS: em cada narration, visual.title é o único destaque editorial escrito sobre o vídeo ao fundo. Use de preferência 3 a 7 palavras, até 60 caracteres, com uma ideia completa e fiel à cena. Se ficar longo, reescreva com menos palavras; nunca corte por número de caracteres, deixe palavras pela metade ou termine em fragmentos. O titulo de publicação e cover.title têm funções próprias; não copie automaticamente esses textos para visual.title.
+- Neste estilo, sempre envie visual.kicker: "" e visual.lines: []. Não escreva categoria acima do destaque nem parágrafo, subtítulo, frase de apoio ou resumo abaixo dele. A explicação completa pertence ao text falado e às legendas da voz; ela não deve ser repetida em visual.lines. A montagem cuida do vídeo ao fundo, blur, preto neutro, movimento do texto, voz e legendas.
+- CAMPOS INTERNOS NÃO SÃO TEXTO DE TELA: profile.topic mantém os valores técnicos em inglês do contrato (politics, economy, business, humor ou general) apenas para classificar o assunto. Nunca copie profile.topic para visual.kicker, visual.title ou visual.lines, nem escreva rótulos como Politics ou Economy na imagem. profile.angle, intent.source_point e intent.contribution orientam o planejamento e o comentário; nunca copie esses campos automaticamente para a tela. Crie visual.title como um destaque próprio e curto, sem colar fragmentos desses campos.
 - Escolha tts.delivery pela intenção de cada cena: hook na abertura que apresenta o assunto, explain ao explicar, question em pergunta direta, contrast para uma distinção e closing ao concluir. Cada cena herda tone e intensity do profile. Opcionalmente inclua tts.tone e/ou tts.intensity usando os mesmos valores permitidos no profile para adaptar uma cena ao momento. Use cues vazio para começar. A direção acompanha o contexto sem mudar a identidade e a região grave confortável da voz; intensidade alta significa mais energia e ênfase, sem gritar. Não coloque comandos de interpretação, instruções de voz ou marcações entre colchetes no text: ele contém somente a fala literal. Preserve a fala original nos clips.
 - Nos horizontais inclua descricao e tags; nos verticais legenda_post e hashtags. Os títulos, créditos e descrições também devem ser fiéis à fonte.
 

@@ -603,6 +603,44 @@ test('prompt autoral dá personalidade e adapta comentário e interpretação a 
   assert.equal(profile.tone, 'provocative');
 });
 
+test('prompt autoral separa campos internos de quadros limpos com apenas um destaque curto', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao(session());
+  await h.get('#btnCopiarPromptIA').fire('click');
+  const prompt = h.copied[0];
+  assert.match(prompt, /visual\.title é o único destaque editorial escrito sobre o vídeo ao fundo/);
+  assert.match(prompt, /3 a 7 palavras, até 60 caracteres/);
+  assert.match(prompt, /reescreva com menos palavras; nunca corte por número de caracteres/);
+  assert.match(prompt, /sempre envie visual\.kicker: "" e visual\.lines: \[\]/);
+  assert.match(prompt, /Não escreva categoria acima do destaque nem parágrafo, subtítulo, frase de apoio ou resumo abaixo dele/);
+  assert.match(prompt, /profile\.topic mantém os valores técnicos em inglês do contrato/);
+  assert.match(prompt, /Nunca copie profile\.topic para visual\.kicker, visual\.title ou visual\.lines/);
+  assert.match(prompt, /profile\.angle, intent\.source_point e intent\.contribution.*nunca copie esses campos automaticamente para a tela/);
+  assert.doesNotMatch(prompt, /kicker temático|no máximo 3 frases curtas de apoio|preferencialmente de 4 a 8 palavras/);
+  const [example] = promptExample(prompt);
+  assert.equal(example.editorial.profile.topic, 'politics', 'o enum interno continua compatível com o contrato');
+  for (const scene of example.editorial.scenes.filter(scene => scene.kind === 'narration')) {
+    assert.equal(scene.visual.kicker, '');
+    assert.deepEqual(scene.visual.lines, []);
+    assert.ok(scene.visual.title.length <= 60);
+  }
+});
+
+test('importação aceita quadros limpos e conserva os visuais de pacotes anteriores', async () => {
+  for (const cleanVisual of [true, false]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session());
+    const editorial = validPlan();
+    if (cleanVisual) editorial.scenes[0].visual = { title: 'Quem decide as regras?', kicker: '', lines: [] };
+    const original = structuredClone(editorial);
+    await h.import([cut({ editorial })]);
+    await h.get('#btnGerarCortes').fire('click');
+    assert.equal(h.alerts.length, 0);
+    assert.equal(starts(h).length, 1);
+    assert.deepEqual(starts(h)[0].body.cuts[0].editorial, original);
+  }
+});
+
 test('prompt transmite cocomentário, intenção e exemplos com conferência interna na mesma resposta', async () => {
   const h = harness();
   h.context.mostrarTranscricao(session());
