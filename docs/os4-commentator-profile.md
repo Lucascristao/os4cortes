@@ -4,9 +4,33 @@ Nome do canal: **OS4 de Direita**. Identificador em Instagram, TikTok e YouTube:
 
 Direção fixada em 18/10/2026 conforme as preferências do canal. Este perfil acompanha o prompt autoral, a intenção no pacote e as instruções de interpretação. A conferência de calibração é inicial; não há aprovação humana obrigatória nem uma chamada adicional de revisão semântica por vídeo.
 
-A IA escolhe automaticamente os cortes, a pauta, o ângulo, a relação com a fonte e a contribuição de cada roteiro. O fluxo continua vídeo → prompt → IA externa → JSON → geração; o usuário não precisa elaborar um briefing por corte. A seleção exige uma ideia completa e apelo viral ou curioso sustentado pela fonte. Uma frase solta ou uma história banal sem gancho deve ser descartada, sem inventar fatos ou forçar uma quantidade de cortes.
+A IA escolhe automaticamente os cortes, a pauta, o ângulo, a relação com a fonte e a contribuição de cada roteiro. O fluxo continua vídeo → prompt → IA externa → JSON → geração; o usuário não precisa elaborar um briefing por corte. A seleção combina descoberta ampla com aprovação seletiva: uma ideia completa precisa oferecer interesse específico e uma entrega real sustentados pela fonte. Não há cota mínima ou máxima nem obrigação de preencher os dois formatos.
 
 A transcrição e os metadados fornecidos são a fonte exclusiva dos dois prompts. A IA não pesquisa sites ou notícias, não abre a URL para procurar contexto e não acrescenta fatos específicos de memória. A URL serve apenas como referência interna. Nas legendas e descrições de publicação, os créditos trazem o título oficial do vídeo e os participantes confirmados no material, sem links; nas descrições do YouTube, incluem também o canal/host quando informado. Dados ausentes são omitidos ou ficam vazios nos campos que permitem isso, sem inventar nomes ou publicar placeholders; a interpretação própria desenvolve o que os trechos sustentam, sem atualizar o vídeo com acontecimentos externos.
+
+## Filtro editorial dos dois modos
+
+Atualizado em 24/10/2026. A varredura percorre toda a transcrição e identifica candidatos antes de escrever títulos, capas ou narrações. A descoberta continua até o fim mesmo quando já houver bons cortes. Encontrar um candidato não obriga sua publicação: o padrão de aprovação permanece o mesmo em todo o episódio.
+
+Para cada candidato, identificar internamente a premissa, o motivo específico para continuar assistindo e a entrega que a fonte oferece, com as falas e os intervalos correspondentes. A justificativa precisa explicar o detalhe deste momento; “gera debate”, “é uma lição de vida”, reconhecimento do participante ou concordância política, isoladamente, não demonstram valor. Título e narração não podem fabricar uma promessa que o conteúdo não entrega.
+
+A aprovação exige:
+
+- **Interesse e entrega:** há uma pergunta, descoberta, emoção, utilidade ou efeito cômico específico e um desenvolvimento que recompensa a atenção.
+- **Fidelidade:** perguntas, respostas, atribuições, condições e sentido das falas permanecem preservados.
+- **Autonomia:** o público compreende a situação e as referências ouvindo o vídeo na ordem final.
+- **Densidade:** preparação e duração são proporcionais à entrega; não há espera longa por uma conclusão genérica nem explicação circular.
+- **Distinção:** a entrega acrescenta algo ao lote; trocar título, palavras ou formato não cria automaticamente outro ângulo.
+
+Histórias humanas e explicações educativas podem passar pela identificação, pelo detalhe vivido ou pela clareza de um mecanismo. Choque, indignação, conflito e surpresa não são requisitos universais. Também não basta uma história ter começo, meio e fim. Quando houver valor claro, recuperar contexto e continuação na própria transcrição antes de descartar. Comparar candidatos redundantes sem eliminar outro momento forte apenas porque existe um ainda melhor.
+
+A auditoria tem duas direções: procurar bons momentos esquecidos e retirar aprovados fracos, redundantes ou sustentados apenas pela embalagem. Um resgate retorna ao mesmo filtro; a segunda leitura não reduz o piso de qualidade. O lote pode conter apenas verticais, apenas horizontais ou ambos, conforme o material. Quantidade menor, por si só, não comprova melhoria.
+
+No **modo simples**, o trecho contínuo precisa oferecer contexto, interesse e entrega no áudio original. Título, legenda e `saida_suave` não corrigem uma ideia incompleta. Escolher a janela contínua necessária ao arco, avaliando se passagens fracas tornam a duração desproporcional; não simular uma montagem descontínua dentro desse contrato.
+
+No **modo autoral**, a fonte precisa sustentar uma ideia interessante e uma entrega real, e o OS4 acrescenta uma contribuição específica: contexto indispensável, observação, consequência sustentada, contraste ou reação pertinente. Narrar antes, durante e depois não é uma fórmula de qualidade. Reescrever ou eliminar intervenções que apenas anunciam, parafraseiam e resumem a mesma fala, preservando o espaço do melhor momento.
+
+Essas decisões ocorrem internamente na geração. O JSON mantém o contrato existente, sem campos novos de nota, probabilidade de viralização ou justificativa editorial. Potencial editorial pela transcrição não é medição de alcance ou retenção.
 
 ## Personalidade constante
 

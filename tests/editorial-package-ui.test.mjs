@@ -379,25 +379,87 @@ test('modo autoral é o padrão no HTML, em sessão legada e no novo prompt', as
   assert.match(prompt, /começo, meio e fim/);
   assert.match(prompt, /"evidence"/);
   assert.match(prompt, /"label": "Fonte original"/);
-  assert.match(prompt, /os DOIS destinos quando a fonte sustentar/);
   assert.match(prompt, /aprofundar uma explicação completa/);
   assert.match(prompt, /o menor start e o maior end de TODAS as referências/);
   assert.match(prompt, /A duração final é a soma dos áudios narrados e dos clips/);
-  assert.match(prompt, /"delivery": "hook"/);
-  assert.match(prompt, /"delivery": "explain"/);
-  assert.match(prompt, /"delivery": "closing"/);
+  assert.match(prompt, /hook na abertura.*explain ao explicar.*closing ao concluir/);
   assert.match(prompt, /sem insinuações ou acusações/);
   assert.doesNotMatch(prompt, /Diretriz Anti-Bloqueio/);
 });
 
-test('modo simples preserva o prompt anterior sem incluir plano editorial', async () => {
+test('modo simples pede cortes da fonte sem incluir plano editorial ou eufemismos automáticos', async () => {
   const h = harness();
   h.context.mostrarTranscricao(session({ simpleCuts: true }));
   await h.get('#btnCopiarPromptIA').fire('click');
   assert.match(h.copied[0], /editor sênior e estrategista multiplataforma/);
   assert.match(h.copied[0], /GRUPO 2: CORTES LONGOS/);
-  assert.match(h.copied[0], /Diretriz Anti-Bloqueio/);
+  assert.doesNotMatch(h.copied[0], /Diretriz Anti-Bloqueio|Use eufemismos conceituais neutros/);
   assert.doesNotMatch(h.copied[0], /"editorial"/);
+});
+
+test('exemplos dos dois prompts continuam importáveis no modo correspondente', async () => {
+  for (const simpleCuts of [false, true]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session({ simpleCuts }));
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const examples = promptExample(h.copied[0]);
+    await h.import(examples);
+    assert.deepEqual(h.alerts, []);
+    assert.equal(h.cards().length, examples.length);
+    const imported = JSON.parse(h.storage.get(packageKey));
+    assert.deepEqual(imported.map(cut => cut.cover), examples.map(cut => cut.cover));
+    assert.deepEqual(imported.map(cut => cut.editorial), examples.map(cut => cut.editorial));
+    assert.equal(starts(h).length, 0, 'importar exemplos não inicia a produção');
+  }
+});
+
+test('ambos os modos recebem o mesmo filtro editorial antes do schema e da transcrição', async () => {
+  const sharedFilters = [];
+  for (const simpleCuts of [false, true]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session({ simpleCuts }));
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const prompt = h.copied[0];
+    const filter = vm.runInContext('DIRETRIZ_VARREDURA_EXAUSTIVA', h.context);
+    const filterIndex = prompt.indexOf(filter);
+    assert.ok(filterIndex >= 0, 'a seleção compartilhada integra o prompt copiado');
+    assert.equal(prompt.indexOf(filter, filterIndex + filter.length), -1, 'o filtro não é duplicado');
+    assert.ok(filterIndex < prompt.indexOf('\n[\n'), 'seleção precede o exemplo de escrita e montagem');
+    assert.ok(filterIndex < prompt.indexOf('--- TRANSCRIÇÃO ---'));
+    const stages = ['Descoberta completa', 'Prova de valor e filtro de aprovação', 'Recuperação e comparação do lote', 'Auditoria de cobertura e de excesso', 'Produção silenciosa do JSON'];
+    const positions = stages.map(stage => filter.indexOf(stage));
+    assert.ok(positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1])), 'descoberta, filtro e dupla auditoria precedem a produção');
+    assert.match(filter, /interesse específico, entrega real, autonomia, densidade, fidelidade e distinção/);
+    assert.match(filter, /Todo resgate volta ao mesmo filtro de aprovação; descoberta tardia não garante inclusão/);
+    if (!simpleCuts) assert.ok(filterIndex < prompt.indexOf('PRIORIDADE DE ESCRITA'), 'aprovação editorial precede a redação autoral');
+    assert.doesNotMatch(prompt, /não economize cortes|sem economia|descarte apenas|12,\s*15 ou mais|resgate-a e incorpore-a/i);
+    assert.doesNotMatch(prompt, /contendo DOIS TIPOS DE CORTES|Proponha os DOIS destinos/);
+    assert.match(prompt, /Pode haver apenas um formato; não crie uma versão para cumprir categoria/);
+    sharedFilters.push(filter);
+  }
+  assert.equal(sharedFilters[0], sharedFilters[1]);
+});
+
+test('o valor exigido corresponde ao áudio contínuo no simples e à contribuição concreta no autoral', async () => {
+  for (const simpleCuts of [false, true]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session({ simpleCuts }));
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const prompt = h.copied[0];
+    const heading = simpleCuts ? 'VALOR DO CORTE SIMPLES' : 'VALOR DO FORMATO AUTORAL';
+    const start = prompt.indexOf(heading);
+    assert.ok(start >= 0);
+    const section = prompt.slice(start, prompt.indexOf('\n\n', start));
+    if (simpleCuts) {
+      assert.match(section, /no próprio áudio original do intervalo contínuo entre inicio e fim/);
+      assert.match(section, /Se faltar contexto, leia antes e depois e ajuste o intervalo/);
+      assert.match(section, /Não una partes distantes como se o modo simples permitisse pontes ou supressões internas/);
+    } else {
+      assert.match(section, /Avalie primeiro a entrega da fonte e depois a contribuição do OS4/);
+      assert.match(section, /Uma contribuição não pode ser apenas descrever o que a fonte disse/);
+      assert.match(section, /se o roteiro apenas anuncia, reproduz e parafraseia/i);
+    }
+  }
 });
 
 test('ambos os prompts identificam o canal e o @ atual em todas as redes', async () => {
@@ -601,6 +663,9 @@ test('prompt autoral dá personalidade e adapta comentário e interpretação a 
   assert.equal(profile.perspective, 'right');
   assert.equal(profile.topic, 'politics');
   assert.equal(profile.tone, 'provocative');
+  assert.equal(profile.audience_question, '', 'o exemplo não deve impor pergunta ao público');
+  assert.equal(example[0].editorial.scenes[0].kind, 'clip', 'o exemplo demonstra entrada direta pela fonte');
+  assert.ok(example[0].editorial.scenes.some(scene => scene.kind === 'narration'), 'o exemplo continua autoral');
 });
 
 test('prompt autoral mantém rótulo em português, destaque e apoio curto sem truncar palavras', async () => {
