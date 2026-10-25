@@ -1312,8 +1312,17 @@ test('Motion Dark acrescenta direção visual no prompt somente quando seleciona
       assert.match(prompt, /DIREÇÃO VISUAL MOTION DARK/);
       assert.match(prompt, /line-md:alert-circle/);
       assert.match(prompt, /DIRETOR DE MOTION DESIGN/);
-      assert.ok(narrated.every(scene => scene.visual.motion?.layout === 'statement'));
-      assert.ok(narrated.every(scene => scene.visual.motion?.icon === 'line-md:chat'));
+      assert.match(prompt, /DIREÇÃO DE TIPOGRAFIA E CONTEÚDO/);
+      assert.match(prompt, /CATÁLOGO REAL DE COMPOSIÇÕES/);
+      assert.match(prompt, /SOMENTE quando existem duas etapas temporais/);
+      assert.match(prompt, /EXATAMENTE duas visual\.lines/);
+      assert.match(prompt, /A IA decide O QUE destacar e QUAL composição existente usar/);
+      assert.match(prompt, /NÃO imponha cotas, alternância artificial/);
+      assert.match(prompt, /não uma sequência obrigatória/);
+      assert.ok(narrated.every(scene => scene.visual.motion?.layout === 'source_card'));
+      assert.ok(narrated.every(scene => scene.visual.motion?.icon === 'line-md:clipboard-check'));
+      assert.ok(narrated.every(scene => scene.visual.motion?.emphasis === 'Ponto'));
+      assert.ok(narrated.every(scene => scene.visual.title.includes(scene.visual.motion.emphasis)));
       await h.import([example]);
       assert.equal(h.cards().length, 1);
       assert.deepEqual(h.alerts, []);
@@ -1350,4 +1359,23 @@ test('Papel Dinâmico não é opção separada; sessão antiga migra para Motion
   assert.equal(JSON.parse(h.storage.get(sessionKey)).editorialStyle, 'motion_dark');
   await h.get('#btnCopiarPromptIA').fire('click');
   assert.match(h.copied[0], /DIREÇÃO VISUAL MOTION DARK/);
+});
+
+test('variedade Motion Dark não contamina a seleção clássica ou o modo simples', async () => {
+  const cases = [
+    {simpleCuts:false, editorialStyle:'classic'},
+    {simpleCuts:true, editorialStyle:'motion_dark'},
+  ];
+  for (const mode of cases) {
+    const h = harness();
+    h.context.mostrarTranscricao(session(mode));
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const prompt = h.copied[0];
+    assert.doesNotMatch(prompt, /CATÁLOGO REAL DE COMPOSIÇÕES/);
+    assert.doesNotMatch(prompt, /AUDITORIA VISUAL ANTES DE ENTREGAR/);
+    assert.doesNotMatch(prompt, /visual\.motion EXATAMENTE/);
+    const [example] = promptExample(prompt);
+    const narrated = example.editorial?.scenes?.filter(scene => scene.kind === 'narration') || [];
+    assert.ok(narrated.every(scene => !Object.hasOwn(scene.visual, 'motion')));
+  }
 });
