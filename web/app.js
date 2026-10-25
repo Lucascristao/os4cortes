@@ -869,6 +869,7 @@ Depois revise os aprovados: qual só parece bom porque ganhou título, narraçã
 Somente após fechar a seleção, redija o pacote no contrato exigido. Confira o que será ouvido na ordem final: a promessa da abertura é entregue pelo conteúdo? O interesse sobrevive sem depender da capa e da legenda? Corrija ou descarte quem perder a força na montagem. A revisão é interna; entregue EXCLUSIVAMENTE o array JSON válido, sem notas, justificativas, checklist, campos novos ou pedidos de confirmação.`;
 
 const DIRETRIZ_MOTION_DARK = `DIREÇÃO VISUAL MOTION DARK — EXCLUSIVA DO MODELO SELECIONADO
+Direção de arte BLACK DARK: fundo preto absoluto (#000000), superfícies quase pretas (#090909 a #161616), luz âmbar localizada sobre elementos importantes, sombras e profundidade. Sem banho azulado, gradiente grafite cobrindo o quadro ou caixas pesadas nas legendas.
 Além de selecionar e comentar os cortes, atue como DIRETOR DE MOTION DESIGN: transforme as ideias das falas em decisões visuais executáveis. Não basta repetir um único layout com cartões ou fundo escuro. Faça alternância intencional, sem sobrecarregar e sem interromper a fala.
 
 Inclua em CADA cena kind: "narration" a propriedade visual.motion exatamente neste formato:
