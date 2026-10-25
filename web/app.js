@@ -868,12 +868,29 @@ Depois revise os aprovados: qual só parece bom porque ganhou título, narraçã
 5. Produção silenciosa do JSON
 Somente após fechar a seleção, redija o pacote no contrato exigido. Confira o que será ouvido na ordem final: a promessa da abertura é entregue pelo conteúdo? O interesse sobrevive sem depender da capa e da legenda? Corrija ou descarte quem perder a força na montagem. A revisão é interna; entregue EXCLUSIVAMENTE o array JSON válido, sem notas, justificativas, checklist, campos novos ou pedidos de confirmação.`;
 
-function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal }) {
+const DIRETRIZ_MOTION_DARK = \`DIREÇÃO VISUAL MOTION DARK — EXCLUSIVA DO MODELO SELECIONADO
+Além de selecionar e comentar os cortes, atue como DIRETOR DE MOTION DESIGN: transforme as ideias das falas em decisões visuais executáveis. Não basta repetir um único layout com cartões ou fundo escuro. Faça alternância intencional, sem sobrecarregar e sem interromper a fala.
+
+Inclua em CADA cena kind: "narration" a propriedade visual.motion exatamente neste formato:
+"motion": {"layout":"statement","icon":"line-md:chat","emphasis":"CONTRADIÇÃO"}
+- layout é um dos valores: source_card, statement, comparison, quote, number.
+- icon é EXCLUSIVAMENTE: line-md:chat, line-md:alert-circle, line-md:confirm-circle, line-md:clipboard-check.
+- emphasis é um trecho LITERAL do próprio visual.title, preferencialmente de 1 a 3 palavras, até 50 caracteres; pode ser string vazia. O motor colore essa expressão e mantém as legendas sincronizadas com a fala.
+- source_card: usa vídeo de origem em destaque; statement: frase ou constatação concreta; comparison: contrasta dois apoios; quote: só quando há citação real atribuída; number: só com número explícito confirmado na transcrição e escrito em visual.title ou visual.lines.
+- Escolha o ícone pelo significado real (chat para declaração; alerta para atenção; confirmação para ponto confirmado; clipboard-check para evidência textual). Ícone não é prova de fato.
+- Planeje um elemento principal por momento. Mantenha títulos curtos, fortes, sem palavras cortadas. Para comparison, use duas frases de apoio e não invente lados: visual.lines contém entre uma e três frases curtas sustentadas pela fonte, preferindo duas para comparação. Nos demais, uma frase de apoio basta.
+- Não invente arquivos, prints, imagens externas, URLs, pessoas, números nem datas. A biblioteca Line MD já está incluída no motor; a IA escolhe somente os IDs.
+- O Python/FFmpeg executará a iluminação, sombreamento, profundidade, entrada das camadas, iconografia animada, legendas sem tarja e trocas de cena. Não inclua filtros FFmpeg, código, coordenadas arbitrárias ou descrições vagas de estilo no JSON.
+- Preencha visual.title, visual.kicker e visual.lines como antes. visual.motion é a ÚNICA extensão de direção de arte de cada narração; não crie visualPlan global nem campos desconhecidos.
+- Preserve integralmente o texto falado, os timestamps, os trechos da fonte e o JSON exigido. O modelo visual não torna uma fala própria, verdadeira ou monetizável só pelo efeito.
+\`;
+
+function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal, motionDark = false }) {
   const fonte = sampleAuthor || "Fonte original";
   const narracao = (id, title, start, end, text, delivery = "explain") => ({
     id, kind: "narration", text,
     background: { start, end },
-    visual: { title, kicker: "Política", lines: ["[Uma frase curta ligada a esta cena]"] },
+    visual: { title, kicker: "Política", lines: ["[Uma frase curta ligada a esta cena]"], ...(motionDark ? { motion: { layout: "statement", icon: "line-md:chat", emphasis: "" } } : {}) },
     tts: { delivery, cues: [] },
     evidence: [{ start, end }],
   });
@@ -917,6 +934,8 @@ Depois de aprovar o candidato, o text de cada narração é o produto final. Est
 ${DIRETRIZ_CREDITOS_PUBLICACAO}
 
 ${DIRETRIZ_CAPAS}
+
+${motionDark ? DIRETRIZ_MOTION_DARK : ""}
 
 Faça automaticamente a seleção dos cortes, a escolha da pauta, do ângulo, da relação com a fonte e da contribuição do OS4. O usuário fornece o vídeo e a transcrição; não precisa elaborar um briefing, escolher o alvo ou aprovar uma proposta para cada corte. Resolva essas decisões a partir do material e da identidade abaixo e devolva o pacote estruturado pronto para importar.
 
@@ -1119,7 +1138,7 @@ ${blocoVideoOriginal}
 ${transcricao}`;
 
   const promptCompleto = simpleCutsInput?.checked === true ? promptSimples
-    : criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal });
+    : criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal, motionDark: estiloEditorial(editorialStyleInput?.value) === "motion_dark" });
   const botao = event?.currentTarget || $("#btnCopiarPromptIA");
   const original = botao?.textContent || "Copiar Prompt para IA";
   await navigator.clipboard.writeText(promptCompleto);
