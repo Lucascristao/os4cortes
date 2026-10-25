@@ -76,7 +76,7 @@ function atualizarOpcaoVisual() {
   const hint = $("#editorialStyleHint");
   if (hint) hint.textContent = simpleCutsInput?.checked === true
     ? "O corte simples mantém seu visual atual. Desmarque corte simples para escolher o visual dos vídeos autorais."
-    : "Visual atual preserva a edição de hoje. Motion Dark usa grafite com iluminação, sombras, ícones animados e legendas destacadas. A escolha vale para todo o lote autoral.";
+    : "Visual atual preserva a edição de hoje. Motion Dark usa preto absoluto com luz localizada, sombras, ícones animados e legendas destacadas. A escolha vale para todo o lote autoral.";
 }
 
 function atualizarTarjaVideo() {
