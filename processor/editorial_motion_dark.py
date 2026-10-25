@@ -159,40 +159,103 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
         draw.rounded_rectangle((vx-2,vy-2,vx+vw+1,vy+vh+1),radius=rounded+2,
                                outline=(207,170,102,125),width=max(1,int(short*.002)))
     else:
-        # Each visual change has a purpose: evidence / comparison / emphasis.
-        panel = (vx,vy,vx+vw-1,vy+vh-1)
-        draw.rounded_rectangle(panel, radius=rounded, fill=(29,32,39,252),
-                               outline=(203,163,88,130), width=max(1,round(short*.002)))
-        icon_size = round(short*.122)
-        try:
-            icon = _icon_frame(name, icon_size, min(36, icon_frame))
-            image.alpha_composite(icon, (vx+round(short*.034), vy+round(short*.022)))
-        except (OSError, ValueError, ImportError):
-            # The title and message are still fully readable without an icon.
-            pass
-        draw = ImageDraw.Draw(image, "RGBA")
-        style_label = {"comparison":"COMPARAÇÃO", "quote":"CITAÇÃO", "number":"DADO DA FONTE",
-                       "statement":"PONTO CENTRAL","source_card":"EM FOCO"}.get(layout, "EM FOCO")
-        draw.text((vx+round(short*.17),vy+round(short*.051)),
-                  style_label, font=font_small, fill=GOLD)
+        # Deliberately distinct visual grammar per layout. Only selected
+        # source-card retains the full moving interview in its real window.
         lines = visual.get("lines", ())
-        content = lines[min(stage,len(lines)-1)] if lines else title
-        support_box = (vx+round(short*.04), vy+round(vh*.30),
-                       vx+vw-round(short*.045),vy+vh-round(short*.045))
-        item = _fit(content, support_box, font_path, round(short*.060),
-                    max(12,round(short*.029)), "motion support")
-        _multiline(draw,item,WHITE,round(short*.02*(1-entrance)))
-        if layout=="comparison" and len(lines)>1:
-            draw.line((vx+int(vw*.12),vy+int(vh*.21),vx+int(vw*.88),vy+int(vh*.21)),
-                      fill=(202,163,88,110),width=2)
-            draw.text((vx+int(vw*.68),vy+int(vh*.085)),f"{stage+1}/{len(lines)}",
-                      font=font_small,fill=MUTED)
-        elif layout=="quote":
-            font_quote = ImageFont.truetype(str(font_path), max(30,round(short*.110)))
-            draw.text((vx+int(vw*.79),vy+int(vh*.08)),"“", font=font_quote,fill=(202,163,88,85))
-        elif layout=="number":
-            draw.line((vx+int(vw*.08),vy+int(vh*.82),vx+int(vw*.9),vy+int(vh*.82)),
-                      fill=GOLD,width=max(2,int(short*.003)))
+        content = lines[min(stage, len(lines)-1)] if lines else title
+        gap = max(7, round(short*.016))
+        panel = (vx, vy, vx+vw-1, vy+vh-1)
+        pad = round(short*.04)
+        icon_size = max(32, round(short*.112))
+        def put_icon(px, py):
+            try:
+                icon = _icon_frame(name, icon_size, min(36, icon_frame))
+                image.alpha_composite(icon, (int(px), int(py)))
+            except (OSError, ValueError, ImportError):
+                # Optional graphical ornament never invalidates literal speech.
+                pass
+
+        if layout == "source_card":
+            # Avoid an opaque full-screen card over the actual speaker.
+            draw.rounded_rectangle(panel, radius=rounded, fill=(0,0,0,0))
+            pill_w = min(vw-gap*2, int(vw*.70))
+            pill_h = max(round(short*.064), int(vh*.20))
+            pill=(vx+gap, vy+gap, vx+gap+pill_w, vy+gap+pill_h)
+            draw.rounded_rectangle(pill, radius=round(pill_h*.22), fill=(17,22,31,228),
+                                   outline=(202,163,88,145), width=max(1,round(short*.002)))
+            put_icon(pill[0]+gap, pill[1]+(pill_h-icon_size)//2)
+            draw = ImageDraw.Draw(image, "RGBA")
+            text_box=(pill[0]+icon_size+gap*2,pill[1]+gap,pill[2]-gap,pill[3]-gap)
+            support=_fit(content,text_box,font_path,max(14,round(short*.032)),
+                         max(10,round(short*.021)),"motion source label")
+            _multiline(draw,support,WHITE)
+        elif layout == "comparison" and len(lines) > 1:
+            # Two equal volumes with directional lighting; reveal meaning
+            # sequentially, rather than replacing one generic card.
+            margin = max(8,round(short*.018))
+            col=(vw-margin*3)//2
+            card_w=max(30,col)
+            for i in range(min(2,len(lines))):
+                x0=vx+margin+i*(card_w+margin)
+                y0=vy+margin
+                xend=x0+card_w
+                active=i<=stage
+                draw.rounded_rectangle((x0,y0,xend,vy+vh-margin),
+                                       radius=max(8,rounded//2),
+                                       fill=(43,36,29,255) if active else (25,29,36,240),
+                                       outline=(202,163,88,215) if active else (95,103,115,90),width=2)
+                label="01 / ANTES" if i==0 else "02 / DEPOIS"
+                draw.text((x0+gap,y0+gap), label, font=font_small,
+                          fill=GOLD if active else MUTED)
+                textbox=(x0+gap,y0+int(vh*.27),xend-gap,vy+vh-margin-gap)
+                item=_fit(lines[i],textbox,font_path,max(13,round(short*.047)),
+                          max(11,round(short*.021)),f"motion comparison {i}")
+                _multiline(draw,item,WHITE if active else (154,160,166,255),
+                           round(short*.016*(1-entrance)) if i==stage else 0)
+            put_icon(vx+vw-icon_size-gap,vy+gap)
+        elif layout == "quote":
+            # Quoted content remains visibly attributed and unlike a statistic.
+            draw.rounded_rectangle(panel,radius=rounded,fill=(37,39,43,255),
+                                   outline=(222,198,155,132),width=2)
+            draw.rounded_rectangle((vx+pad,vy+int(vh*.18),vx+pad+max(4,round(short*.007)),vy+vh-pad),
+                                   radius=2,fill=GOLD)
+            qfont=ImageFont.truetype(str(font_path),max(40,round(short*.12)))
+            draw.text((vx+pad,vy), "“", font=qfont, fill=(202,163,88,220))
+            area=(vx+pad*2+int(short*.014),vy+int(vh*.22),
+                  vx+vw-pad,vy+vh-pad-int(short*.012))
+            item=_fit(content,area,font_path,max(13,round(short*.054)),
+                      max(11,round(short*.026)),"motion quote")
+            _multiline(draw,item,WHITE,round(short*.02*(1-entrance)))
+            put_icon(vx+vw-icon_size-gap,vy+gap)
+        elif layout == "number":
+            # A real number from the supplied text becomes the dominant visual.
+            draw.rounded_rectangle(panel,radius=rounded,fill=(24,29,37,252),
+                                   outline=(202,163,88,115),width=2)
+            match=re.search(r"(?<!\w)\d[\d.,%]*",content) or re.search(r"(?<!\w)\d[\d.,%]*",title)
+            figure=match.group(0) if match else ""
+            if figure:
+                figure_area=(vx+pad,vy+int(vh*.13),vx+vw-pad,vy+int(vh*.65))
+                item=_fit(figure,figure_area,font_path,max(18,round(short*.15)),
+                          max(14,round(short*.065)),"motion number")
+                _multiline(draw,item,GOLD,round(short*.018*(1-entrance)))
+            explanation=re.sub(re.escape(figure),"",content,count=1).strip(" :-–—") if figure else content
+            if explanation:
+                area=(vx+pad,vy+int(vh*.67),vx+vw-pad,vy+vh-pad)
+                item=_fit(explanation,area,font_path,max(12,round(short*.039)),
+                          max(10,round(short*.022)),"motion number explanation")
+                _multiline(draw,item,WHITE)
+            put_icon(vx+vw-icon_size-gap,vy+gap)
+        else:
+            # Statement: illuminated type and a slim gold marker, not a paper card.
+            draw.rounded_rectangle(panel,radius=rounded,fill=(25,29,36,250),
+                                   outline=(203,163,88,115),width=2)
+            draw.rounded_rectangle((vx+pad,vy+int(vh*.27),vx+pad+int(short*.008),
+                                    vy+vh-pad),radius=2,fill=GOLD)
+            area=(vx+pad*2,vy+int(vh*.31),vx+vw-pad,vy+vh-pad)
+            item=_fit(content,area,font_path,max(14,round(short*.065)),
+                      max(11,round(short*.031)),"motion statement")
+            _multiline(draw,item,WHITE,round(short*.022*(1-entrance)))
+            put_icon(vx+vw-icon_size-gap,vy+gap)
     if credit:
         draw=ImageDraw.Draw(image)
         draw.text((left,int(h*.932)),credit[:100],font=font_small,fill=MUTED)
