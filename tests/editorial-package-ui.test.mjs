@@ -1300,7 +1300,7 @@ test('parada voluntária sem falhas preserva estado interrompido e resultados de
 
 
 test('Motion Dark acrescenta direção visual no prompt somente quando selecionado', async () => {
-  for (const editorialStyle of ['classic', 'paper', 'motion_dark']) {
+  for (const editorialStyle of ['classic', 'motion_dark']) {
     const h = harness();
     h.context.mostrarTranscricao(session({ simpleCuts: false, editorialStyle }));
     assert.equal(h.get('#editorialStyle').value, editorialStyle);
@@ -1336,4 +1336,18 @@ test('Motion Dark não altera modo simples nem a escolha editorial mantida na se
   await h.get('#btnCopiarPromptIA').fire('click');
   assert.doesNotMatch(h.copied[0], /DIREÇÃO VISUAL MOTION DARK/);
   assert.equal(JSON.parse(h.storage.get(sessionKey)).editorialStyle,'motion_dark');
+});
+
+
+test('Papel Dinâmico não é opção separada; sessão antiga migra para Motion Dark', async () => {
+  const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
+  const options = [...html.matchAll(/<option value="(classic|paper|motion_dark)"/g)].map(match => match[1]);
+  assert.deepEqual(options, ['classic', 'motion_dark']);
+
+  const h = harness();
+  h.context.mostrarTranscricao(session({simpleCuts:false, editorialStyle:'paper'}));
+  assert.equal(h.get('#editorialStyle').value, 'motion_dark');
+  assert.equal(JSON.parse(h.storage.get(sessionKey)).editorialStyle, 'motion_dark');
+  await h.get('#btnCopiarPromptIA').fire('click');
+  assert.match(h.copied[0], /DIREÇÃO VISUAL MOTION DARK/);
 });
