@@ -199,6 +199,22 @@ function editorialShapeError(plan, clipStart, clipEnd) {
           !scene.visual.title.trim() || scene.visual.title.length > 100) {
         return sceneError("o campo visual.title precisa conter um título de até 100 caracteres.");
       }
+      if (Object.hasOwn(scene.visual, "motion")) {
+        const motion = scene.visual.motion;
+        if (!isObject(motion) || Object.keys(motion).some((key) => !["layout", "icon", "emphasis"].includes(key))) {
+          return sceneError("visual.motion aceita somente layout, icon e emphasis.");
+        }
+        if (Object.hasOwn(motion, "layout") && !["source_card", "statement", "comparison", "quote", "number"].includes(motion.layout)) {
+          return sceneError("visual.motion.layout não existe no motor.");
+        }
+        if (Object.hasOwn(motion, "icon") && !["line-md:chat", "line-md:alert-circle", "line-md:confirm-circle", "line-md:clipboard-check"].includes(motion.icon)) {
+          return sceneError("visual.motion.icon não existe no catálogo Line MD local.");
+        }
+        if (Object.hasOwn(motion, "emphasis") && (typeof motion.emphasis !== "string" || motion.emphasis.length > 50 ||
+            !scene.visual.title.toLocaleLowerCase().includes(motion.emphasis.toLocaleLowerCase()))) {
+          return sceneError("visual.motion.emphasis deve repetir um trecho literal do visual.title.");
+        }
+      }
       hasNarration = true;
     } else {
       return sceneError('o campo kind precisa ser "clip" ou "narration".');
