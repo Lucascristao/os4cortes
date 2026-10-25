@@ -1297,3 +1297,43 @@ test('parada voluntária sem falhas preserva estado interrompido e resultados de
   assert.equal(h.get('#progressTitle').textContent,'Processamento interrompido');
  }
 });
+
+
+test('Motion Dark acrescenta direção visual no prompt somente quando selecionado', async () => {
+  for (const editorialStyle of ['classic', 'paper', 'motion_dark']) {
+    const h = harness();
+    h.context.mostrarTranscricao(session({ simpleCuts: false, editorialStyle }));
+    assert.equal(h.get('#editorialStyle').value, editorialStyle);
+    await h.get('#btnCopiarPromptIA').fire('click');
+    const prompt = h.copied[0];
+    const [example] = promptExample(prompt);
+    const narrated = example.editorial.scenes.filter(scene => scene.kind === 'narration');
+    if (editorialStyle === 'motion_dark') {
+      assert.match(prompt, /DIREÇÃO VISUAL MOTION DARK/);
+      assert.match(prompt, /line-md:alert-circle/);
+      assert.match(prompt, /direção visual executável/);
+      assert.ok(narrated.every(scene => scene.visual.motion?.layout === 'statement'));
+      assert.ok(narrated.every(scene => scene.visual.motion?.icon === 'line-md:chat'));
+      await h.import([example]);
+      assert.equal(h.cards().length, 1);
+      assert.deepEqual(h.alerts, []);
+      assert.deepEqual(JSON.parse(h.storage.get(packageKey))[0].editorial.scenes, example.editorial.scenes);
+    } else {
+      assert.doesNotMatch(prompt, /DIREÇÃO VISUAL MOTION DARK/);
+      assert.ok(narrated.every(scene => !Object.hasOwn(scene.visual, 'motion')));
+    }
+  }
+});
+
+test('Motion Dark não altera modo simples nem a escolha editorial mantida na sessão', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao(session({ simpleCuts: false, editorialStyle: 'motion_dark' }));
+  assert.equal(h.get('#editorialStyle').disabled, false);
+  assert.equal(h.get('#editorialStyle').value, 'motion_dark');
+  h.get('#simpleCuts').checked = true;
+  await h.get('#simpleCuts').fire('change');
+  assert.equal(h.get('#editorialStyle').disabled, true);
+  await h.get('#btnCopiarPromptIA').fire('click');
+  assert.doesNotMatch(h.copied[0], /DIREÇÃO VISUAL MOTION DARK/);
+  assert.equal(JSON.parse(h.storage.get(sessionKey)).editorialStyle,'motion_dark');
+});
