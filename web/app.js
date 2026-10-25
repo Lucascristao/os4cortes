@@ -868,7 +868,7 @@ Depois revise os aprovados: qual só parece bom porque ganhou título, narraçã
 5. Produção silenciosa do JSON
 Somente após fechar a seleção, redija o pacote no contrato exigido. Confira o que será ouvido na ordem final: a promessa da abertura é entregue pelo conteúdo? O interesse sobrevive sem depender da capa e da legenda? Corrija ou descarte quem perder a força na montagem. A revisão é interna; entregue EXCLUSIVAMENTE o array JSON válido, sem notas, justificativas, checklist, campos novos ou pedidos de confirmação.`;
 
-const DIRETRIZ_MOTION_DARK = \`DIREÇÃO VISUAL MOTION DARK — EXCLUSIVA DO MODELO SELECIONADO
+const DIRETRIZ_MOTION_DARK = `DIREÇÃO VISUAL MOTION DARK — EXCLUSIVA DO MODELO SELECIONADO
 Além de selecionar e comentar os cortes, atue como DIRETOR DE MOTION DESIGN: transforme as ideias das falas em decisões visuais executáveis. Não basta repetir um único layout com cartões ou fundo escuro. Faça alternância intencional, sem sobrecarregar e sem interromper a fala.
 
 Inclua em CADA cena kind: "narration" a propriedade visual.motion exatamente neste formato:
@@ -883,7 +883,7 @@ Inclua em CADA cena kind: "narration" a propriedade visual.motion exatamente nes
 - O Python/FFmpeg executará a iluminação, sombreamento, profundidade, entrada das camadas, iconografia animada, legendas sem tarja e trocas de cena. Não inclua filtros FFmpeg, código, coordenadas arbitrárias ou descrições vagas de estilo no JSON.
 - Preencha visual.title, visual.kicker e visual.lines como antes. visual.motion é a ÚNICA extensão de direção de arte de cada narração; não crie visualPlan global nem campos desconhecidos.
 - Preserve integralmente o texto falado, os timestamps, os trechos da fonte e o JSON exigido. O modelo visual não torna uma fala própria, verdadeira ou monetizável só pelo efeito.
-\`;
+`;
 
 function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal, motionDark = false }) {
   const fonte = sampleAuthor || "Fonte original";
