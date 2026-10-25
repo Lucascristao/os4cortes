@@ -68,7 +68,7 @@ function salvarSessaoTranscricao() {
 }
 
 function estiloEditorial(value) {
-  return value === "paper" ? "paper" : "classic";
+  return value === "paper" || value === "motion_dark" ? value : "classic";
 }
 
 function atualizarOpcaoVisual() {
@@ -76,7 +76,7 @@ function atualizarOpcaoVisual() {
   const hint = $("#editorialStyleHint");
   if (hint) hint.textContent = simpleCutsInput?.checked === true
     ? "O corte simples mantém seu visual atual. Desmarque corte simples para escolher o visual dos vídeos autorais."
-    : "Visual atual mantém o padrão de hoje. Papel dinâmico usa fundo claro, cartões e textos animados. A escolha vale para todo o lote autoral.";
+    : "Visual atual preserva o modelo clássico. Papel dinâmico usa fundo claro. Motion Dark usa fundo grafite com iluminação e legendas destacadas. A escolha vale para todo o lote autoral.";
 }
 
 function atualizarTarjaVideo() {
@@ -868,12 +868,29 @@ Depois revise os aprovados: qual só parece bom porque ganhou título, narraçã
 5. Produção silenciosa do JSON
 Somente após fechar a seleção, redija o pacote no contrato exigido. Confira o que será ouvido na ordem final: a promessa da abertura é entregue pelo conteúdo? O interesse sobrevive sem depender da capa e da legenda? Corrija ou descarte quem perder a força na montagem. A revisão é interna; entregue EXCLUSIVAMENTE o array JSON válido, sem notas, justificativas, checklist, campos novos ou pedidos de confirmação.`;
 
-function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal }) {
+const DIRETRIZ_MOTION_DARK = `DIREÇÃO VISUAL MOTION DARK — EXCLUSIVA DO MODELO SELECIONADO
+Além de selecionar e comentar os cortes, atue como DIRETOR DE MOTION DESIGN: transforme as ideias das falas em decisões visuais executáveis. Não basta repetir um único layout com cartões ou fundo escuro. Faça alternância intencional, sem sobrecarregar e sem interromper a fala.
+
+Inclua em CADA cena kind: "narration" a propriedade visual.motion exatamente neste formato:
+"motion": {"layout":"statement","icon":"line-md:chat","emphasis":"CONTRADIÇÃO"}
+- layout é um dos valores: source_card, statement, comparison, quote, number.
+- icon é EXCLUSIVAMENTE: line-md:chat, line-md:alert-circle, line-md:confirm-circle, line-md:clipboard-check.
+- emphasis é um trecho LITERAL do próprio visual.title, preferencialmente de 1 a 3 palavras, até 50 caracteres; pode ser string vazia. O motor colore essa expressão e mantém as legendas sincronizadas com a fala.
+- source_card: usa vídeo de origem em destaque; statement: frase ou constatação concreta; comparison: contrasta dois apoios; quote: só quando há citação real atribuída; number: só com número explícito confirmado na transcrição e escrito em visual.title ou visual.lines.
+- Escolha o ícone pelo significado real (chat para declaração; alerta para atenção; confirmação para ponto confirmado; clipboard-check para evidência textual). Ícone não é prova de fato.
+- Planeje um elemento principal por momento. Mantenha títulos curtos, fortes, sem palavras cortadas. Para comparison, use duas frases de apoio e não invente lados: visual.lines contém entre uma e três frases curtas sustentadas pela fonte, preferindo duas para comparação. Nos demais, uma frase de apoio basta.
+- Não invente arquivos, prints, imagens externas, URLs, pessoas, números nem datas. A biblioteca Line MD já está incluída no motor; a IA escolhe somente os IDs.
+- O Python/FFmpeg executará a iluminação, sombreamento, profundidade, entrada das camadas, iconografia animada, legendas sem tarja e trocas de cena. Não inclua filtros FFmpeg, código, coordenadas arbitrárias ou descrições vagas de estilo no JSON.
+- Preencha visual.title, visual.kicker e visual.lines como antes. visual.motion é a ÚNICA extensão de direção de arte de cada narração; não crie visualPlan global nem campos desconhecidos.
+- Preserve integralmente o texto falado, os timestamps, os trechos da fonte e o JSON exigido. O modelo visual não torna uma fala própria, verdadeira ou monetizável só pelo efeito.
+`;
+
+function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal, motionDark = false }) {
   const fonte = sampleAuthor || "Fonte original";
   const narracao = (id, title, start, end, text, delivery = "explain") => ({
     id, kind: "narration", text,
     background: { start, end },
-    visual: { title, kicker: "Política", lines: ["[Uma frase curta ligada a esta cena]"] },
+    visual: { title, kicker: "Política", lines: ["[Uma frase curta ligada a esta cena]"], ...(motionDark ? { motion: { layout: "statement", icon: "line-md:chat", emphasis: "" } } : {}) },
     tts: { delivery, cues: [] },
     evidence: [{ start, end }],
   });
@@ -917,6 +934,8 @@ Depois de aprovar o candidato, o text de cada narração é o produto final. Est
 ${DIRETRIZ_CREDITOS_PUBLICACAO}
 
 ${DIRETRIZ_CAPAS}
+
+${motionDark ? DIRETRIZ_MOTION_DARK : ""}
 
 Faça automaticamente a seleção dos cortes, a escolha da pauta, do ângulo, da relação com a fonte e da contribuição do OS4. O usuário fornece o vídeo e a transcrição; não precisa elaborar um briefing, escolher o alvo ou aprovar uma proposta para cada corte. Resolva essas decisões a partir do material e da identidade abaixo e devolva o pacote estruturado pronto para importar.
 
@@ -995,7 +1014,7 @@ Contrato editorial obrigatório:
 - inicio/fim são o envelope da fonte: use o menor start e o maior end de TODAS as referências em clips, backgrounds e evidence. A duração final é a soma dos áudios narrados e dos clips na montagem; ela não é a duração desse envelope da fonte.
 - Preserve as frações de segundo: 101.7 segundos corresponde a "00:01:41.7". Não arredonde inicio/fim para dentro dos intervalos usados nas cenas.
 - COMPOSIÇÃO DOS QUADROS DE NARRAÇÃO: preserve os três elementos sobre o vídeo ao fundo: rótulo temático acima, destaque principal e uma frase curta de apoio abaixo. Em cada narration, preencha visual.kicker, visual.title e visual.lines; não apague o rótulo ou o apoio para resolver excesso de texto. visual.title deve ter de preferência 3 a 7 palavras, até 60 caracteres, com uma ideia completa e fiel à cena. O título de publicação e cover.title têm funções próprias; não copie automaticamente esses textos para visual.title.
-- RÓTULO E APOIO CURTOS: escreva visual.kicker em português, com até 24 caracteres, conforme o assunto (por exemplo: Política, Economia, Instituições ou Humor). visual.lines deve conter exatamente uma frase completa e curta, de preferência 4 a 8 palavras, no máximo 9 palavras e 55 caracteres. Escreva uma ideia própria ligada à cena, sem parágrafo, resumo do argumento inteiro ou repetição literal da legenda da voz. Se ficar longo, reescreva com menos palavras; nunca corte por número de caracteres, deixe palavras pela metade ou termine em fragmentos ou reticências. Confira cada frase antes de entregar. A montagem cuida do vídeo ao fundo, blur, preto neutro, movimento do texto, voz e legendas.
+- RÓTULO E APOIO CURTOS: escreva visual.kicker em português, com até 24 caracteres, conforme o assunto (por exemplo: Política, Economia, Instituições ou Humor). ${motionDark ? "visual.lines deve conter uma frase curta (preferencialmente 4 a 8 palavras) e pode conter duas frases quando o layout for comparison, sempre até três apoios e cada frase com até 55 caracteres." : "visual.lines deve conter exatamente uma frase completa e curta, de preferência 4 a 8 palavras, no máximo 9 palavras e 55 caracteres."} Escreva uma ideia própria ligada à cena, sem parágrafo, resumo do argumento inteiro ou repetição literal da legenda da voz. Se ficar longo, reescreva com menos palavras; nunca corte por número de caracteres, deixe palavras pela metade ou termine em fragmentos ou reticências. Confira cada frase antes de entregar. A montagem cuida do vídeo ao fundo, blur, preto neutro, movimento do texto, voz e legendas.
 - CAMPOS INTERNOS NÃO SÃO TEXTO DE TELA: profile.topic mantém os valores técnicos em inglês do contrato (politics, economy, business, humor ou general) apenas para classificar o assunto. Traduza o assunto para o rótulo visível; nunca copie o valor inglês de profile.topic para visual.kicker, visual.title ou visual.lines, nem escreva rótulos como Politics ou Economy na imagem. profile.angle, intent.source_point e intent.contribution orientam o planejamento e o comentário; nunca copie esses campos automaticamente para a tela. Crie o destaque e a frase de apoio como textos próprios e curtos, sem colar fragmentos desses campos.
 - Escolha tts.delivery pela intenção de cada cena: hook na abertura que apresenta o assunto, explain ao explicar, question em pergunta direta, contrast para uma distinção e closing ao concluir. Cada cena herda tone e intensity do profile. Opcionalmente inclua tts.tone e/ou tts.intensity usando os mesmos valores permitidos no profile para adaptar uma cena ao momento. Use cues vazio para começar. A direção acompanha o contexto sem mudar a identidade e a região grave confortável da voz; intensidade alta significa mais energia e ênfase, sem gritar. Não coloque comandos de interpretação, instruções de voz ou marcações entre colchetes no text: ele contém somente a fala literal. Preserve a fala original nos clips.
 - Nos horizontais inclua descricao e tags; nos verticais legenda_post e hashtags. Os títulos, créditos e descrições também devem ser fiéis à fonte.
@@ -1119,7 +1138,7 @@ ${blocoVideoOriginal}
 ${transcricao}`;
 
   const promptCompleto = simpleCutsInput?.checked === true ? promptSimples
-    : criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal });
+    : criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal, motionDark: estiloEditorial(editorialStyleInput?.value) === "motion_dark" });
   const botao = event?.currentTarget || $("#btnCopiarPromptIA");
   const original = botao?.textContent || "Copiar Prompt para IA";
   await navigator.clipboard.writeText(promptCompleto);

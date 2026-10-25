@@ -81,7 +81,7 @@ const EDITORIAL_TONES = ["conversational", "provocative", "ironic", "playful", "
 const EDITORIAL_INTENSITIES = ["low", "medium", "high"];
 const COMMENTARY_MODES = ["support_source", "challenge_source", "direct_commentary"];
 const COVER_TEMPLATES = ["01_central", "02_lateral", "03_close"];
-const EDITORIAL_STYLES = ["classic", "paper"];
+const EDITORIAL_STYLES = ["classic", "paper", "motion_dark"];
 
 function coverShapeError(cover) {
   if (!cover || typeof cover !== "object" || Array.isArray(cover)) return "cover precisa ser um objeto JSON.";
@@ -118,7 +118,7 @@ function editorialShapeError(plan, clipStart, clipEnd) {
   if (!isObject(plan)) return invalid("editorial precisa ser um objeto.");
   if (plan.version !== 1) return invalid("o campo version precisa ser o número 1.");
   if (Object.hasOwn(plan, "visual_style") && !EDITORIAL_STYLES.includes(plan.visual_style)) {
-    return invalid("o campo visual_style precisa ser classic ou paper.");
+    return invalid("o campo visual_style precisa ser classic, paper ou motion_dark.");
   }
   if (Object.hasOwn(plan, "intent")) {
     const intent = plan.intent;
@@ -199,6 +199,22 @@ function editorialShapeError(plan, clipStart, clipEnd) {
           !scene.visual.title.trim() || scene.visual.title.length > 100) {
         return sceneError("o campo visual.title precisa conter um título de até 100 caracteres.");
       }
+      if (Object.hasOwn(scene.visual, "motion")) {
+        const motion = scene.visual.motion;
+        if (!isObject(motion) || Object.keys(motion).some((key) => !["layout", "icon", "emphasis"].includes(key))) {
+          return sceneError("visual.motion aceita somente layout, icon e emphasis.");
+        }
+        if (Object.hasOwn(motion, "layout") && !["source_card", "statement", "comparison", "quote", "number"].includes(motion.layout)) {
+          return sceneError("visual.motion.layout não existe no motor.");
+        }
+        if (Object.hasOwn(motion, "icon") && !["line-md:chat", "line-md:alert-circle", "line-md:confirm-circle", "line-md:clipboard-check"].includes(motion.icon)) {
+          return sceneError("visual.motion.icon não existe no catálogo Line MD local.");
+        }
+        if (Object.hasOwn(motion, "emphasis") && (typeof motion.emphasis !== "string" || motion.emphasis.length > 50 ||
+            !scene.visual.title.toLocaleLowerCase().includes(motion.emphasis.toLocaleLowerCase()))) {
+          return sceneError("visual.motion.emphasis deve repetir um trecho literal do visual.title.");
+        }
+      }
       hasNarration = true;
     } else {
       return sceneError('o campo kind precisa ser "clip" ou "narration".');
@@ -248,7 +264,7 @@ export default safeHandler(async (request, context) => {
   }
   const burnCaptions = !Object.hasOwn(body, "burnCaptions") || body.burnCaptions === true;
   if (Object.hasOwn(body, "editorialStyle") && !EDITORIAL_STYLES.includes(body.editorialStyle)) {
-    return json(400, { ok: false, error: "O visual dos vídeos autorais precisa ser classic ou paper." });
+    return json(400, { ok: false, error: "O visual dos vídeos autorais precisa ser classic, paper ou motion_dark." });
   }
 
   const configStore = blobStore("os4-config", context);
@@ -350,7 +366,7 @@ export default safeHandler(async (request, context) => {
       // Only the render copy receives the batch choice. Imported plans and
       // legacy packages remain unchanged, including absence of the default.
       const { visual_style, ...editorial } = cut.editorial;
-      return { ...cut, editorial: body.editorialStyle === "paper" ? { ...editorial, visual_style: "paper" } : editorial };
+      return { ...cut, editorial: body.editorialStyle === "paper" || body.editorialStyle === "motion_dark" ? { ...editorial, visual_style: body.editorialStyle } : editorial };
     });
     let cutsJson = JSON.stringify(renderCuts);
     if (simpleCuts) {

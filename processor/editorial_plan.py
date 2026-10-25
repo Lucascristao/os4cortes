@@ -11,7 +11,7 @@ EDITORIAL_TOPICS = ("politics", "economy", "business", "humor", "general")
 EDITORIAL_TONES = ("conversational", "provocative", "ironic", "playful", "explanatory", "serious")
 EDITORIAL_INTENSITIES = ("low", "medium", "high")
 EDITORIAL_COMMENTARY_MODES = ("support_source", "challenge_source", "direct_commentary")
-EDITORIAL_VISUAL_STYLES = ("classic", "paper")
+EDITORIAL_VISUAL_STYLES = ("classic", "paper", "motion_dark")
 DEFAULT_EDITORIAL_INTENT = {
     "mode": "direct_commentary", "source_point": "", "target": "", "contribution": "",
 }
@@ -159,6 +159,24 @@ def normalize_editorial_plan(raw, *, clip_start=None, clip_end=None):
                 "kicker": str(visual.get("kicker", ""))[:60],
                 "lines": [_text(line, f"{name}.visual.lines", 140) for line in lines],
             }
+            if "motion" in visual:
+                motion = visual["motion"]
+                if not isinstance(motion, dict) or set(motion) - {"layout", "icon", "emphasis"}:
+                    raise ValueError(f"{name}.visual.motion: campos permitidos layout, icon, emphasis.")
+                layouts = ("source_card", "statement", "comparison", "quote", "number")
+                icons = ("line-md:chat", "line-md:alert-circle", "line-md:confirm-circle", "line-md:clipboard-check")
+                layout = motion.get("layout", "source_card")
+                icon = motion.get("icon", "line-md:chat")
+                emphasis = motion.get("emphasis", "")
+                if layout not in layouts or icon not in icons:
+                    raise ValueError(f"{name}.visual.motion: layout ou ícone fora do catálogo local.")
+                if not isinstance(emphasis, str) or len(emphasis) > 50:
+                    raise ValueError(f"{name}.visual.motion.emphasis: máximo 50 caracteres.")
+                if emphasis and emphasis.casefold() not in normalized["visual"]["title"].casefold():
+                    raise ValueError(f"{name}.visual.motion.emphasis precisa ser trecho literal do título visual.")
+                if layout == "number" and not any(c.isdigit() for c in normalized["visual"]["title"] + " ".join(lines)):
+                    raise ValueError(f"{name}.visual.motion.number exige número explícito no título ou apoio.")
+                normalized["visual"]["motion"] = {"layout": layout, "icon": icon, "emphasis": emphasis}
             tts = scene.get("tts", {"delivery": "explain"})
             if not isinstance(tts, dict) or tts.get("delivery", "explain") not in ("hook", "explain", "contrast", "question", "closing"):
                 raise ValueError(f"{name}.tts: direção vocal inválida.")
@@ -208,4 +226,11 @@ def voice_plan_fingerprint(plan):
     this rendering-only field, preserving all previous cache decisions and the
     exact legacy hash for plans that never declared a visual style.
     """
-    return editorial_fingerprint({key: value for key, value in plan.items() if key != "visual_style"})
+    clean = {key: value for key, value in plan.items() if key != "visual_style"}
+    if any("motion" in (scene.get("visual") or {}) for scene in clean.get("scenes", [])):
+        # Pure visual motion instructions must never trigger another approved TTS.
+        clean = json.loads(json.dumps(clean, ensure_ascii=False, allow_nan=False))
+        for scene in clean["scenes"]:
+            if "visual" in scene:
+                scene["visual"].pop("motion", None)
+    return editorial_fingerprint(clean)

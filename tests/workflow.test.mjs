@@ -792,3 +792,36 @@ test('a saved video awaiting its cover remains visible but never enters the publ
 });
 
 
+
+
+test('Motion Dark preserva pacote da IA e altera somente cópia de renderização', async () => {
+ const cut=narratedCut();
+ cut.editorial.scenes[0].visual.motion={layout:'comparison',icon:'line-md:confirm-circle',emphasis:'dito'};
+ for (const editorialStyle of ['classic','paper','motion_dark']) {
+  const original=structuredClone(cut);
+  const res=await start(req('workflow-start','POST',renderBody({cuts:[cut],simpleCuts:false,editorialStyle})),context);
+  assert.equal(res.status,202,editorialStyle);
+  const payload=JSON.parse(dispatches.at(-1).inputs.cuts_json);
+  assert.equal(payload.length,1);
+  assert.equal(payload[0].editorial.visual_style,editorialStyle==='classic'?undefined:editorialStyle);
+  assert.deepEqual(payload[0].editorial.scenes[0].visual.motion,cut.editorial.scenes[0].visual.motion);
+  assert.deepEqual(cut,original,'request original must remain unchanged');
+ }
+});
+
+test('direções Line MD inválidas são barradas antes de despachar lote ou preparar voz', async () => {
+ const bad=[
+  {layout:'free_css',icon:'line-md:chat',emphasis:''},
+  {layout:'statement',icon:'line-md:nonexistent',emphasis:''},
+  {layout:'statement',icon:'line-md:chat',emphasis:'palavra inexistente'},
+  {layout:'statement',icon:'line-md:chat',emphasis:'',code:'rm -rf .'},
+ ];
+ for (const motion of bad) {
+  const cut=narratedCut();
+  cut.editorial.scenes[0].visual.motion=motion;
+  const count=dispatches.length;
+  const res=await start(req('workflow-start','POST',renderBody({cuts:[cut],simpleCuts:false,editorialStyle:'motion_dark'})),context);
+  assert.equal(res.status,400,JSON.stringify(motion));
+  assert.equal(dispatches.length,count,'invalid motion must never launch runner');
+ }
+});
