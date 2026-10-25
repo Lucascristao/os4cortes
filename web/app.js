@@ -869,21 +869,37 @@ Depois revise os aprovados: qual só parece bom porque ganhou título, narraçã
 Somente após fechar a seleção, redija o pacote no contrato exigido. Confira o que será ouvido na ordem final: a promessa da abertura é entregue pelo conteúdo? O interesse sobrevive sem depender da capa e da legenda? Corrija ou descarte quem perder a força na montagem. A revisão é interna; entregue EXCLUSIVAMENTE o array JSON válido, sem notas, justificativas, checklist, campos novos ou pedidos de confirmação.`;
 
 const DIRETRIZ_MOTION_DARK = `DIREÇÃO VISUAL MOTION DARK — EXCLUSIVA DO MODELO SELECIONADO
-Direção de arte BLACK DARK: fundo preto absoluto (#000000), superfícies quase pretas (#090909 a #161616), luz âmbar localizada sobre elementos importantes, sombras e profundidade. Sem banho azulado, gradiente grafite cobrindo o quadro ou caixas pesadas nas legendas.
-Além de selecionar e comentar os cortes, atue como DIRETOR DE MOTION DESIGN: transforme as ideias das falas em decisões visuais executáveis. Não basta repetir um único layout com cartões ou fundo escuro. Faça alternância intencional, sem sobrecarregar e sem interromper a fala.
+Direção de arte BLACK DARK: fundo preto absoluto (#000000), superfícies quase pretas (#090909 a #161616), iluminação âmbar localizada, sombras e profundidade. Sem banho azulado, gradiente grafite cobrindo a tela ou caixas pesadas nas legendas. Esta paleta e os efeitos são executados pelo motor; a IA não precisa descrevê-los em cada cena.
 
-Inclua em CADA cena kind: "narration" a propriedade visual.motion exatamente neste formato:
-"motion": {"layout":"statement","icon":"line-md:chat","emphasis":"CONTRADIÇÃO"}
-- layout é um dos valores: source_card, statement, comparison, quote, number.
-- icon é EXCLUSIVAMENTE: line-md:chat, line-md:alert-circle, line-md:confirm-circle, line-md:clipboard-check.
-- emphasis é um trecho LITERAL do próprio visual.title, preferencialmente de 1 a 3 palavras, até 50 caracteres; pode ser string vazia. O motor colore essa expressão e mantém as legendas sincronizadas com a fala.
-- source_card: usa vídeo de origem em destaque; statement: frase ou constatação concreta; comparison: contrasta dois apoios; quote: só quando há citação real atribuída; number: só com número explícito confirmado na transcrição e escrito em visual.title ou visual.lines.
-- Escolha o ícone pelo significado real (chat para declaração; alerta para atenção; confirmação para ponto confirmado; clipboard-check para evidência textual). Ícone não é prova de fato.
-- Planeje um elemento principal por momento. Mantenha títulos curtos, fortes, sem palavras cortadas. Para comparison, use duas frases de apoio e não invente lados: visual.lines contém entre uma e três frases curtas sustentadas pela fonte, preferindo duas para comparação. Nos demais, uma frase de apoio basta.
-- Não invente arquivos, prints, imagens externas, URLs, pessoas, números nem datas. A biblioteca Line MD já está incluída no motor; a IA escolhe somente os IDs.
-- O Python/FFmpeg executará a iluminação, sombreamento, profundidade, entrada das camadas, iconografia animada, legendas sem tarja e trocas de cena. Não inclua filtros FFmpeg, código, coordenadas arbitrárias ou descrições vagas de estilo no JSON.
-- Preencha visual.title, visual.kicker e visual.lines como antes. visual.motion é a ÚNICA extensão de direção de arte de cada narração; não crie visualPlan global nem campos desconhecidos.
-- Preserve integralmente o texto falado, os timestamps, os trechos da fonte e o JSON exigido. O modelo visual não torna uma fala própria, verdadeira ou monetizável só pelo efeito.
+ATUE COMO DIRETOR DE MOTION DESIGN, NÃO COMO DISTRIBUIDOR DE CARTÕES
+Antes de preencher o JSON, examine o conjunto das narrações aprovadas e associe a cada uma uma função visual concreta: manter a pessoa visível, materializar uma afirmação, colocar um antes/depois lado a lado, ressaltar uma citação literal ou tornar um dado confirmado legível. Faça essas escolhas a partir do significado da fala, não sorteie estilos. A sequência deve ter contraste entre momentos de fala original, respiro visual e ênfase informativa. A troca de layout precisa acrescentar entendimento; repetir um layout só é aceitável quando a história realmente exigir. Não crie narração extra, repita um clip nem alongue a voz apenas para mostrar animação.
+
+CATÁLOGO REAL DE COMPOSIÇÕES — escolha a opção que melhor comunica a informação:
+- source_card: preserve o vídeo da fonte em destaque, com apoio discreto; ideal quando expressão, reação ou presença de quem fala importa. O apoio não deve esconder a pessoa.
+- statement: destaque uma afirmação, decisão, pergunta específica ou consequência em poucas palavras; quando não existir comparação, citação literal ou número relevante, prefira um título preciso a um cartão genérico.
+- comparison: SOMENTE quando existem duas etapas temporais realmente contrastantes, pois o motor apresenta as colunas como ANTES e DEPOIS. Use EXATAMENTE duas visual.lines: primeira para antes, segunda para depois. Não use para opiniões paralelas, percentuais de fontes incomparáveis ou duas pessoas sem sequência temporal.
+- quote: destaque UMA fala literal presente nos trechos originais, com sua atribuição preservada no contexto audível; a visual.lines[0] deve trazer uma frase curta e realmente pronunciada. Não crie aspas para uma paráfrase ou interpretação do narrador.
+- number: destaque UM número verificado no material, com unidade ou contexto claro. Coloque o número literalmente no início de visual.lines[0] (ex.: percentual, valor ou quantidade apenas se existir na fonte); o motor extrai o primeiro número dessa frase. Não crie números para justificar este layout.
+
+DIREÇÃO DE TIPOGRAFIA E CONTEÚDO
+O campo visual.title é a manchete visual específica desta narração, não uma cópia do titulo de publicação nem um resumo genérico. Prefira palavras com imagem mental e sentido completo; evite títulos recorrentes como "EM FOCO", "A GRANDE QUESTÃO", "ENTENDA O CASO" ou "O QUE ACONTECEU". visual.kicker é um rótulo em português do assunto, sem virar destaque principal. visual.lines contém apoio legível, não transcrição longa: UMA frase curta nos layouts source_card, statement, quote e number; EXATAMENTE duas no comparison. O motor alterna apoios durante a fala, então mantenha cada frase autônoma e ligada ao argumento, evitando duas linhas com a mesma ideia.
+
+Para cada narration inclua visual.motion EXATAMENTE assim:
+"motion": {"layout":"source_card","icon":"line-md:clipboard-check","emphasis":"PONTO"}
+- layout: source_card, statement, comparison, quote ou number; nunca invente valores.
+- icon: somente line-md:chat, line-md:alert-circle, line-md:confirm-circle ou line-md:clipboard-check. Escolha pelo assunto: chat para fala; alert-circle para alerta, dúvida ou conflito; confirm-circle para uma confirmação realmente atribuída; clipboard-check para um dado ou declaração documentada. O ícone é ilustrativo, nunca certifica a veracidade de uma afirmação.
+- emphasis: trecho LITERAL e contínuo do próprio visual.title, de preferência uma expressão curta de 1 a 3 palavras, máximo 50 caracteres. Escolha a palavra que carrega a virada da ideia. Evite deixar vazio por hábito; use "" apenas quando nenhuma palavra precisar de destaque. Não destaque várias palavras sem função nem repita sempre a primeira palavra do título.
+- Em uma sequência com várias narrações, revise título, layout, ícone e emphasis em conjunto: evite combinações repetidas sem razão e contraste cenas densas com a fala original; NÃO imponha cotas, alternância artificial ou a obrigação de usar os cinco layouts.
+- O motor aplica as animações predefinidas, a iluminação, os SVGs Line MD e as legendas alinhadas à voz. A IA decide O QUE destacar e QUAL composição existente usar; não define coordenadas, duração de animação, movimentos de câmera, filtros FFmpeg, cores extras ou efeitos ainda inexistentes.
+
+EXEMPLOS FICTÍCIOS DE DECISÃO VISUAL, NÃO COPIE AS FRASES PARA O VÍDEO REAL
+- Uma comparação temporal genuína: visual.title "ANTES E DEPOIS"; visual.lines ["Antes: plano reduzido", "Depois: plano ampliado"]; visual.motion {"layout":"comparison","icon":"line-md:alert-circle","emphasis":"DEPOIS"}.
+- Uma fala literal curta da fonte: visual.title "A RESPOSTA FOI DIRETA"; visual.lines ["Eu volto amanhã"]; visual.motion {"layout":"quote","icon":"line-md:chat","emphasis":"DIRETA"}.
+- Uma reação em que o rosto importa mais que gráficos: visual.title "A REAÇÃO DIZ MUITO"; visual.lines ["A fala original em destaque"]; visual.motion {"layout":"source_card","icon":"line-md:chat","emphasis":"REAÇÃO"}.
+São exemplos distintos de intenção, não uma sequência obrigatória. O próprio exemplo JSON adiante é só sintaxe; NÃO replique seu layout em todas as cenas.
+
+AUDITORIA VISUAL ANTES DE ENTREGAR
+Releia as narrações na ordem em que serão ouvidas. Em cada cena, pergunte internamente: por que esta composição ajuda mais que a anterior? O título e a frase de apoio acrescentam sentido sem encobrir a fonte? A ênfase é a expressão mais significativa? Existe contraste real para comparison, citação literal para quote e número explícito para number? Se não, escolha outro layout existente e reescreva SOMENTE os textos de tela. Preserve o conteúdo falado, a atribuição, os timestamps, os intervalos evidence e todos os campos técnicos. O motion é a ÚNICA extensão visual por narração; não crie visualPlan, efeitos livres, bibliotecas externas ou campos desconhecidos. O acabamento visual não garante originalidade ou monetização.
 `;
 
 function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideoOriginal, motionDark = false }) {
@@ -891,7 +907,7 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideo
   const narracao = (id, title, start, end, text, delivery = "explain") => ({
     id, kind: "narration", text,
     background: { start, end },
-    visual: { title, kicker: "Política", lines: ["[Uma frase curta ligada a esta cena]"], ...(motionDark ? { motion: { layout: "statement", icon: "line-md:chat", emphasis: "" } } : {}) },
+    visual: { title, kicker: "Política", lines: ["[Uma frase curta ligada a esta cena]"], ...(motionDark ? { motion: { layout: "source_card", icon: "line-md:clipboard-check", emphasis: "Ponto" } } : {}) },
     tts: { delivery, cues: [] },
     evidence: [{ start, end }],
   });
