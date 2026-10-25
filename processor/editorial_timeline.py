@@ -167,7 +167,23 @@ def _legacy_beats_from_scene(scene: dict, duration: float, words: list = ()) -> 
             )
         ]
 
-    # statement or fallback
+    if scene.get("kind") == "clip":
+        return [
+            MotionBeat(
+                id="clip-source-0",
+                beat_type="source_focus",
+                anchor="",
+                start_time=0.0,
+                end_time=duration,
+                video_mode="window",
+                data={
+                    "title": "",
+                    "label": "",
+                    "icon": "",
+                },
+            )
+        ]
+
     content = lines[0] if lines else title
     return [
         MotionBeat(

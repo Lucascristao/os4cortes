@@ -162,7 +162,7 @@ def _highlight_title(image, item, emphasis: str, yshift=0):
         draw.text(xy, line[hit.start() : hit.end()], font=font, fill=GOLD)
 
 
-def _draw_header(image: Image.Image, visual: dict, canvas, font_path, kicker_default="NA FONTE") -> int:
+def _draw_header(image: Image.Image, visual: dict, canvas, font_path, kicker_default="") -> int:
     """Draw standardized OS4 badge, handle and kicker. Returns the Y coordinate below header."""
     w, h, short = canvas.width, canvas.height, min(canvas.width, canvas.height)
     draw = ImageDraw.Draw(image, "RGBA")
