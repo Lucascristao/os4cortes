@@ -202,7 +202,7 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
                 active=i<=stage
                 draw.rounded_rectangle((x0,y0,xend,vy+vh-margin),
                                        radius=max(8,rounded//2),
-                                       fill=(43,36,29,255) if active else (25,29,36,240),
+                                       fill=(43,36,29,255) if active else (25,29,36,255),
                                        outline=(202,163,88,215) if active else (95,103,115,90),width=2)
                 label="01 / ANTES" if i==0 else "02 / DEPOIS"
                 draw.text((x0+gap,y0+gap), label, font=font_small,
@@ -229,7 +229,7 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
             put_icon(vx+vw-icon_size-gap,vy+gap)
         elif layout == "number":
             # A real number from the supplied text becomes the dominant visual.
-            draw.rounded_rectangle(panel,radius=rounded,fill=(24,29,37,252),
+            draw.rounded_rectangle(panel,radius=rounded,fill=(24,29,37,255),
                                    outline=(202,163,88,115),width=2)
             match=re.search(r"(?<!\w)\d[\d.,%]*",content) or re.search(r"(?<!\w)\d[\d.,%]*",title)
             figure=match.group(0) if match else ""
@@ -247,7 +247,7 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
             put_icon(vx+vw-icon_size-gap,vy+gap)
         else:
             # Statement: illuminated type and a slim gold marker, not a paper card.
-            draw.rounded_rectangle(panel,radius=rounded,fill=(25,29,36,250),
+            draw.rounded_rectangle(panel,radius=rounded,fill=(25,29,36,255),
                                    outline=(203,163,88,115),width=2)
             draw.rounded_rectangle((vx+pad,vy+int(vh*.27),vx+pad+int(short*.008),
                                     vy+vh-pad),radius=2,fill=GOLD)
