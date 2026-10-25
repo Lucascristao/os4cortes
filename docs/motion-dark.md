@@ -36,11 +36,12 @@ Campo opcional em cada \`scene.kind = "narration"\`:
 
 Não existe parser de texto livre para executar FFmpeg. Layout, ícone e palavra recebem validação explícita. Não buscar documentos ou fotos que a fonte não enviou; ícones ilustram o significado, não confirmam alegações.
 
-## Estilos existentes
-- \`simple\`: fluxo tradicional intocado; sem narração extra.
-- \`editorial + classic\`: visual escuro clássico existente.
-- \`editorial + paper\`: fundo de papel original.
-- \`editorial + motion_dark\`: nova opção, sombreado em camadas, luz âmbar direcional, ícones animados, tipografia cinética e legenda sem tarja pesada.
+## Estilos visíveis na interface
+- **Corte simples:** mantém a edição antiga e sem narração adicional.
+- **Visual atual (Classic):** mantém o estilo autoral existente.
+- **Motion Dark:** é a evolução do protótipo Papel Dinâmico, com iluminação, sombras, profundidade, ícones animados e legendas com ênfase.
+
+**Papel Dinâmico foi somente a primeira etapa do Motion Dark.** Não é uma terceira escolha. O código `paper` permanece apenas como suporte a pacotes históricos, enquanto a interface converte sessões antigas `paper` para `motion_dark`.
 
 ## Desenvolvimento e quality gate
 A skill local \`.agents/skills/os4-motion/SKILL.md\` orienta Codex/agente a melhorar o motor. A skill não é executada no GitHub Actions em cada corte.
