@@ -880,17 +880,28 @@ CATÁLOGO REAL DE COMPOSIÇÕES — escolha a opção que melhor comunica a info
 - comparison: SOMENTE quando existem duas etapas temporais realmente contrastantes, pois o motor apresenta as colunas como ANTES e DEPOIS. Use EXATAMENTE duas visual.lines: primeira para antes, segunda para depois. Não use para opiniões paralelas, percentuais de fontes incomparáveis ou duas pessoas sem sequência temporal.
 - quote: destaque UMA fala literal presente nos trechos originais, com sua atribuição preservada no contexto audível; a visual.lines[0] deve trazer uma frase curta e realmente pronunciada. Não crie aspas para uma paráfrase ou interpretação do narrador.
 - number: destaque UM número verificado no material, com unidade ou contexto claro. Coloque o número literalmente no início de visual.lines[0] (ex.: percentual, valor ou quantidade apenas se existir na fonte); o motor extrai o primeiro número dessa frase. Não crie números para justificar este layout.
+- timeline: quando a fala oferecer múltiplos momentos visuais para animar ao longo do tempo.
 
 DIREÇÃO DE TIPOGRAFIA E CONTEÚDO
 O campo visual.title é a manchete visual específica desta narração, não uma cópia do titulo de publicação nem um resumo genérico. Prefira palavras com imagem mental e sentido completo; evite títulos recorrentes como "EM FOCO", "A GRANDE QUESTÃO", "ENTENDA O CASO" ou "O QUE ACONTECEU". visual.kicker é um rótulo em português do assunto, sem virar destaque principal. visual.lines contém apoio legível, não transcrição longa: UMA frase curta nos layouts source_card, statement, quote e number; EXATAMENTE duas no comparison. O motor alterna apoios durante a fala, então mantenha cada frase autônoma e ligada ao argumento, evitando duas linhas com a mesma ideia.
 
-Para cada narration inclua visual.motion EXATAMENTE assim:
+Para cada narration inclua visual.motion:
 "motion": {"layout":"source_card","icon":"line-md:clipboard-check","emphasis":"PONTO"}
-- layout: source_card, statement, comparison, quote ou number; nunca invente valores.
+- layout: source_card, statement, comparison, quote, number ou timeline; nunca invente valores.
 - icon: somente line-md:chat, line-md:alert-circle, line-md:confirm-circle ou line-md:clipboard-check. Escolha pelo assunto: chat para fala; alert-circle para alerta, dúvida ou conflito; confirm-circle para uma confirmação realmente atribuída; clipboard-check para um dado ou declaração documentada. O ícone é ilustrativo, nunca certifica a veracidade de uma afirmação.
 - emphasis: trecho LITERAL e contínuo do próprio visual.title, de preferência uma expressão curta de 1 a 3 palavras, máximo 50 caracteres. Escolha a palavra que carrega a virada da ideia. Evite deixar vazio por hábito; use "" apenas quando nenhuma palavra precisar de destaque. Não destaque várias palavras sem função nem repita sempre a primeira palavra do título.
 - Em uma sequência com várias narrações, revise título, layout, ícone e emphasis em conjunto: evite combinações repetidas sem razão e contraste cenas densas com a fala original; NÃO imponha cotas, alternância artificial ou a obrigação de usar os cinco layouts.
 - O motor aplica as animações predefinidas, a iluminação, os SVGs Line MD e as legendas alinhadas à voz. A IA decide O QUE destacar e QUAL composição existente usar; não define coordenadas, duração de animação, movimentos de câmera, filtros FFmpeg, cores extras ou efeitos ainda inexistentes.
+
+LINHA DO TEMPO VISUAL COM MÚLTIPLOS BEATS (Opcional, para narrações dinâmicas):
+Quando uma mesma narração tiver múltiplos acontecimentos visuais (ex.: métrica revelada, documento confrontado, item riscado ou foco na fala), adicione o campo "beats" dentro de "motion", onde cada beat usa "anchor" com a palavra ou expressão literal falada que aciona o momento:
+"beats": [
+  {"anchor": "expressão inicial", "type": "headline", "video_mode": "bottom"},
+  {"anchor": "quando diz a métrica", "type": "metric", "value": "84%", "label": "Grau de favoritismo", "video_mode": "hidden"},
+  {"anchor": "quando descarta uma hipótese", "type": "strike_comparison", "items": ["1. Opção A", "2. Opção B"], "strike_index": 1, "summary": "Uma certeza a menos", "video_mode": "hidden"}
+]
+Tipos de beat válidos: metric, strike_comparison, comparison, quote_card, document_card, source_focus, headline.
+video_mode válido: window, bottom, hidden.
 
 EXEMPLOS FICTÍCIOS DE DECISÃO VISUAL, NÃO COPIE AS FRASES PARA O VÍDEO REAL
 - Uma comparação temporal genuína: visual.title "ANTES E DEPOIS"; visual.lines ["Antes: plano reduzido", "Depois: plano ampliado"]; visual.motion {"layout":"comparison","icon":"line-md:alert-circle","emphasis":"DEPOIS"}.
