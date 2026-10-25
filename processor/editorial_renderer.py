@@ -18,7 +18,7 @@ import subprocess
 import wave
 
 from . import captions, editorial_alignment
-from .editorial_plan import normalize_editorial_plan, validate_source_ranges
+from .editorial_plan import normalize_editorial_plan, validate_source_ranges, voice_plan_fingerprint
 from .editorial_voice import prepare_voice_jobs, synthesize_editorial_voice
 from .lower_third import LowerThird
 from .voice_runtime.gemini_live_fidelity import evaluate_transcription
@@ -129,7 +129,7 @@ def _effective_overrides(manifest, delivery_overrides, plan):
     # directions implicitly. Production local bundles follow the current plan
     # unless the caller explicitly authorizes overrides on this invocation.
     external = manifest.get("runtime_source") == "external-ode" or manifest.get("ode_checkout_required") is True
-    if external and manifest.get("source_plan_fingerprint") == fingerprint(normalize_editorial_plan(plan)):
+    if external and manifest.get("source_plan_fingerprint") == voice_plan_fingerprint(normalize_editorial_plan(plan)):
         return manifest.get("direction_overrides_in_memory", {})
     return {}
 
@@ -362,10 +362,13 @@ def derive_narration(info, cache_dir, *, ffmpeg, speed=DEFAULT_NARRATOR_SPEED,
 def scene_fingerprint(scene, *, source_hash, canvas, lower_third, words, voice=None, font_hash="", burn_captions=False):
     """Exclude other scenes and master audio gain from silent video cache keys."""
     from .editorial_visuals import VISUAL_STYLE_VERSION
+    from .editorial_paper import PAPER_STYLE_VERSION
+    visual_version = ({"visual_style": PAPER_STYLE_VERSION} if scene.get("_visual_style") == "paper"
+                      else {"visual_style": VISUAL_STYLE_VERSION} if scene.get("kind") == "narration" else {})
     return fingerprint({"version": VERSION, "scene": scene, "source": source_hash,
                         "canvas": canvas, "lower_third": lower_third, "words": words,
                         "voice_timing": voice, "font": font_hash, "burn_captions": burn_captions,
-                        **({"visual_style": VISUAL_STYLE_VERSION} if scene.get("kind") == "narration" else {})})
+                        **visual_version})
 
 
 def _font(font_dir):
@@ -386,7 +389,7 @@ def _font(font_dir):
     raise FileNotFoundError("Supply font_dir with a local Archivo Black or Arial TTF. No font is downloaded by this compositor.")
 
 
-def _caption_assets(words, scene_dir, *, canvas, font_path, font_name, duration, credit="", burn_captions=False):
+def _caption_assets(words, scene_dir, *, canvas, font_path, font_name, duration, credit="", burn_captions=False, visual_style="classic"):
     from PIL import ImageFont
     zones = canvas.safe_zones()
     left, top, right, bottom = zones["captions"]
@@ -426,12 +429,17 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
                 continue
             if burn_captions:
                 rendered = captions.texto_ass_grupo(group, index, style.line_chars)
+                if visual_style == "paper":
+                    rendered = rendered.replace(r"\c&H0000FFFF&", r"\c&H0000679F&").replace(r"\c&H00FFFFFF&", r"\c&H00181918&")
                 if fit_size < size:
                     rendered = r"{\fs" + str(fit_size) + "}" + rendered
                 events.append(f"Dialogue: 0,{captions.ass_tempo(word_start)},{captions.ass_tempo(word_end)},Clean,,0,0,0,,{rendered}")
     if credit:
         events.append(f"Dialogue: 1,{captions.ass_tempo(0)},{captions.ass_tempo(duration)},Credit,,0,0,0,,{captions.escapar_ass(credit)}")
     ass = scene_dir / "captions.ass"
+    if visual_style == "paper":
+        # Dark lettering and a soft paper outline remain readable on the light preset.
+        header = header.replace("&H00FFFFFF,&H0000FFFF,&H00000000,&H64000000", "&H00181918,&H0000679F,&H00E2EAED,&H00000000")
     ass.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
     (scene_dir / "captions.srt").write_text("\n".join(srt_lines), encoding="utf-8")
     return ass, cues
@@ -490,6 +498,10 @@ def _overlay_animation_entries(stages, *, canvas):
 
 
 def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, ass, font_path, duration, ffmpeg, shared_dir, source_hash):
+    if scene.get("_visual_style") == "paper":
+        return _encode_paper_scene(video, scene, scene_dir, output, canvas=canvas, treatment=treatment,
+                                   ass=ass, font_path=font_path, duration=duration, ffmpeg=ffmpeg,
+                                   shared_dir=shared_dir, source_hash=source_hash)
     from .editorial_visuals import EditorialScene, BACKGROUND_STYLE_VERSION, build_background_filter, render_overlay_png, overlay_timeline
     common = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p",
               "-r", str(canvas.fps), "-frames:v", str(round(duration*canvas.fps)),
@@ -552,6 +564,49 @@ def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, 
           "-filter_complex", ";".join(filters), "-map", "[outv]", "-an", *common, output])
 
 
+def _encode_paper_scene(video, scene, scene_dir, output, *, canvas, treatment, ass, font_path, duration, ffmpeg, shared_dir, source_hash):
+    from .editorial_paper import PAPER_STYLE_VERSION, video_box, paper_sequence
+    x, y, width, height = video_box(canvas)
+    span = scene if scene["kind"] == "clip" else scene["background"]
+    media_key = fingerprint({"paper_source": PAPER_STYLE_VERSION, "source": source_hash,
+                             "span": [span["start"], span["end"]], "kind": scene["kind"],
+                             "size": [width, height], "fps": canvas.fps,
+                             "treatment": [treatment.mode, treatment.height_fraction]})
+    media = shared_dir / f"paper-source-{media_key[:24]}.mp4"
+    if not _cache_valid(media.with_suffix('.json'), media_key, media):
+        if scene["kind"] == "clip":
+            from .tracking import render_cinematic_16x9
+            render_cinematic_16x9(video, span["start"], span["end"], media,
+                                  work_dir=scene_dir / "paper-tracking", largura_saida=width,
+                                  altura_saida=height, lower_third=treatment, fit_output_aspect=True)
+        else:
+            filters = []
+            if treatment.mode == "crop":
+                filters.append(f"crop=iw:ih-ceil(ih*{treatment.height_fraction:.9f}):0:0")
+            elif treatment.mode == "cover":
+                filters.append(f"drawbox=x=0:y=ih-ceil(ih*{treatment.height_fraction:.9f}):w=iw:h=ceil(ih*{treatment.height_fraction:.9f}):color=black:t=fill")
+            filters.extend([f"scale={width}:{height}:force_original_aspect_ratio=increase", f"crop={width}:{height}", f"fps={canvas.fps}", "setsar=1"])
+            _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-filter_threads", "1", "-threads", "1",
+                  "-ss", str(span["start"]), "-i", video, "-t", str(span["end"]-span["start"]),
+                  "-an", "-vf", ",".join(filters), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-threads", "2", "-pix_fmt", "yuv420p", media])
+        _save_cache(media.with_suffix('.json'), media_key, media)
+    concat, timing = paper_sequence(scene, scene_dir / "paper", canvas=canvas, font_path=font_path,
+                                    duration=duration, words=scene.get("_paper_words", ()), credit=scene["_credit"])
+    _write_json(scene_dir / "paper-timing.json", {"style": PAPER_STYLE_VERSION, "events": timing})
+    captions_filter = f"ass='{_filter_path(ass)}':fontsdir='{_filter_path(font_path.parent)}'"
+    filters = [f"[0:v]fps={canvas.fps},setpts=PTS-STARTPTS,scale={width}:{height},pad={canvas.width}:{canvas.height}:{x}:{y}:color=0xedeae2[base]",
+               f"[1:v]fps={canvas.fps},setpts=PTS-STARTPTS,format=rgba[graphics]",
+               "[base][graphics]overlay=0:0:eof_action=repeat:repeatlast=1[composed]",
+               f"[composed]{captions_filter},format=yuv420p,setsar=1[outv]"]
+    _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-filter_threads", "1", "-filter_complex_threads", "1",
+          "-threads", "1", "-stream_loop", "-1", "-i", media,
+          "-threads", "1", "-f", "concat", "-safe", "0", "-i", concat,
+          "-filter_complex", ";".join(filters), "-map", "[outv]", "-an", "-c:v", "libx264", "-preset", "veryfast",
+          "-crf", "19", "-pix_fmt", "yuv420p", "-r", str(canvas.fps), "-frames:v", str(round(duration*canvas.fps)),
+          "-threads", "2", "-video_track_timescale", "15360", "-movflags", "+faststart", output])
+
+
 def _scene_audio_filter(record, index):
     duration = record["duration"]
     # Narration has already received pitch/speed in its own cached derivative.
@@ -610,6 +665,13 @@ def preflight_editorial_visuals(plan, *, canvas, font_path, cover=None, title=""
     from .covers import normalize_cover, _fit_title, PRESETS, default_template, CoverError
     credit = "Fonte: " + plan["source"]["label"] + (" | " + plan["source"]["date"] if plan["source"]["date"] else "")
     for scene in plan["scenes"]:
+        if plan.get("visual_style") == "paper":
+            from .editorial_paper import paper_layout
+            try:
+                paper_layout(scene, canvas=canvas, font_path=font_path, credit=credit)
+            except (ValueError, OSError) as error:
+                raise ValueError(f"{cut_label} / cena {scene['id']} / {error}") from error
+            continue
         if scene["kind"] != "narration":
             continue
         visual = scene["visual"]
@@ -649,6 +711,7 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                          burn_captions=False):
     """Return rendered assets and any cover-only pending error; retain the MP4."""
     from .editorial_visuals import Canvas, VISUAL_STYLE_VERSION
+    from .editorial_paper import PAPER_STYLE_VERSION
     video, transcript, output = Path(video).resolve(), Path(transcript).resolve(), Path(output).resolve()
     work = Path(work_dir).resolve()
     if output in (video, transcript) or output.suffix.lower() != ".mp4":
@@ -729,9 +792,11 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                     raise ValueError(f"Source clip has no caption words: {scene['id']}")
                 voice_key = None
             ass, cues = _caption_assets(words, scene_dir, canvas=canvas, font_path=font_path, font_name=font_name,
-                                        duration=timing["content_duration"], credit=credit if scene["kind"] == "clip" else "",
-                                        burn_captions=burn_captions)
+                                        duration=timing["content_duration"], credit=credit if scene["kind"] == "clip" and normalized.get("visual_style") != "paper" else "",
+                                        burn_captions=burn_captions, visual_style=normalized.get("visual_style", "classic"))
             augmented = dict(scene, _credit=credit)
+            if normalized.get("visual_style") == "paper":
+                augmented.update(_visual_style="paper", _paper_words=words)
             key = scene_fingerprint(augmented, source_hash=source_hash, canvas=[canvas.width, canvas.height, fps],
                                     lower_third=[treatment.mode, treatment.height_fraction], words=words, voice=voice_key, font_hash=font_hash,
                                     burn_captions=burn_captions)
@@ -783,7 +848,7 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                   "aspect": aspect, "width": canvas.width, "height": canvas.height, "fps": fps,
                   "cover": cover_report, **timing_report, "duration_seconds": final_duration,
                   "final_duration_seconds": final_duration, "timeline_duration_seconds": total,
-                  "visual_style": VISUAL_STYLE_VERSION,
+                  "visual_style": PAPER_STYLE_VERSION if normalized.get("visual_style") == "paper" else VISUAL_STYLE_VERSION,
                   "source_sha256": source_hash, "plan_fingerprint": fingerprint(normalized), "video_sha256": file_sha256(output),
                   "voice_model": manifest["model"], "voice": manifest["voice"], "raw_voice_byte_identical": True,
                   "literal_tts_fidelity_passed": True, "caption_alignment_passed": True,

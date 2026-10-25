@@ -21,7 +21,7 @@ body {
     #0b0b0b;
 }
 
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 a { color: inherit; }
 .hidden { display: none !important; }
@@ -119,6 +119,12 @@ label { display: block; font-weight: 750; margin-bottom: 10px; }
 .video-option { display: flex; align-items: center; gap: 10px; margin: 16px 0 0; font-size: .9rem; cursor: pointer; }
 .video-option input { width: 18px; height: 18px; margin: 0; padding: 0; flex: 0 0 auto; accent-color: var(--accent); cursor: pointer; }
 .hint.video-option-hint { margin-top: 6px; padding-left: 28px; }
+.editorial-style-option { margin: 16px 0 0 28px; }
+.editorial-style-option label { font-size: .9rem; margin-bottom: 8px; }
+.editorial-style-option select { width: min(100%, 360px); padding: 11px 12px; color: inherit; background: var(--surface-2); border: 1px solid #343434; border-radius: 10px; }
+.editorial-style-option select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.editorial-style-option select:disabled { opacity: .5; cursor: not-allowed; }
+.editorial-style-option .hint { margin-top: 8px; }
 .result-card.result-error { border-color: #8b3434; }
 .result-card.result-error > strong { color: #fca5a5; }
 

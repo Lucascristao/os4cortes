@@ -76,6 +76,7 @@ export default safeHandler(async (request, context) => {
     id: requestId,
     kind: job.kind,
     hasLowerThird: job.hasLowerThird === true,
+    ...(job.editorialStyle === "classic" || job.editorialStyle === "paper" ? { editorialStyle: job.editorialStyle } : {}),
     status: job.status,
     stale,
     stage: job.stage || "",

@@ -81,6 +81,7 @@ const EDITORIAL_TONES = ["conversational", "provocative", "ironic", "playful", "
 const EDITORIAL_INTENSITIES = ["low", "medium", "high"];
 const COMMENTARY_MODES = ["support_source", "challenge_source", "direct_commentary"];
 const COVER_TEMPLATES = ["01_central", "02_lateral", "03_close"];
+const EDITORIAL_STYLES = ["classic", "paper"];
 
 function coverShapeError(cover) {
   if (!cover || typeof cover !== "object" || Array.isArray(cover)) return "cover precisa ser um objeto JSON.";
@@ -116,6 +117,9 @@ function editorialShapeError(plan, clipStart, clipEnd) {
   }
   if (!isObject(plan)) return invalid("editorial precisa ser um objeto.");
   if (plan.version !== 1) return invalid("o campo version precisa ser o número 1.");
+  if (Object.hasOwn(plan, "visual_style") && !EDITORIAL_STYLES.includes(plan.visual_style)) {
+    return invalid("o campo visual_style precisa ser classic ou paper.");
+  }
   if (Object.hasOwn(plan, "intent")) {
     const intent = plan.intent;
     if (!isObject(intent)) return invalid("o campo intent precisa ser um objeto.");
@@ -243,6 +247,9 @@ export default safeHandler(async (request, context) => {
     return json(400, { ok: false, error: "A opção de queimar legendas precisa ser verdadeira ou falsa." });
   }
   const burnCaptions = !Object.hasOwn(body, "burnCaptions") || body.burnCaptions === true;
+  if (Object.hasOwn(body, "editorialStyle") && !EDITORIAL_STYLES.includes(body.editorialStyle)) {
+    return json(400, { ok: false, error: "O visual dos vídeos autorais precisa ser classic ou paper." });
+  }
 
   const configStore = blobStore("os4-config", context);
   const jobsStore = blobStore("os4-jobs", context);
@@ -334,7 +341,17 @@ export default safeHandler(async (request, context) => {
       }
     }
 
-    const renderCuts = simpleCuts ? normalizedCuts.map(({ editorial, ...cut }) => cut) : normalizedCuts;
+    const renderCuts = normalizedCuts.map((cut) => {
+      if (simpleCuts) {
+        const { editorial, ...simpleCut } = cut;
+        return simpleCut;
+      }
+      if (!Object.hasOwn(body, "editorialStyle")) return cut;
+      // Only the render copy receives the batch choice. Imported plans and
+      // legacy packages remain unchanged, including absence of the default.
+      const { visual_style, ...editorial } = cut.editorial;
+      return { ...cut, editorial: body.editorialStyle === "paper" ? { ...editorial, visual_style: "paper" } : editorial };
+    });
     let cutsJson = JSON.stringify(renderCuts);
     if (simpleCuts) {
       if (cutsJson.length > 60000) {
@@ -376,6 +393,7 @@ export default safeHandler(async (request, context) => {
     hasLowerThird,
     simpleCuts,
     burnCaptions,
+    ...(Object.hasOwn(body, "editorialStyle") ? { editorialStyle: body.editorialStyle } : {}),
     folderId: kind === "render" ? inputs.folder_id : null,
     totalCuts: kind === "render" ? body.cuts.length : null,
     status: "queued",

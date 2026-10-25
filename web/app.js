@@ -17,6 +17,7 @@ const videoUrl = $("#videoUrl");
 const hasLowerThirdInput = $("#hasLowerThird");
 const simpleCutsInput = $("#simpleCuts");
 const burnCaptionsInput = $("#burnCaptions");
+const editorialStyleInput = $("#editorialStyle");
 const pacote = $("#pacote");
 const cutsEditor = $("#cutsEditor");
 const transcriptSection = $("#transcriptSection");
@@ -66,6 +67,18 @@ function salvarSessaoTranscricao() {
   try { localStorage.setItem(STORAGE_SESSION, JSON.stringify(sessaoTranscricao)); } catch {}
 }
 
+function estiloEditorial(value) {
+  return value === "paper" ? "paper" : "classic";
+}
+
+function atualizarOpcaoVisual() {
+  if (editorialStyleInput) editorialStyleInput.disabled = simpleCutsInput?.checked === true;
+  const hint = $("#editorialStyleHint");
+  if (hint) hint.textContent = simpleCutsInput?.checked === true
+    ? "O corte simples mantém seu visual atual. Desmarque corte simples para escolher o visual dos vídeos autorais."
+    : "Visual atual mantém o padrão de hoje. Papel dinâmico usa fundo claro, cartões e textos animados. A escolha vale para todo o lote autoral.";
+}
+
 function atualizarTarjaVideo() {
   const key = chaveVideo(videoUrl?.value);
   if (key === lowerThirdVideoKey) return;
@@ -81,6 +94,9 @@ function atualizarTarjaVideo() {
       ? sessaoTranscricao.burnCaptions
       : true;
   }
+  if (editorialStyleInput) editorialStyleInput.value = estiloEditorial(
+    sessaoTranscricao && key === chaveVideo(sessaoTranscricao.videoUrl) ? sessaoTranscricao.editorialStyle : undefined);
+  atualizarOpcaoVisual();
 }
 
 hasLowerThirdInput?.addEventListener("change", () => {
@@ -92,8 +108,16 @@ hasLowerThirdInput?.addEventListener("change", () => {
 });
 
 simpleCutsInput?.addEventListener("change", () => {
+  atualizarOpcaoVisual();
   if (sessaoTranscricao && chaveVideo(videoUrl?.value) === chaveVideo(sessaoTranscricao.videoUrl)) {
     sessaoTranscricao.simpleCuts = simpleCutsInput.checked;
+    salvarSessaoTranscricao();
+  }
+});
+
+editorialStyleInput?.addEventListener("change", () => {
+  if (sessaoTranscricao && chaveVideo(videoUrl?.value) === chaveVideo(sessaoTranscricao.videoUrl)) {
+    sessaoTranscricao.editorialStyle = estiloEditorial(editorialStyleInput.value);
     salvarSessaoTranscricao();
   }
 });
@@ -468,6 +492,7 @@ btnTranscrever?.addEventListener("click", async () => {
   const url = videoUrl.value.trim();
   const hasLowerThird = hasLowerThirdInput?.checked === true;
   const simpleCuts = simpleCutsInput?.checked === true;
+  const editorialStyle = estiloEditorial(editorialStyleInput?.value);
   if (!url) {
     alert("Cole a URL do vídeo primeiro.");
     return;
@@ -492,9 +517,9 @@ btnTranscrever?.addEventListener("click", async () => {
   try {
     const dados = await api("/.netlify/functions/workflow-start", {
       method: "POST",
-      body: JSON.stringify({ kind: "transcribe", videoUrl: url, hasLowerThird, simpleCuts }),
+      body: JSON.stringify({ kind: "transcribe", videoUrl: url, hasLowerThird, simpleCuts, editorialStyle }),
     });
-    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "transcribe", videoUrl: url, hasLowerThird, simpleCuts, timestamp: Date.now() }));
+    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "transcribe", videoUrl: url, hasLowerThird, simpleCuts, editorialStyle, timestamp: Date.now() }));
     alternarBotaoCancelar(true);
     acompanharJob(dados.requestId, "transcribe");
   } catch (erro) {
@@ -677,6 +702,7 @@ function acompanharJob(id, kind) {
             videoUrl: jobLocal?.videoUrl || job.result?.videoUrl || "",
             hasLowerThird: job.hasLowerThird === true,
             simpleCuts: typeof job.simpleCuts === "boolean" ? job.simpleCuts : jobLocal?.simpleCuts === true,
+            editorialStyle: job.editorialStyle ?? jobLocal?.editorialStyle,
           });
           btnTranscrever.disabled = false;
           btnTranscrever.textContent = "Transcrever outro";
@@ -740,6 +766,8 @@ function retomarJob() {
       lowerThirdVideoKey = chaveVideo(job.videoUrl);
       if (hasLowerThirdInput) hasLowerThirdInput.checked = job.hasLowerThird === true;
       if (simpleCutsInput) simpleCutsInput.checked = job.simpleCuts === true;
+      if (editorialStyleInput) editorialStyleInput.value = estiloEditorial(job.editorialStyle);
+      atualizarOpcaoVisual();
       btnTranscrever.disabled = true;
       btnTranscrever.textContent = "Processando...";
     } else {
@@ -760,6 +788,7 @@ function mostrarTranscricao(result) {
     hasLowerThird: result.hasLowerThird === true,
     simpleCuts: result.simpleCuts === true,
     burnCaptions: typeof result.burnCaptions === "boolean" ? result.burnCaptions : true,
+    editorialStyle: estiloEditorial(result.editorialStyle),
   };
   salvarSessaoTranscricao();
   if (videoUrl) videoUrl.value = sessaoTranscricao.videoUrl;
@@ -767,6 +796,8 @@ function mostrarTranscricao(result) {
   if (hasLowerThirdInput) hasLowerThirdInput.checked = sessaoTranscricao.hasLowerThird;
   if (simpleCutsInput) simpleCutsInput.checked = sessaoTranscricao.simpleCuts;
   if (burnCaptionsInput) burnCaptionsInput.checked = sessaoTranscricao.burnCaptions;
+  if (editorialStyleInput) editorialStyleInput.value = sessaoTranscricao.editorialStyle;
+  atualizarOpcaoVisual();
 
   transcriptText.value = result.transcript || "";
   driveFolderLink.href = result.driveFolderUrl || `https://drive.google.com/drive/folders/${result.folderId}`;
@@ -1704,6 +1735,7 @@ btnGerarCortes?.addEventListener("click", async () => {
   }
 
   const simpleCuts = sessaoTranscricao.simpleCuts === true;
+  const editorialStyle = estiloEditorial(sessaoTranscricao.editorialStyle);
   const cortesEditados = lerCortesEditor();
   let rotas;
   try {
@@ -1763,10 +1795,11 @@ btnGerarCortes?.addEventListener("click", async () => {
         hasLowerThird: sessaoTranscricao.hasLowerThird === true,
         simpleCuts,
         burnCaptions,
+        ...(!simpleCuts ? { editorialStyle } : {}),
         cuts,
       }),
     });
-    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "render", videoUrl: sessaoTranscricao.videoUrl, hasLowerThird: sessaoTranscricao.hasLowerThird === true, simpleCuts, burnCaptions, timestamp: Date.now() }));
+    localStorage.setItem(STORAGE_JOB, JSON.stringify({ id: dados.requestId, kind: "render", videoUrl: sessaoTranscricao.videoUrl, hasLowerThird: sessaoTranscricao.hasLowerThird === true, simpleCuts, burnCaptions, editorialStyle, timestamp: Date.now() }));
     alternarBotaoCancelar(true);
     acompanharJob(dados.requestId, "render");
   } catch (erro) {

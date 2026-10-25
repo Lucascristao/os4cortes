@@ -21,7 +21,7 @@ from .captions import (
 from .covers import CoverError, normalize_cover, render_cover
 from .drive import uploader_por_env
 from .cut_transport import decode_cuts_json
-from .editorial_plan import editorial_fingerprint, normalize_editorial_plan
+from .editorial_plan import normalize_editorial_plan, voice_plan_fingerprint
 from .progress import completed, emit, failed, start_heartbeat
 from .publisher import save_publisher_manifest
 from .lower_third import LowerThird
@@ -90,7 +90,7 @@ def _editorial_assets(video, transcript, corte, index, out, work, cache, lower_t
         prefix += "_16x9"
     # The local publisher recognizes the vertical by this suffix.
     output = out / (f"{prefix}.mp4" if aspect == "16:9" else f"{prefix}_legenda.mp4")
-    voice_dir = cache / editorial_fingerprint(corte["editorial"]) / "voice"
+    voice_dir = cache / voice_plan_fingerprint(corte["editorial"]) / "voice"
     voice_dir.mkdir(parents=True, exist_ok=True)
     font = garantir_archivo_black()
     rendered = render_editorial_cut(

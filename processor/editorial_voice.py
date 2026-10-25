@@ -19,10 +19,10 @@ import sys
 
 if __package__:
     from .branding import CHANNEL_NAME, CHANNEL_HANDLE
-    from .editorial_plan import effective_editorial_intent, effective_editorial_profile, normalize_editorial_plan
+    from .editorial_plan import effective_editorial_intent, effective_editorial_profile, normalize_editorial_plan, voice_plan_fingerprint
 else:  # Portable cloud bundle: editorial_plan.py resides beside this file.
     from branding import CHANNEL_NAME, CHANNEL_HANDLE
-    from editorial_plan import effective_editorial_intent, effective_editorial_profile, normalize_editorial_plan
+    from editorial_plan import effective_editorial_intent, effective_editorial_profile, normalize_editorial_plan, voice_plan_fingerprint
 
 
 VOICE_ADAPTER_VERSION = "os4-editorial-live-adapter-v5-os4dedireita"
@@ -148,7 +148,7 @@ def prepare_voice_jobs(raw_plan, *, output_dir, ode_root=None, delivery_override
         raise ValueError("Plano sem cenas de narração.")
     manifest = {
         "version": VOICE_ADAPTER_VERSION, "status": "prepared",
-        "source_plan_fingerprint": fingerprint(normalized), "source_text_unchanged": True,
+        "source_plan_fingerprint": voice_plan_fingerprint(normalized), "source_text_unchanged": True,
         "engine": worker.ENGINE, "model": worker.PRIMARY_TTS_MODEL,
         "voice": "Charon", "presenter_name": "Roberto", "channel_identity": CHANNEL_NAME,
         "channel_handle": CHANNEL_HANDLE,

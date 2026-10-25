@@ -344,6 +344,7 @@ def render_cinematic_16x9(
     detectar_a_cada: int = 4,
     fade_out_visual: bool = False,
     lower_third: LowerThird | None = None,
+    fit_output_aspect: bool = False,
 ) -> Path:
     """
     Renderiza corte horizontal 16:9 dinâmico (estilo Multi-Cam de estúdio) para YouTube.
@@ -401,7 +402,7 @@ def render_cinematic_16x9(
 
     if lower_third.mode == "crop":
         h = lower_third.content_height(h)
-    if lower_third.mode == "crop":
+    if lower_third.mode == "crop" or fit_output_aspect:
         base_crop_w, base_crop_h = fit_crop_size(w, h, largura_saida / altura_saida)
     else:
         base_crop_w, base_crop_h = w, h

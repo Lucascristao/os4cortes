@@ -11,6 +11,7 @@ EDITORIAL_TOPICS = ("politics", "economy", "business", "humor", "general")
 EDITORIAL_TONES = ("conversational", "provocative", "ironic", "playful", "explanatory", "serious")
 EDITORIAL_INTENSITIES = ("low", "medium", "high")
 EDITORIAL_COMMENTARY_MODES = ("support_source", "challenge_source", "direct_commentary")
+EDITORIAL_VISUAL_STYLES = ("classic", "paper")
 DEFAULT_EDITORIAL_INTENT = {
     "mode": "direct_commentary", "source_point": "", "target": "", "contribution": "",
 }
@@ -122,6 +123,10 @@ def normalize_editorial_plan(raw, *, clip_start=None, clip_end=None):
     if not isinstance(scenes, list) or not 2 <= len(scenes) <= 12:
         raise ValueError("editorial.scenes deve conter de 2 a 12 cenas.")
     result = {"version": 1, "source": {"label": label, "date": date}, "scenes": []}
+    # Missing is the original visual. Keep old normalized packages byte-for-byte
+    # equivalent; an explicit choice is metadata for the renderer, never TTS.
+    if "visual_style" in raw:
+        result["visual_style"] = _choice(raw["visual_style"], "editorial.visual_style", EDITORIAL_VISUAL_STYLES)
     if "profile" in raw:
         result["profile"] = _editorial_profile(raw["profile"])
     if "intent" in raw:
@@ -194,3 +199,13 @@ def validate_source_ranges(plan, words):
 
 def editorial_fingerprint(plan):
     return hashlib.sha256(json.dumps(plan, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+
+
+def voice_plan_fingerprint(plan):
+    """Keep approved voice/alignment caches when only the preset changes.
+
+    Accept the same normalized plan used by editorial_fingerprint. Exclude only
+    this rendering-only field, preserving all previous cache decisions and the
+    exact legacy hash for plans that never declared a visual style.
+    """
+    return editorial_fingerprint({key: value for key, value in plan.items() if key != "visual_style"})
