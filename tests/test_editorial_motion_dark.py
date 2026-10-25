@@ -111,6 +111,8 @@ class MotionDarkTests(unittest.TestCase):
                    "_paper_words":[],"_credit":"Fonte: Entrevista"}
             scene["background"]={"start":0,"end":2}
             canvas=Canvas.for_format(width=360,fps=15)
+            (root/"scene").mkdir()
+            (root/"shared").mkdir()
             out=root/"rendered.mp4"
             _encode_silent_scene(source,scene,root/"scene",out,canvas=canvas,
                                  treatment=LowerThird(),ass=ass,font_path=font,
