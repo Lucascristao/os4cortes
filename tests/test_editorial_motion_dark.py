@@ -1,5 +1,8 @@
 """Motion Dark smoke tests: explicit catalogue, true animated Line MD and opt-in safety."""
 import copy
+import hashlib
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 import unittest
@@ -84,6 +87,40 @@ class MotionDarkTests(unittest.TestCase):
             self.assertLess(len(pngs),100)
             durations=[float(s.split()[1]) for s in concat.read_text().splitlines() if s.startswith("duration ")]
             self.assertAlmostEqual(sum(durations),6,places=6)
+
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg/ffprobe missing")
+    def test_ffmpeg_smoke_renders_real_mp4_with_local_animated_assets(self):
+        """Ensure actual FFmpeg ingestion and overlay, not only PNG mock previews."""
+        from processor.editorial_renderer import _encode_silent_scene
+        from processor.lower_third import LowerThird
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            source=root/"source.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+                            "-f","lavfi","-i","testsrc=size=640x360:rate=15",
+                            "-t","3","-c:v","libx264","-pix_fmt","yuv420p",str(source)],
+                           check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+            font=Path(TITLE_FONT)
+            ass=root/"empty.ass"
+            ass.write_text("[Script Info]\nScriptType: v4.00+\nPlayResX: 360\nPlayResY: 640\n"
+                           "[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n"
+                           "Style: Clean,Arial,24,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,20,20,50,1\n"
+                           "[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n",encoding="utf-8")
+            scene={**example()["scenes"][0],"_visual_style":"motion_dark",
+                   "_paper_words":[],"_credit":"Fonte: Entrevista"}
+            scene["background"]={"start":0,"end":2}
+            canvas=Canvas.for_format(width=360,fps=15)
+            out=root/"rendered.mp4"
+            _encode_silent_scene(source,scene,root/"scene",out,canvas=canvas,
+                                 treatment=LowerThird(),ass=ass,font_path=font,
+                                 duration=1.5,ffmpeg="ffmpeg",shared_dir=root/"shared",
+                                 source_hash=hashlib.sha256(source.read_bytes()).hexdigest())
+            self.assertTrue(out.is_file())
+            self.assertGreater(out.stat().st_size,10000)
+            result=subprocess.check_output(["ffprobe","-v","error","-select_streams","v:0",
+                    "-show_entries","stream=width,height","-of","csv=p=0",str(out)],text=True).strip()
+            self.assertEqual(result,"360,640")
 
 
 if __name__=="__main__":
