@@ -143,23 +143,45 @@ def _multiline(draw, item, fill, dy=0):
     draw.multiline_text((xy[0], xy[1] + dy), item["text"], font=item["font"], spacing=item["spacing"], fill=fill)
 
 
-def _highlight_title(image, item, emphasis: str, yshift=0):
-    """Tint the selected literal title phrase; no filled subtitle rectangles."""
-    if not item or not emphasis:
+def _draw_title_with_emphasis(draw: ImageDraw.ImageDraw, item: dict, emphasis: str = "", dy: int = 0):
+    """Draw multiline title with cleanly tinted emphasis without ghosting or baseline mismatch."""
+    if not item:
         return
-    words = emphasis.strip().split()
-    if len(words) > 4:
-        return
-    draw = ImageDraw.Draw(image)
-    for lineno, line in enumerate(item["text"].split("\n")):
-        hit = re.search(re.escape(emphasis.strip()), line, re.IGNORECASE)
-        if not hit:
-            continue
-        font = item["font"]
-        width_before = draw.textlength(line[: hit.start()], font=font)
-        line_height = font.size + item["spacing"]
-        xy = (item["xy"][0] + width_before, item["xy"][1] + lineno * line_height + yshift)
-        draw.text(xy, line[hit.start() : hit.end()], font=font, fill=GOLD)
+    text = item["text"]
+    font = item["font"]
+    spacing = item["spacing"]
+    cur_x, cur_y = item["xy"][0], item["xy"][1] + dy
+    lines = text.split("\n")
+
+    bbox_sample = font.getbbox("AyÉg19")
+    line_h = (bbox_sample[3] - bbox_sample[1]) + spacing
+
+    clean_emp = emphasis.strip()
+    emp_pattern = re.compile(re.escape(clean_emp), re.IGNORECASE) if (clean_emp and len(clean_emp.split()) <= 4) else None
+
+    for line in lines:
+        if not emp_pattern:
+            draw.text((cur_x, cur_y), line, font=font, fill=WHITE)
+        else:
+            match = emp_pattern.search(line)
+            if not match:
+                draw.text((cur_x, cur_y), line, font=font, fill=WHITE)
+            else:
+                s, e = match.start(), match.end()
+                prefix = line[:s]
+                highlight = line[s:e]
+                suffix = line[e:]
+
+                x_cursor = cur_x
+                if prefix:
+                    draw.text((x_cursor, cur_y), prefix, font=font, fill=WHITE)
+                    x_cursor += draw.textlength(prefix, font=font)
+                if highlight:
+                    draw.text((x_cursor, cur_y), highlight, font=font, fill=GOLD)
+                    x_cursor += draw.textlength(highlight, font=font)
+                if suffix:
+                    draw.text((x_cursor, cur_y), suffix, font=font, fill=WHITE)
+        cur_y += line_h
 
 
 def _draw_header(image: Image.Image, visual: dict, canvas, font_path, kicker_default="") -> int:
@@ -406,37 +428,39 @@ def render_beat_frame(
             draw.text((left + pad * 2 + int(short * 0.014), bottom_y - pad), f"— {author}", font=font_small, fill=GOLD)
 
     elif btype == "source_focus":
-        # Video in primary window, with clean lower third pill
-        title_txt = str(data.get("title") or visual.get("title") or "A FALA ORIGINAL")
-        label = str(data.get("label") or "")
-        pill_w = min(vw - gap * 2, int(vw * 0.72))
-        pill_h = max(round(short * 0.064), int(vh * 0.20))
-        pill = (vx + gap, vy + gap, vx + gap + pill_w, vy + gap + pill_h)
-        draw.rounded_rectangle(pill, radius=round(pill_h * 0.22), fill=(9, 9, 9, 238), outline=(202, 163, 88, 145), width=max(1, round(short * 0.002)))
-        put_icon(pill[0] + gap, pill[1] + (pill_h - icon_size) // 2)
+        # Video in primary window; draw lower-third pill ONLY if an explicit informative label exists
+        label = str(data.get("label") or "").strip()
+        if label and label.upper() not in ("A FALA ORIGINAL", "NA FONTE"):
+            pill_w = min(vw - gap * 2, int(vw * 0.72))
+            pill_h = max(round(short * 0.064), int(vh * 0.20))
+            pill = (vx + gap, vy + gap, vx + gap + pill_w, vy + gap + pill_h)
+            draw.rounded_rectangle(pill, radius=round(pill_h * 0.22), fill=(9, 9, 9, 238), outline=(202, 163, 88, 145), width=max(1, round(short * 0.002)))
+            put_icon(pill[0] + gap, pill[1] + (pill_h - icon_size) // 2)
 
-        text_box = (pill[0] + icon_size + gap * 2, pill[1] + gap, pill[2] - gap, pill[3] - gap)
-        support = _fit(label or title_txt, text_box, font_path, max(14, round(short * 0.032)), max(10, round(short * 0.021)), "focus label")
-        _multiline(draw, support, WHITE)
+            text_box = (pill[0] + icon_size + gap * 2, pill[1] + gap, pill[2] - gap, pill[3] - gap)
+            support = _fit(label, text_box, font_path, max(14, round(short * 0.032)), max(10, round(short * 0.021)), "focus label")
+            _multiline(draw, support, WHITE)
 
     else:
         # Default headline beat
-        title_txt = str(data.get("title") or visual.get("title") or "A FALA ORIGINAL")
+        title_txt = str(data.get("title") or visual.get("title") or "")
         emphasis = str(data.get("emphasis") or "")
         top_y = header_bottom + int(short * 0.02)
         bottom_y = vy - gap if beat.video_mode in ("window", "bottom") else int(h * 0.65)
         titlebox = (left, top_y, right, bottom_y)
         titleitem = _fit(title_txt.upper(), titlebox, font_path, round(short * 0.098), max(16, round(short * 0.045)), "headline title")
         dy = round(short * 0.025 * (1.0 - entrance))
-        _multiline(draw, titleitem, WHITE, dy)
-        _highlight_title(image, titleitem, emphasis.upper(), dy)
+        _draw_title_with_emphasis(draw, titleitem, emphasis.upper(), dy)
         x1, y1, x2, y2 = titleitem["bounds"]
-        width_line = int(min(x2 - x1, w * 0.33) * entrance)
-        draw.line(
-            (left, min(int(h * 0.383), y2 + int(short * 0.018)), left + width_line, min(int(h * 0.383), y2 + int(short * 0.018))),
-            fill=GOLD,
-            width=max(2, int(short * 0.004)),
-        )
+        line_y = y2 + dy + int(short * 0.020)
+        max_safe_y = (vy - gap) if beat.video_mode in ("window", "bottom") else int(h * 0.70)
+        if line_y < max_safe_y:
+            width_line = int(min(x2 - x1, w * 0.33) * entrance)
+            draw.line(
+                (left, line_y, left + width_line, line_y),
+                fill=GOLD,
+                width=max(2, int(short * 0.004)),
+            )
 
     if credit:
         draw = ImageDraw.Draw(image)
