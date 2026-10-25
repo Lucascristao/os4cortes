@@ -825,3 +825,22 @@ test('direções Line MD inválidas são barradas antes de despachar lote ou pre
   assert.equal(dispatches.length,count,'invalid motion must never launch runner');
  }
 });
+
+test('layout timeline com beats dinamicos e aceito pelo workflow-start', async () => {
+ const cut=narratedCut();
+ cut.editorial.scenes[0].visual.motion={
+  layout: 'timeline',
+  icon: 'line-md:clipboard-check',
+  emphasis: 'dito',
+  beats: [
+   { anchor: 'algo dito', type: 'headline', video_mode: 'bottom' },
+   { anchor: 'destaque', type: 'metric', value: '10', label: 'Delegados', video_mode: 'hidden' },
+   { anchor: 'conclusao', type: 'source_focus', video_mode: 'window' }
+  ]
+ };
+ const res=await start(req('workflow-start','POST',renderBody({cuts:[cut],simpleCuts:false,editorialStyle:'motion_dark'})),context);
+ assert.equal(res.status, 202);
+ const payload=JSON.parse(dispatches.at(-1).inputs.cuts_json);
+ assert.equal(payload[0].editorial.scenes[0].visual.motion.layout, 'timeline');
+ assert.equal(payload[0].editorial.scenes[0].visual.motion.beats.length, 3);
+});

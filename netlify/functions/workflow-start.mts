@@ -201,10 +201,10 @@ function editorialShapeError(plan, clipStart, clipEnd) {
       }
       if (Object.hasOwn(scene.visual, "motion")) {
         const motion = scene.visual.motion;
-        if (!isObject(motion) || Object.keys(motion).some((key) => !["layout", "icon", "emphasis"].includes(key))) {
-          return sceneError("visual.motion aceita somente layout, icon e emphasis.");
+        if (!isObject(motion) || Object.keys(motion).some((key) => !["layout", "icon", "emphasis", "beats"].includes(key))) {
+          return sceneError("visual.motion aceita somente layout, icon, emphasis e beats.");
         }
-        if (Object.hasOwn(motion, "layout") && !["source_card", "statement", "comparison", "quote", "number"].includes(motion.layout)) {
+        if (Object.hasOwn(motion, "layout") && !["source_card", "statement", "comparison", "quote", "number", "timeline"].includes(motion.layout)) {
           return sceneError("visual.motion.layout não existe no motor.");
         }
         if (Object.hasOwn(motion, "icon") && !["line-md:chat", "line-md:alert-circle", "line-md:confirm-circle", "line-md:clipboard-check"].includes(motion.icon)) {
@@ -213,6 +213,28 @@ function editorialShapeError(plan, clipStart, clipEnd) {
         if (Object.hasOwn(motion, "emphasis") && (typeof motion.emphasis !== "string" || motion.emphasis.length > 50 ||
             !scene.visual.title.toLocaleLowerCase().includes(motion.emphasis.toLocaleLowerCase()))) {
           return sceneError("visual.motion.emphasis deve repetir um trecho literal do visual.title.");
+        }
+        if (Object.hasOwn(motion, "beats")) {
+          const beats = motion.beats;
+          if (!Array.isArray(beats) || beats.length < 1 || beats.length > 8) {
+            return sceneError("visual.motion.beats: informe de 1 a 8 beats visuais.");
+          }
+          const validTypes = ["headline", "metric", "strike_comparison", "comparison", "quote_card", "document_card", "source_focus"];
+          const validModes = ["window", "bottom", "hidden", "side"];
+          for (const [beatIndex, beat] of beats.entries()) {
+            if (!isObject(beat)) {
+              return sceneError(`visual.motion.beats[${beatIndex}] deve ser um objeto.`);
+            }
+            if (Object.hasOwn(beat, "type") && !validTypes.includes(beat.type)) {
+              return sceneError(`visual.motion.beats[${beatIndex}].type não existe no motor.`);
+            }
+            if (Object.hasOwn(beat, "video_mode") && !validModes.includes(beat.video_mode)) {
+              return sceneError(`visual.motion.beats[${beatIndex}].video_mode desconhecido.`);
+            }
+            if (Object.hasOwn(beat, "anchor") && typeof beat.anchor !== "string") {
+              return sceneError(`visual.motion.beats[${beatIndex}].anchor deve ser texto.`);
+            }
+          }
         }
       }
       hasNarration = true;
