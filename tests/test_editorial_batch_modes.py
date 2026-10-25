@@ -435,7 +435,7 @@ class EditorialBatchModesTests(unittest.TestCase):
                 self.assertEqual(call.kwargs["aspect"], cuts[index]["formato"])
                 self.assertEqual(call.kwargs["lower_third"], LowerThird("crop", .30))
                 self.assertEqual(call.kwargs["font_dir"], h.root/"fonts")
-                voice_key = batch.editorial_fingerprint(expected[index]["editorial"])
+                voice_key = batch.voice_plan_fingerprint(expected[index]["editorial"])
                 self.assertEqual(call.kwargs["voice_dir"], h.cache/voice_key/"voice")
             self.assertFalse(h.work.exists())
             self.assertTrue(list(h.cache.rglob("accepted.wav")))
