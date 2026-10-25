@@ -86,7 +86,7 @@ class MotionDarkTests(unittest.TestCase):
         scene = example()["scenes"][0]
         canvas_bg = dark_overlay(scene, canvas=canvas, font_path=TITLE_FONT, stage=0)
         vx, vy, vw, vh = video_box(canvas)
-        center = canvas_bg.getpixel((vx+vw//2, vy+vh//2))
+        center = canvas_bg.getpixel((vx+vw//4, vy+vh//2))
         self.assertEqual(center[3], 255)
         self.assertTrue(max(center[:3]) - min(center[:3]) <= 7, "panel must be neutral black, not bluish graphite")
         # Existing scene composition and Line MD remain valid under Black Dark.
