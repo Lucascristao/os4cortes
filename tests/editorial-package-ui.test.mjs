@@ -1311,7 +1311,7 @@ test('Motion Dark acrescenta direção visual no prompt somente quando seleciona
     if (editorialStyle === 'motion_dark') {
       assert.match(prompt, /DIREÇÃO VISUAL MOTION DARK/);
       assert.match(prompt, /line-md:alert-circle/);
-      assert.match(prompt, /direção visual executável/);
+      assert.match(prompt, /DIRETOR DE MOTION DESIGN/);
       assert.ok(narrated.every(scene => scene.visual.motion?.layout === 'statement'));
       assert.ok(narrated.every(scene => scene.visual.motion?.icon === 'line-md:chat'));
       await h.import([example]);
