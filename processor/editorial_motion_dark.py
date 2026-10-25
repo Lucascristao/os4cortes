@@ -71,7 +71,8 @@ def _background(width: int, height: int) -> Image.Image:
     draw.ellipse((-width*.65, -height*.35, width*.8, height*.61), fill=(161, 116, 60, 92))
     draw.ellipse((width*.3, height*.4, width*1.6, height*1.4), fill=(42, 70, 100, 58))
     base = Image.alpha_composite(base, glow.filter(ImageFilter.GaussianBlur(max(15, width*.17))))
-    draw = ImageDraw.Draw(base, "RGBA")
+    texture = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(texture, "RGBA")
     for y in range(0, height, max(7, round(height*.010))):
         draw.line((0, y, width, y), fill=(210, 205, 186, 7), width=1)
     for x in range(max(14, round(width*.045)), width, max(28, round(width*.09))):
@@ -81,7 +82,8 @@ def _background(width: int, height: int) -> Image.Image:
         inset = i * max(2, round(min(width,height)*.003))
         draw.rectangle((inset, inset, width-inset-1, height-inset-1),
                        outline=(0, 0, 0, alpha), width=max(1, round(width*.006)))
-    return base
+    # Composite texture onto the opaque gradient instead of replacing alpha.
+    return Image.alpha_composite(base, texture)
 
 
 def _multiline(draw, item, fill, dy=0):
