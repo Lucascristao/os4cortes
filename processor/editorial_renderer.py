@@ -678,6 +678,12 @@ def preflight_editorial_visuals(plan, *, canvas, font_path, cover=None, title=""
             from .editorial_paper import paper_layout
             try:
                 paper_layout(scene, canvas=canvas, font_path=font_path, credit=credit)
+                if plan.get("visual_style") == "motion_dark":
+                    # Probe every selected visual state before costly voice/media work.
+                    from .editorial_motion_dark import dark_overlay
+                    dark_overlay(scene, canvas=canvas, font_path=font_path, credit=credit, stage=-1)
+                    for stage in range(len(scene.get("visual", {}).get("lines", []))):
+                        dark_overlay(scene, canvas=canvas, font_path=font_path, credit=credit, stage=stage)
             except (ValueError, OSError) as error:
                 raise ValueError(f"{cut_label} / cena {scene['id']} / {error}") from error
             continue
