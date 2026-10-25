@@ -11,7 +11,7 @@ EDITORIAL_TOPICS = ("politics", "economy", "business", "humor", "general")
 EDITORIAL_TONES = ("conversational", "provocative", "ironic", "playful", "explanatory", "serious")
 EDITORIAL_INTENSITIES = ("low", "medium", "high")
 EDITORIAL_COMMENTARY_MODES = ("support_source", "challenge_source", "direct_commentary")
-EDITORIAL_VISUAL_STYLES = ("classic", "paper")
+EDITORIAL_VISUAL_STYLES = ("classic", "paper", "motion_dark")
 DEFAULT_EDITORIAL_INTENT = {
     "mode": "direct_commentary", "source_point": "", "target": "", "contribution": "",
 }
