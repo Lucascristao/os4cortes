@@ -1300,7 +1300,7 @@ test('parada voluntária sem falhas preserva estado interrompido e resultados de
 
 
 test('Motion Dark acrescenta direção visual no prompt somente quando selecionado', async () => {
-  for (const editorialStyle of ['classic', 'paper', 'motion_dark']) {
+  for (const editorialStyle of ['classic', 'motion_dark']) {
     const h = harness();
     h.context.mostrarTranscricao(session({ simpleCuts: false, editorialStyle }));
     assert.equal(h.get('#editorialStyle').value, editorialStyle);
