@@ -16,11 +16,14 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from .editorial_paper import paper_timeline, video_box, _fit, _wrap
 from .branding import CHANNEL_BADGE, CHANNEL_HANDLE
 
-MOTION_DARK_STYLE_VERSION = "os4-motion-dark-v1-lit-line-md"
+MOTION_DARK_STYLE_VERSION = "os4-motion-dark-v2-true-black"
 ASSETS = Path(__file__).resolve().parent / "assets" / "line_md"
 ICON_NAMES = ("confirm-circle", "alert-circle", "chat", "clipboard-check")
 LAYOUT_NAMES = ("source_card", "statement", "comparison", "quote", "number")
 GOLD = (202, 163, 88, 255)
+BLACK = (0, 0, 0, 255)
+SURFACE = (12, 12, 12, 255)
+SURFACE_RAISED = (20, 18, 16, 255)
 WHITE = (249, 247, 241, 255)
 MUTED = (180, 188, 198, 255)
 NS = "{http://www.w3.org/2000/svg}"
@@ -64,26 +67,36 @@ def _icon_frame(name: str, pixel_size: int, frame: int) -> Image.Image:
 
 @lru_cache(maxsize=8)
 def _background(width: int, height: int) -> Image.Image:
-    """Multiple illuminated planes + gentle vignette: no flat opaque slab."""
-    base = Image.new("RGBA", (width, height), (14, 17, 23, 255))
-    glow = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(glow, "RGBA")
-    draw.ellipse((-width*.65, -height*.35, width*.8, height*.61), fill=(161, 116, 60, 92))
-    draw.ellipse((width*.3, height*.4, width*1.6, height*1.4), fill=(42, 70, 100, 58))
-    base = Image.alpha_composite(base, glow.filter(ImageFilter.GaussianBlur(max(15, width*.17))))
-    texture = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(texture, "RGBA")
-    for y in range(0, height, max(7, round(height*.010))):
-        draw.line((0, y, width, y), fill=(210, 205, 186, 7), width=1)
-    for x in range(max(14, round(width*.045)), width, max(28, round(width*.09))):
-        draw.line((x, 0, x, height), fill=(205, 199, 181, 4))
-    for i in range(11):
-        alpha = int(2 + i*1.4)
-        inset = i * max(2, round(min(width,height)*.003))
-        draw.rectangle((inset, inset, width-inset-1, height-inset-1),
-                       outline=(0, 0, 0, alpha), width=max(1, round(width*.006)))
-    # Composite texture onto the opaque gradient instead of replacing alpha.
-    return Image.alpha_composite(base, texture)
+    """True black canvas; only two tightly focused practical lights touch it.
+
+    No graphite fill, blue wash, grid or full-screen glow. Surrounding black
+    remains pixel black. The local sources give text and the panel some depth.
+    """
+    base = Image.new("RGBA", (width, height), BLACK)
+    lights = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(lights, "RGBA")
+    draw.ellipse((int(width*.03), int(height*.15),
+                  int(width*.53), int(height*.38)), fill=(188, 124, 50, 54))
+    draw.ellipse((int(width*.68), int(height*.62),
+                  int(width*.92), int(height*.76)), fill=(153, 118, 74, 24))
+    return Image.alpha_composite(
+        base, lights.filter(ImageFilter.GaussianBlur(max(6, round(width*.065))))
+    )
+
+
+def _panel_backlight(image: Image.Image, window, *, canvas) -> Image.Image:
+    """Soft amber edge glow makes a black layer dimensional without greying the frame."""
+    vx, vy, vw, vh = window
+    w, h = canvas.width, canvas.height
+    radius = max(8, round(min(w, h)*.027))
+    glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).rounded_rectangle(
+        (vx-2, vy-2, vx+vw+1, vy+vh+1),
+        radius=radius+2, outline=(194, 134, 60, 95),
+        width=max(3, round(w*.012))
+    )
+    glow = glow.filter(ImageFilter.GaussianBlur(max(7, round(w*.033))))
+    return Image.alpha_composite(image, glow)
 
 
 def _multiline(draw, item, fill, dy=0):
@@ -148,6 +161,7 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
 
     vx, vy, vw, vh = video_box(canvas)
     rounded = max(8, round(short*.027))
+    image = _panel_backlight(image, (vx, vy, vw, vh), canvas=canvas)
     shadow = Image.new("RGBA", (w,h),(0,0,0,0))
     ImageDraw.Draw(shadow).rounded_rectangle((vx-4, vy+10, vx+vw+4, vy+vh+20),
                    radius=rounded+5, fill=(0,0,0,180))
@@ -181,7 +195,7 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
             pill_w = min(vw-gap*2, int(vw*.70))
             pill_h = max(round(short*.064), int(vh*.20))
             pill=(vx+gap, vy+gap, vx+gap+pill_w, vy+gap+pill_h)
-            draw.rounded_rectangle(pill, radius=round(pill_h*.22), fill=(17,22,31,228),
+            draw.rounded_rectangle(pill, radius=round(pill_h*.22), fill=(9,9,9,238),
                                    outline=(202,163,88,145), width=max(1,round(short*.002)))
             put_icon(pill[0]+gap, pill[1]+(pill_h-icon_size)//2)
             draw = ImageDraw.Draw(image, "RGBA")
@@ -202,7 +216,7 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
                 active=i<=stage
                 draw.rounded_rectangle((x0,y0,xend,vy+vh-margin),
                                        radius=max(8,rounded//2),
-                                       fill=(43,36,29,255) if active else (25,29,36,255),
+                                       fill=SURFACE_RAISED if active else SURFACE,
                                        outline=(202,163,88,215) if active else (95,103,115,90),width=2)
                 label="01 / ANTES" if i==0 else "02 / DEPOIS"
                 draw.text((x0+gap,y0+gap), label, font=font_small,
@@ -215,7 +229,7 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
             put_icon(vx+vw-icon_size-gap,vy+gap)
         elif layout == "quote":
             # Quoted content remains visibly attributed and unlike a statistic.
-            draw.rounded_rectangle(panel,radius=rounded,fill=(37,39,43,255),
+            draw.rounded_rectangle(panel,radius=rounded,fill=(15,15,15,255),
                                    outline=(222,198,155,132),width=2)
             draw.rounded_rectangle((vx+pad,vy+int(vh*.18),vx+pad+max(4,round(short*.007)),vy+vh-pad),
                                    radius=2,fill=GOLD)
@@ -229,7 +243,7 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
             put_icon(vx+vw-icon_size-gap,vy+gap)
         elif layout == "number":
             # A real number from the supplied text becomes the dominant visual.
-            draw.rounded_rectangle(panel,radius=rounded,fill=(24,29,37,255),
+            draw.rounded_rectangle(panel,radius=rounded,fill=SURFACE,
                                    outline=(202,163,88,115),width=2)
             match=re.search(r"(?<!\w)\d[\d.,%]*",content) or re.search(r"(?<!\w)\d[\d.,%]*",title)
             figure=match.group(0) if match else ""
@@ -247,7 +261,7 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
             put_icon(vx+vw-icon_size-gap,vy+gap)
         else:
             # Statement: illuminated type and a slim gold marker, not a paper card.
-            draw.rounded_rectangle(panel,radius=rounded,fill=(25,29,36,255),
+            draw.rounded_rectangle(panel,radius=rounded,fill=SURFACE,
                                    outline=(203,163,88,115),width=2)
             draw.rounded_rectangle((vx+pad,vy+int(vh*.27),vx+pad+int(short*.008),
                                     vy+vh-pad),radius=2,fill=GOLD)
