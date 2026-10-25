@@ -226,4 +226,11 @@ def voice_plan_fingerprint(plan):
     this rendering-only field, preserving all previous cache decisions and the
     exact legacy hash for plans that never declared a visual style.
     """
-    return editorial_fingerprint({key: value for key, value in plan.items() if key != "visual_style"})
+    clean = {key: value for key, value in plan.items() if key != "visual_style"}
+    if any("motion" in (scene.get("visual") or {}) for scene in clean.get("scenes", [])):
+        # Pure visual motion instructions must never trigger another approved TTS.
+        clean = json.loads(json.dumps(clean, ensure_ascii=False, allow_nan=False))
+        for scene in clean["scenes"]:
+            if "visual" in scene:
+                scene["visual"].pop("motion", None)
+    return editorial_fingerprint(clean)
