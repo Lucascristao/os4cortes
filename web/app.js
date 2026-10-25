@@ -68,6 +68,9 @@ function salvarSessaoTranscricao() {
 }
 
 function estiloEditorial(value) {
+  if (value === "motion_dark" && editorialStyleInput?.querySelector('option[value="motion_dark"]')?.disabled) {
+    return "classic";
+  }
   return value === "paper" || value === "motion_dark" ? "motion_dark" : "classic";
 }
 
@@ -75,8 +78,8 @@ function atualizarOpcaoVisual() {
   if (editorialStyleInput) editorialStyleInput.disabled = simpleCutsInput?.checked === true;
   const hint = $("#editorialStyleHint");
   if (hint) hint.textContent = simpleCutsInput?.checked === true
-    ? "O corte simples mantém seu visual atual. Desmarque corte simples para escolher o visual dos vídeos autorais."
-    : "Visual atual preserva a edição de hoje. Motion Dark usa preto absoluto com luz localizada, sombras, ícones animados e legendas destacadas. A escolha vale para todo o lote autoral.";
+    ? "O corte simples mantém seu visual atual. Desmarque corte simples para criar vídeos autorais com contexto e comentário narrado."
+    : "Visual autoral atual preserva a edição autoral clássica com narração e contexto.";
 }
 
 function atualizarTarjaVideo() {
