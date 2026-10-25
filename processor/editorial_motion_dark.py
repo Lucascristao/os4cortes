@@ -25,7 +25,7 @@ BLACK = (0, 0, 0, 255)
 SURFACE = (12, 12, 12, 255)
 SURFACE_RAISED = (20, 18, 16, 255)
 WHITE = (249, 247, 241, 255)
-MUTED = (180, 188, 198, 255)
+MUTED = (172, 172, 172, 255)
 NS = "{http://www.w3.org/2000/svg}"
 
 
@@ -224,7 +224,7 @@ def dark_overlay(scene, *, canvas, font_path, stage=-1, entrance=1.,
                 textbox=(x0+gap,y0+int(vh*.27),xend-gap,vy+vh-margin-gap)
                 item=_fit(lines[i],textbox,font_path,max(13,round(short*.047)),
                           max(11,round(short*.021)),f"motion comparison {i}")
-                _multiline(draw,item,WHITE if active else (154,160,166,255),
+                _multiline(draw,item,WHITE if active else (148,148,148,255),
                            round(short*.016*(1-entrance)) if i==stage else 0)
             put_icon(vx+vw-icon_size-gap,vy+gap)
         elif layout == "quote":
