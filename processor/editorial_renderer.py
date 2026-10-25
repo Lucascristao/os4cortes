@@ -363,7 +363,9 @@ def scene_fingerprint(scene, *, source_hash, canvas, lower_third, words, voice=N
     """Exclude other scenes and master audio gain from silent video cache keys."""
     from .editorial_visuals import VISUAL_STYLE_VERSION
     from .editorial_paper import PAPER_STYLE_VERSION
-    visual_version = ({"visual_style": PAPER_STYLE_VERSION} if scene.get("_visual_style") == "paper"
+    from .editorial_motion_dark import MOTION_DARK_STYLE_VERSION
+    visual_version = ({"visual_style": MOTION_DARK_STYLE_VERSION} if scene.get("_visual_style") == "motion_dark"
+                      else {"visual_style": PAPER_STYLE_VERSION} if scene.get("_visual_style") == "paper"
                       else {"visual_style": VISUAL_STYLE_VERSION} if scene.get("kind") == "narration" else {})
     return fingerprint({"version": VERSION, "scene": scene, "source": source_hash,
                         "canvas": canvas, "lower_third": lower_third, "words": words,
@@ -429,6 +431,8 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
                 continue
             if burn_captions:
                 rendered = captions.texto_ass_grupo(group, index, style.line_chars)
+                if visual_style == "motion_dark":
+                    rendered = rendered.replace(r"\c&H0000FFFF&", r"\c&H0053A2CA&")
                 if visual_style == "paper":
                     rendered = rendered.replace(r"\c&H0000FFFF&", r"\c&H0000679F&").replace(r"\c&H00FFFFFF&", r"\c&H00181918&")
                 if fit_size < size:
@@ -498,7 +502,7 @@ def _overlay_animation_entries(stages, *, canvas):
 
 
 def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, ass, font_path, duration, ffmpeg, shared_dir, source_hash):
-    if scene.get("_visual_style") == "paper":
+    if scene.get("_visual_style") in ("paper", "motion_dark"):
         return _encode_paper_scene(video, scene, scene_dir, output, canvas=canvas, treatment=treatment,
                                    ass=ass, font_path=font_path, duration=duration, ffmpeg=ffmpeg,
                                    shared_dir=shared_dir, source_hash=source_hash)
@@ -566,9 +570,12 @@ def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, 
 
 def _encode_paper_scene(video, scene, scene_dir, output, *, canvas, treatment, ass, font_path, duration, ffmpeg, shared_dir, source_hash):
     from .editorial_paper import PAPER_STYLE_VERSION, video_box, paper_sequence
+    from .editorial_motion_dark import MOTION_DARK_STYLE_VERSION, motion_dark_sequence
+    dark = scene.get("_visual_style") == "motion_dark"
+    version = MOTION_DARK_STYLE_VERSION if dark else PAPER_STYLE_VERSION
     x, y, width, height = video_box(canvas)
     span = scene if scene["kind"] == "clip" else scene["background"]
-    media_key = fingerprint({"paper_source": PAPER_STYLE_VERSION, "source": source_hash,
+    media_key = fingerprint({"paper_source": version, "source": source_hash,
                              "span": [span["start"], span["end"]], "kind": scene["kind"],
                              "size": [width, height], "fps": canvas.fps,
                              "treatment": [treatment.mode, treatment.height_fraction]})
@@ -591,11 +598,13 @@ def _encode_paper_scene(video, scene, scene_dir, output, *, canvas, treatment, a
                   "-an", "-vf", ",".join(filters), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                   "-threads", "2", "-pix_fmt", "yuv420p", media])
         _save_cache(media.with_suffix('.json'), media_key, media)
-    concat, timing = paper_sequence(scene, scene_dir / "paper", canvas=canvas, font_path=font_path,
-                                    duration=duration, words=scene.get("_paper_words", ()), credit=scene["_credit"])
-    _write_json(scene_dir / "paper-timing.json", {"style": PAPER_STYLE_VERSION, "events": timing})
+    sequence = motion_dark_sequence if dark else paper_sequence
+    concat, timing = sequence(scene, scene_dir / ("motion-dark" if dark else "paper"),
+                              canvas=canvas, font_path=font_path, duration=duration,
+                              words=scene.get("_paper_words", ()), credit=scene["_credit"])
+    _write_json(scene_dir / "paper-timing.json", {"style": version, "events": timing})
     captions_filter = f"ass='{_filter_path(ass)}':fontsdir='{_filter_path(font_path.parent)}'"
-    filters = [f"[0:v]fps={canvas.fps},setpts=PTS-STARTPTS,scale={width}:{height},pad={canvas.width}:{canvas.height}:{x}:{y}:color=0xedeae2[base]",
+    filters = [f"[0:v]fps={canvas.fps},setpts=PTS-STARTPTS,scale={width}:{height},pad={canvas.width}:{canvas.height}:{x}:{y}:color={'0x12151c' if dark else '0xedeae2'}[base]",
                f"[1:v]fps={canvas.fps},setpts=PTS-STARTPTS,format=rgba[graphics]",
                "[base][graphics]overlay=0:0:eof_action=repeat:repeatlast=1[composed]",
                f"[composed]{captions_filter},format=yuv420p,setsar=1[outv]"]
@@ -665,7 +674,7 @@ def preflight_editorial_visuals(plan, *, canvas, font_path, cover=None, title=""
     from .covers import normalize_cover, _fit_title, PRESETS, default_template, CoverError
     credit = "Fonte: " + plan["source"]["label"] + (" | " + plan["source"]["date"] if plan["source"]["date"] else "")
     for scene in plan["scenes"]:
-        if plan.get("visual_style") == "paper":
+        if plan.get("visual_style") in ("paper", "motion_dark"):
             from .editorial_paper import paper_layout
             try:
                 paper_layout(scene, canvas=canvas, font_path=font_path, credit=credit)
@@ -712,6 +721,7 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
     """Return rendered assets and any cover-only pending error; retain the MP4."""
     from .editorial_visuals import Canvas, VISUAL_STYLE_VERSION
     from .editorial_paper import PAPER_STYLE_VERSION
+    from .editorial_motion_dark import MOTION_DARK_STYLE_VERSION
     video, transcript, output = Path(video).resolve(), Path(transcript).resolve(), Path(output).resolve()
     work = Path(work_dir).resolve()
     if output in (video, transcript) or output.suffix.lower() != ".mp4":
@@ -792,11 +802,11 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                     raise ValueError(f"Source clip has no caption words: {scene['id']}")
                 voice_key = None
             ass, cues = _caption_assets(words, scene_dir, canvas=canvas, font_path=font_path, font_name=font_name,
-                                        duration=timing["content_duration"], credit=credit if scene["kind"] == "clip" and normalized.get("visual_style") != "paper" else "",
+                                        duration=timing["content_duration"], credit=credit if scene["kind"] == "clip" and normalized.get("visual_style") not in ("paper", "motion_dark") else "",
                                         burn_captions=burn_captions, visual_style=normalized.get("visual_style", "classic"))
             augmented = dict(scene, _credit=credit)
-            if normalized.get("visual_style") == "paper":
-                augmented.update(_visual_style="paper", _paper_words=words)
+            if normalized.get("visual_style") in ("paper", "motion_dark"):
+                augmented.update(_visual_style=normalized["visual_style"], _paper_words=words)
             key = scene_fingerprint(augmented, source_hash=source_hash, canvas=[canvas.width, canvas.height, fps],
                                     lower_third=[treatment.mode, treatment.height_fraction], words=words, voice=voice_key, font_hash=font_hash,
                                     burn_captions=burn_captions)
@@ -848,7 +858,7 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
                   "aspect": aspect, "width": canvas.width, "height": canvas.height, "fps": fps,
                   "cover": cover_report, **timing_report, "duration_seconds": final_duration,
                   "final_duration_seconds": final_duration, "timeline_duration_seconds": total,
-                  "visual_style": PAPER_STYLE_VERSION if normalized.get("visual_style") == "paper" else VISUAL_STYLE_VERSION,
+                  "visual_style": MOTION_DARK_STYLE_VERSION if normalized.get("visual_style") == "motion_dark" else PAPER_STYLE_VERSION if normalized.get("visual_style") == "paper" else VISUAL_STYLE_VERSION,
                   "source_sha256": source_hash, "plan_fingerprint": fingerprint(normalized), "video_sha256": file_sha256(output),
                   "voice_model": manifest["model"], "voice": manifest["voice"], "raw_voice_byte_identical": True,
                   "literal_tts_fidelity_passed": True, "caption_alignment_passed": True,
