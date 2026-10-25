@@ -1319,7 +1319,7 @@ test('Motion Dark acrescenta direção visual no prompt somente quando seleciona
       assert.match(prompt, /A IA decide O QUE destacar e QUAL composição existente usar/);
       assert.match(prompt, /NÃO imponha cotas, alternância artificial/);
       assert.match(prompt, /não uma sequência obrigatória/);
-      assert.ok(narrated.every(scene => scene.visual.motion?.layout === 'source_card'));
+      assert.ok(narrated.every(scene => ['source_card', 'timeline'].includes(scene.visual.motion?.layout)));
       assert.ok(narrated.every(scene => scene.visual.motion?.icon === 'line-md:clipboard-check'));
       assert.ok(narrated.every(scene => scene.visual.motion?.emphasis === 'Ponto'));
       assert.ok(narrated.every(scene => scene.visual.title.includes(scene.visual.motion.emphasis)));

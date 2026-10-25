@@ -893,8 +893,9 @@ Para cada narration inclua visual.motion:
 - Em uma sequência com várias narrações, revise título, layout, ícone e emphasis em conjunto: evite combinações repetidas sem razão e contraste cenas densas com a fala original; NÃO imponha cotas, alternância artificial ou a obrigação de usar os cinco layouts.
 - O motor aplica as animações predefinidas, a iluminação, os SVGs Line MD e as legendas alinhadas à voz. A IA decide O QUE destacar e QUAL composição existente usar; não define coordenadas, duração de animação, movimentos de câmera, filtros FFmpeg, cores extras ou efeitos ainda inexistentes.
 
-LINHA DO TEMPO VISUAL COM MÚLTIPLOS BEATS (Opcional, para narrações dinâmicas):
-Quando uma mesma narração tiver múltiplos acontecimentos visuais (ex.: métrica revelada, documento confrontado, item riscado ou foco na fala), adicione o campo "beats" dentro de "motion", onde cada beat usa "anchor" com a palavra ou expressão literal falada que aciona o momento:
+LINHA DO TEMPO VISUAL COM MÚLTIPLOS BEATS (PADRÃO RECOMENDADO PARA MOTION DARK):
+No estilo Motion Dark, para dar dinamismo cinematográfico em vez de deixar um único cartão parado na tela, divida as narrações de destaque em múltiplos momentos visuais ("beats") sincronizados com o que está sendo dito.
+Use o layout "timeline" e adicione o campo "beats" dentro de "motion", onde cada beat usa "anchor" com a palavra ou expressão literal falada que aciona o momento:
 "beats": [
   {"anchor": "expressão inicial", "type": "headline", "video_mode": "bottom"},
   {"anchor": "quando diz a métrica", "type": "metric", "value": "84%", "label": "Grau de favoritismo", "video_mode": "hidden"},
@@ -918,7 +919,21 @@ function criarPromptAutoral({ transcricao, sampleTitle, sampleAuthor, blocoVideo
   const narracao = (id, title, start, end, text, delivery = "explain") => ({
     id, kind: "narration", text,
     background: { start, end },
-    visual: { title, kicker: "Política", lines: ["[Uma frase curta ligada a esta cena]"], ...(motionDark ? { motion: { layout: "source_card", icon: "line-md:clipboard-check", emphasis: "Ponto" } } : {}) },
+    visual: {
+      title, kicker: "Política", lines: ["[Uma frase curta ligada a esta cena]"],
+      ...(motionDark ? {
+        motion: {
+          layout: "timeline",
+          icon: "line-md:clipboard-check",
+          emphasis: "Ponto",
+          beats: [
+            { anchor: "expressão inicial", type: "headline", video_mode: "bottom" },
+            { anchor: "dado ou número", type: "metric", value: "100%", label: "Métrica em destaque", video_mode: "hidden" },
+            { anchor: "conclusão da fala", type: "source_focus", video_mode: "window" }
+          ]
+        }
+      } : {})
+    },
     tts: { delivery, cues: [] },
     evidence: [{ start, end }],
   });
