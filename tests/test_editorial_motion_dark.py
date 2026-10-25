@@ -142,5 +142,69 @@ class MotionDarkTests(unittest.TestCase):
             self.assertEqual(result,"360,640")
 
 
+    def test_motion_timeline_beats_resolution_and_audio_anchors(self):
+        from processor.editorial_timeline import resolve_scene_timeline
+        scene = {
+            "kind": "narration",
+            "visual": {
+                "title": "Virou traque",
+                "kicker": "Análise",
+                "motion": {
+                    "layout": "timeline",
+                    "icon": "line-md:alert-circle",
+                    "emphasis": "traque",
+                    "beats": [
+                        {"anchor": "primeira", "type": "headline", "video_mode": "bottom"},
+                        {"anchor": "segunda", "type": "metric", "value": "84%", "label": "Favoritismo", "video_mode": "hidden"},
+                        {"anchor": "terceira", "type": "strike_comparison", "items": ["Item A", "Item B"], "strike_index": 1, "video_mode": "hidden"}
+                    ]
+                }
+            }
+        }
+        words = [
+            {"canonical": "primeira", "texto": "primeira", "inicio": 0.0, "fim": 0.5},
+            {"canonical": "palavra", "texto": "palavra", "inicio": 0.6, "fim": 1.2},
+            {"canonical": "segunda", "texto": "segunda", "inicio": 3.5, "fim": 4.1},
+            {"canonical": "terceira", "texto": "terceira", "inicio": 7.0, "fim": 7.6},
+        ]
+        beats = resolve_scene_timeline(scene, duration=10.0, words=words)
+        self.assertEqual(len(beats), 3)
+        self.assertEqual(beats[0].beat_type, "headline")
+        self.assertEqual(beats[0].start_time, 0.0)
+        self.assertEqual(beats[0].video_mode, "bottom")
+        self.assertEqual(beats[1].beat_type, "metric")
+        self.assertEqual(beats[1].start_time, 3.5)
+        self.assertEqual(beats[2].beat_type, "strike_comparison")
+        self.assertEqual(beats[2].start_time, 7.0)
+        self.assertEqual(beats[2].end_time, 10.0)
+
+    def test_motion_dark_sequence_renders_multi_beat_animation(self):
+        canvas = Canvas.for_format(width=360, fps=15)
+        scene = {
+            "kind": "narration",
+            "visual": {
+                "title": "Dois valores",
+                "kicker": "Economia",
+                "motion": {
+                    "layout": "timeline",
+                    "icon": "line-md:clipboard-check",
+                    "beats": [
+                        {"anchor": "", "type": "metric", "value": "51,2%", "label": "Primeiro"},
+                        {"anchor": "", "type": "metric", "value": "84%", "label": "Segundo"}
+                    ]
+                }
+            }
+        }
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d) / "frames"
+            concat_path, timing = motion_dark_sequence(scene, folder, canvas=canvas, font_path=TITLE_FONT, duration=3.0)
+            self.assertTrue(concat_path.is_file())
+            self.assertEqual(len(timing), 2)
+            self.assertGreater(len(list(folder.glob("*.png"))), 2)
+            content = concat_path.read_text(encoding="utf-8")
+            self.assertIn("ffconcat version 1.0", content)
+
+
 if __name__=="__main__":
     unittest.main()
+

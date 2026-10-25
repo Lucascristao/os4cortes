@@ -161,11 +161,11 @@ def normalize_editorial_plan(raw, *, clip_start=None, clip_end=None):
             }
             if "motion" in visual:
                 motion = visual["motion"]
-                if not isinstance(motion, dict) or set(motion) - {"layout", "icon", "emphasis"}:
-                    raise ValueError(f"{name}.visual.motion: campos permitidos layout, icon, emphasis.")
-                layouts = ("source_card", "statement", "comparison", "quote", "number")
+                if not isinstance(motion, dict) or set(motion) - {"layout", "icon", "emphasis", "beats"}:
+                    raise ValueError(f"{name}.visual.motion: campos permitidos layout, icon, emphasis, beats.")
+                layouts = ("source_card", "statement", "comparison", "quote", "number", "timeline")
                 icons = ("line-md:chat", "line-md:alert-circle", "line-md:confirm-circle", "line-md:clipboard-check")
-                layout = motion.get("layout", "source_card")
+                layout = motion.get("layout", "timeline" if "beats" in motion else "source_card")
                 icon = motion.get("icon", "line-md:chat")
                 emphasis = motion.get("emphasis", "")
                 if layout not in layouts or icon not in icons:
@@ -176,7 +176,68 @@ def normalize_editorial_plan(raw, *, clip_start=None, clip_end=None):
                     raise ValueError(f"{name}.visual.motion.emphasis precisa ser trecho literal do título visual.")
                 if layout == "number" and not any(c.isdigit() for c in normalized["visual"]["title"] + " ".join(lines)):
                     raise ValueError(f"{name}.visual.motion.number exige número explícito no título ou apoio.")
-                normalized["visual"]["motion"] = {"layout": layout, "icon": icon, "emphasis": emphasis}
+                norm_motion = {"layout": layout, "icon": icon, "emphasis": emphasis}
+                if "beats" in motion:
+                    raw_beats = motion["beats"]
+                    if not isinstance(raw_beats, list) or not 1 <= len(raw_beats) <= 8:
+                        raise ValueError(f"{name}.visual.motion.beats: informe de 1 a 8 beats visuais.")
+                    valid_types = ("headline", "metric", "strike_comparison", "comparison", "quote_card", "document_card", "source_focus")
+                    valid_modes = ("window", "bottom", "hidden", "side")
+                    norm_beats = []
+                    for b_idx, b in enumerate(raw_beats):
+                        b_name = f"{name}.visual.motion.beats[{b_idx}]"
+                        if not isinstance(b, dict):
+                            raise ValueError(f"{b_name}: beat deve ser um objeto.")
+                        b_type = _choice(b.get("type", "headline"), f"{b_name}.type", valid_types)
+                        anchor = str(b.get("anchor", ""))[:100].strip()
+                        video_mode = _choice(b.get("video_mode", "hidden"), f"{b_name}.video_mode", valid_modes)
+                        norm_beat = {"type": b_type, "anchor": anchor, "video_mode": video_mode}
+                        if b_type == "metric":
+                            norm_beat["value"] = _text(b.get("value", "0"), f"{b_name}.value", 30)
+                            if "label" in b:
+                                norm_beat["label"] = str(b["label"])[:120]
+                            if "diff" in b:
+                                norm_beat["diff"] = str(b["diff"])[:20]
+                        elif b_type == "strike_comparison":
+                            items = b.get("items", [])
+                            if not isinstance(items, list) or not 2 <= len(items) <= 5:
+                                raise ValueError(f"{b_name}.items: informe de 2 a 5 itens.")
+                            norm_beat["items"] = [_text(it, f"{b_name}.items", 60) for it in items]
+                            s_idx = b.get("strike_index", 1)
+                            if not isinstance(s_idx, int) or not 0 <= s_idx < len(norm_beat["items"]):
+                                raise ValueError(f"{b_name}.strike_index: índice válido no intervalo de items.")
+                            norm_beat["strike_index"] = s_idx
+                            if "summary" in b:
+                                norm_beat["summary"] = str(b["summary"])[:80]
+                        elif b_type == "comparison":
+                            norm_beat["left_label"] = str(b.get("left_label", "01 / ANTES"))[:40]
+                            norm_beat["left_text"] = _text(b.get("left_text", ""), f"{b_name}.left_text", 140)
+                            norm_beat["right_label"] = str(b.get("right_label", "02 / DEPOIS"))[:40]
+                            norm_beat["right_text"] = _text(b.get("right_text", ""), f"{b_name}.right_text", 140)
+                            if "active_side" in b:
+                                norm_beat["active_side"] = _choice(b["active_side"], f"{b_name}.active_side", ("left", "right", "both"))
+                        elif b_type == "quote_card":
+                            norm_beat["quote"] = _text(b.get("quote", ""), f"{b_name}.quote", 240)
+                            if "author" in b:
+                                norm_beat["author"] = str(b["author"])[:60]
+                        elif b_type == "document_card":
+                            norm_beat["issuer"] = _text(b.get("issuer", "OFICIAL"), f"{b_name}.issuer", 50)
+                            norm_beat["text"] = _text(b.get("text", ""), f"{b_name}.text", 200)
+                            if "date" in b:
+                                norm_beat["date"] = str(b["date"])[:20]
+                            if "stamp" in b:
+                                norm_beat["stamp"] = str(b["stamp"])[:30]
+                        elif b_type == "source_focus":
+                            if "label" in b:
+                                norm_beat["label"] = str(b["label"])[:80]
+                        else:  # headline
+                            if "title" in b:
+                                norm_beat["title"] = str(b["title"])[:100]
+                            if "emphasis" in b:
+                                norm_beat["emphasis"] = str(b["emphasis"])[:50]
+                        norm_beats.append(norm_beat)
+                    norm_motion["beats"] = norm_beats
+                normalized["visual"]["motion"] = norm_motion
             tts = scene.get("tts", {"delivery": "explain"})
             if not isinstance(tts, dict) or tts.get("delivery", "explain") not in ("hook", "explain", "contrast", "question", "closing"):
                 raise ValueError(f"{name}.tts: direção vocal inválida.")
