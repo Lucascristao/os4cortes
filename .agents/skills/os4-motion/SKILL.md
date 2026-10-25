@@ -14,7 +14,7 @@ Read `docs/direcao-visual-automatica.md`, `processor/editorial_plan.py`, `proces
 ## Art direction
 - Every narrative moment has ONE dominant purpose: source clip, fact/statement, literal quote, comparison, or verified number.
 - Prefer typography with *timed* emphasis over generic cards; the spoken expression anchors timing whenever literally available.
-- Dark editorial identity: directional amber light, cool secondary bounce, restrained film texture/vignette, projected layered shadows. Avoid flat dark blocks, giant opaque subtitle boxes, endless static cards, visually inert hold times, or busy decoration.
+- Black Dark editorial identity: true #000000 canvas with localized amber practical lights, near-black surfaces (#090909–#161616) and projected layered shadows. No cool wash or overall blue/graphite haze. Avoid flat dark blocks, giant opaque subtitle boxes, endless static cards, visually inert hold times, or busy decoration.
 - Captions: real word-aligned timing, high-contrast white, gold highlight for active words, readable stroke and no opaque rectangle. Never truncate spoken words.
 - Keep visual/credit/caption safe zones independent; preserve real speaker faces and attributed statements.
 - 9:16 and 16:9 must both work. Validate frame 0, each transition midpoint, each speech highlight and exit.

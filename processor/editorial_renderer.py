@@ -604,7 +604,7 @@ def _encode_paper_scene(video, scene, scene_dir, output, *, canvas, treatment, a
                               words=scene.get("_paper_words", ()), credit=scene["_credit"])
     _write_json(scene_dir / "paper-timing.json", {"style": version, "events": timing})
     captions_filter = f"ass='{_filter_path(ass)}':fontsdir='{_filter_path(font_path.parent)}'"
-    filters = [f"[0:v]fps={canvas.fps},setpts=PTS-STARTPTS,scale={width}:{height},pad={canvas.width}:{canvas.height}:{x}:{y}:color={'0x12151c' if dark else '0xedeae2'}[base]",
+    filters = [f"[0:v]fps={canvas.fps},setpts=PTS-STARTPTS,scale={width}:{height},pad={canvas.width}:{canvas.height}:{x}:{y}:color={'0x000000' if dark else '0xedeae2'}[base]",
                f"[1:v]fps={canvas.fps},setpts=PTS-STARTPTS,format=rgba[graphics]",
                "[base][graphics]overlay=0:0:eof_action=repeat:repeatlast=1[composed]",
                f"[composed]{captions_filter},format=yuv420p,setsar=1[outv]"]

@@ -75,6 +75,23 @@ class MotionDarkTests(unittest.TestCase):
         self.assertEqual(replacement.getpixel((vx+vw//2,vy+vh//2))[3],255)
         self.assertNotEqual(front.tobytes(),replacement.tobytes())
 
+    def test_black_dark_palette_has_true_black_corners_and_local_lighting(self):
+        canvas = Canvas.for_format(width=360)
+        backdrop = _background(canvas.width, canvas.height)
+        self.assertEqual(backdrop.getpixel((0, 0)), (0, 0, 0, 255))
+        self.assertEqual(backdrop.getpixel((canvas.width-1, canvas.height-1)), (0, 0, 0, 255))
+        glow = backdrop.getpixel((round(canvas.width*.28), round(canvas.height*.26)))
+        self.assertGreater(glow[0], 0)
+        self.assertEqual(glow[3], 255)
+        scene = example()["scenes"][0]
+        canvas_bg = dark_overlay(scene, canvas=canvas, font_path=TITLE_FONT, stage=0)
+        vx, vy, vw, vh = video_box(canvas)
+        center = canvas_bg.getpixel((vx+vw//4, vy+vh//2))
+        self.assertEqual(center[3], 255)
+        self.assertTrue(max(center[:3]) - min(center[:3]) <= 7, "panel must be neutral black, not bluish graphite")
+        # Existing scene composition and Line MD remain valid under Black Dark.
+        self.assertNotEqual(canvas_bg.tobytes(), dark_overlay(scene, canvas=canvas, font_path=TITLE_FONT, stage=-1).tobytes())
+
     def test_frames_bounded_and_hold(self):
         with tempfile.TemporaryDirectory() as d:
             canvas=Canvas.for_format(width=360)
