@@ -36,6 +36,71 @@ def _baixar(url: str, opts: dict) -> None:
         ydl.download([url])
 
 
+def _erro_de_acesso(exc: DownloadError) -> bool:
+    mensagem = str(exc).lower()
+    return any(trecho in mensagem for trecho in (
+        "http error 403", "sign in", "not a bot", "login_required",
+        "cookies are no longer valid",
+    ))
+
+
+def _baixar_com_pot(
+    url: str,
+    pasta_saida: Path,
+    altura_maxima: int,
+    cookie_file: Path | None,
+) -> None:
+    # Tenta acesso público primeiro; só usa a conta se o YouTube o recusar.
+    tentativas = [("mweb", None)]
+    if cookie_file is not None:
+        tentativas.append(("mweb", cookie_file))
+    # O Safari também fornece HLS, uma alternativa às URLs HTTPS bloqueadas.
+    tentativas.append(("web_safari", cookie_file))
+    bloqueio_observado = False
+
+    for indice, (cliente, cookies) in enumerate(tentativas, start=1):
+        autenticacao = "com cookies" if cookies is not None else "sem cookies"
+        print(
+            f"YouTube: tentativa {indice}/{len(tentativas)}, "
+            f"cliente {cliente} {autenticacao} e PO Token...",
+            flush=True,
+        )
+        opts = _opts_base(pasta_saida, altura_maxima)
+        opts["extractor_args"] = {
+            "youtube": {"player_client": [cliente]},
+            "youtubepot-bgutilhttp": {"base_url": ["http://127.0.0.1:4416"]},
+        }
+        # Testa os formatos candidatos para descartar URLs que retornam 403.
+        opts["check_formats"] = True
+        opts["verbose"] = True
+        if cookies is not None:
+            opts["cookiefile"] = str(cookies)
+        try:
+            _baixar(url, opts)
+            return
+        except DownloadError as exc:
+            bloqueado = _erro_de_acesso(exc)
+            formato_indisponivel = "requested format is not available" in str(exc).lower()
+            if not (bloqueado or formato_indisponivel):
+                raise
+            bloqueio_observado = bloqueio_observado or bloqueado
+            if indice < len(tentativas):
+                print("YouTube recusou esta tentativa; tentando outra forma de acesso.", flush=True)
+                continue
+            # Erros de formato também podem ser uma restrição própria do vídeo.
+            if not bloqueio_observado:
+                raise
+            orientacao = (
+                "Atualize os cookies do YouTube no segredo YOUTUBE_COOKIES_B64 do GitHub e tente novamente."
+                if cookie_file is not None else
+                "Configure cookies do YouTube no segredo YOUTUBE_COOKIES_B64 do GitHub e tente novamente."
+            )
+            raise RuntimeError(
+                f"O YouTube recusou o download após {len(tentativas)} tentativas. "
+                f"{orientacao} Se persistir, o IP do executor pode estar bloqueado pelo YouTube."
+            ) from exc
+
+
 def baixar_youtube(
     url: str,
     pasta_saida: str | Path,
@@ -53,36 +118,11 @@ def baixar_youtube(
     cookie_file: Path | None = None
     if cookies_path:
         candidato = Path(cookies_path)
-        if candidato.exists():
+        if candidato.is_file():
             cookie_file = candidato
 
     if usar_pot:
-        print("YouTube: tentando acesso público com PO Token (sem cookies da conta)...", flush=True)
-        opts_pot = _opts_base(pasta_saida, altura_maxima)
-        opts_pot["extractor_args"] = {
-            "youtube": {
-                "player_client": ["mweb"],
-            },
-            "youtubepot-bgutilhttp": {
-                "base_url": ["http://127.0.0.1:4416"],
-            },
-        }
-        # Temporário no POC: deixa o log explícito para confirmar que o provider foi carregado.
-        opts_pot["verbose"] = True
-
-        try:
-            _baixar(url, opts_pot)
-        except DownloadError:
-            if cookie_file is None:
-                raise
-
-            print(
-                "PO Token não concluiu o download. Tentando cookies como fallback...",
-                flush=True,
-            )
-            opts_cookie = _opts_base(pasta_saida, altura_maxima)
-            opts_cookie["cookiefile"] = str(cookie_file)
-            _baixar(url, opts_cookie)
+        _baixar_com_pot(url, pasta_saida, altura_maxima, cookie_file)
     else:
         opts = _opts_base(pasta_saida, altura_maxima)
         if cookie_file is not None:

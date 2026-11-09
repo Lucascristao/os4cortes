@@ -86,7 +86,8 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "$HOME/bgutil-ytdlp-pot-provider"
-          git clone --depth 1 --branch 2.0.0 \
+          pot_version=$(python -c 'from importlib.metadata import version; print(version("bgutil-ytdlp-pot-provider"))')
+          git clone --depth 1 --branch "$pot_version" \
             https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git \
             "$HOME/bgutil-ytdlp-pot-provider"
           cd "$HOME/bgutil-ytdlp-pot-provider/server"

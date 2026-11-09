@@ -545,7 +545,7 @@ Tecnologias:
 
 ```text
 yt-dlp
-bgutil-ytdlp-pot-provider 2.0.0
+bgutil-ytdlp-pot-provider 2.0.2
 PO Token local
 cookies opcionais como fallback
 ```
@@ -1202,7 +1202,7 @@ Ao mudar arquivos front-end, aumentar a versão do cache quando necessário para
 
 ```text
 yt-dlp[default]
-bgutil-ytdlp-pot-provider==2.0.0
+bgutil-ytdlp-pot-provider==2.0.2
 faster-whisper
 opencv-python-headless
 numpy
@@ -1223,12 +1223,16 @@ O download do YouTube já precisou de tratamento específico devido às proteç�
 O workflow de transcrição:
 
 1. instala Deno;
-2. clona `Brainicism/bgutil-ytdlp-pot-provider` na versão `2.0.0`;
+2. clona `Brainicism/bgutil-ytdlp-pot-provider` na mesma versão do plugin instalado (`2.0.2` em `requirements.txt`);
 3. compila o servidor;
 4. inicia o provider em `127.0.0.1:4416`;
 5. verifica `/ping`;
 6. usa PO Token no yt-dlp;
-7. pode usar cookies como fallback.
+7. tenta `mweb` público, depois `mweb` com cookies, mantendo o provider nas duas tentativas;
+8. se o acesso continuar bloqueado, tenta `web_safari` com o mesmo provider e os cookies disponíveis;
+9. testa os formatos para descartar URLs de mídia que retornam 403 e informa como configurar/renovar os cookies se o bloqueio persistir.
+
+As tentativas são limitadas a três (duas sem cookies). Vídeos indisponíveis e falhas de disco/FFmpeg preservam o erro original, sem repetir o download como se fossem falhas de autenticação. Um PO Token não garante acesso quando o YouTube bloqueia a sessão ou o IP do executor.
 
 **Não simplificar/remover essa parte sem testar um download real do YouTube.**
 
