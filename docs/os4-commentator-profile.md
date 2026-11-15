@@ -10,7 +10,11 @@ A transcrição e os metadados fornecidos são a fonte exclusiva dos dois prompt
 
 ## Filtro editorial dos dois modos
 
-Atualizado em 24/10/2026. A varredura percorre toda a transcrição e identifica candidatos antes de escrever títulos, capas ou narrações. A descoberta continua até o fim mesmo quando já houver bons cortes. Encontrar um candidato não obriga sua publicação: o padrão de aprovação permanece o mesmo em todo o episódio.
+Atualizado em 15/11/2026. O objetivo é atrair atenção e oferecer algo que valha acompanhar, comentar ou compartilhar. A varredura percorre toda a transcrição e identifica candidatos antes de escrever títulos, capas ou narrações. A descoberta continua até o fim mesmo quando já houver bons cortes. Buscar o maior conjunto de momentos bons e distintos, sem limitar o lote aos favoritos nem preencher quantidade com trechos fracos.
+
+Os caminhos de descoberta incluem polêmica e tensão, emoção e identificação, humor e surpresa, descoberta e utilidade. São alternativas: opinião provocativa desenvolvida, discordância com resposta, confissão ou relato emocional não precisam também ensinar uma lição ou apresentar dados. Começo, meio e fim podem ser um arco breve de pergunta, resposta e reação registrada; não exigem tese longa, consenso ou resolução de quem está certo. Uma frase isolada sem contexto e sem entrega continua insuficiente.
+
+A IA recebe texto, sem acesso confirmado à atuação. As palavras e as trocas oferecem pistas; não autorizam inventar choro, gritos, gestos, expressão facial ou reação da mesa. A ausência de marcações emocionais também não elimina o interesse de um relato claro. Uma auditoria específica recupera divergências, provocações, confissões, viradas emocionais e piadas que tenham sido esquecidas ou rejeitadas apenas pela ausência de dados.
 
 Para cada candidato, identificar internamente a premissa, o motivo específico para continuar assistindo e a entrega que a fonte oferece, com as falas e os intervalos correspondentes. A justificativa precisa explicar o detalhe deste momento; “gera debate”, “é uma lição de vida”, reconhecimento do participante ou concordância política, isoladamente, não demonstram valor. Título e narração não podem fabricar uma promessa que o conteúdo não entrega.
 
@@ -23,6 +27,8 @@ A aprovação exige:
 - **Distinção:** a entrega acrescenta algo ao lote; trocar título, palavras ou formato não cria automaticamente outro ângulo.
 
 Histórias humanas e explicações educativas podem passar pela identificação, pelo detalhe vivido ou pela clareza de um mecanismo. Choque, indignação, conflito e surpresa não são requisitos universais. Também não basta uma história ter começo, meio e fim. Quando houver valor claro, recuperar contexto e continuação na própria transcrição antes de descartar. Comparar candidatos redundantes sem eliminar outro momento forte apenas porque existe um ainda melhor.
+
+Uma demonstração rotineira de produto não ganha valor apenas pela fama, pela marca ou por um número incomum. No exemplo fictício do empreendedor montando um açaí e citando proteína, ingredientes e quantidades sem outro acontecimento não bastam; uma piada, surpresa, discordância, história pessoal ou decisão com consequência pode justificar a seleção. O filtro avalia a entrega, sem proibir temas. Cortes do mesmo assunto podem coexistir quando oferecem conflitos, histórias ou reações distintos, mesmo que compartilhem uma conclusão.
 
 A auditoria tem duas direções: procurar bons momentos esquecidos e retirar aprovados fracos, redundantes ou sustentados apenas pela embalagem. Um resgate retorna ao mesmo filtro; a segunda leitura não reduz o piso de qualidade. O lote pode conter apenas verticais, apenas horizontais ou ambos, conforme o material. Quantidade menor, por si só, não comprova melhoria.
 
@@ -86,11 +92,17 @@ O novo JSON declara `editorial.intent` com quatro campos: `mode`, `source_point`
 - Fazer uma observação específica, com reação ou opinião clara, em vez de anunciar, reproduzir e resumir a mesma informação três vezes.
 - Usar os metadados para planejar, sem recitar a pauta como fórmula. Variar as frases e evitar que toda intervenção repita “a cobrança de”, “faltam detalhes” ou “precisa de esclarecimentos”. A personalidade aparece no argumento e na linguagem.
 - Usar atribuição curta quando necessária. Uma ressalva deve corrigir uma inferência concreta, sem virar contraponto automático ou fechamento defensivo.
-- Apoiar cada afirmação factual nos intervalos de evidência do próprio corte. Um fato de outra parte da transcrição exige referência correspondente e envelope ajustado.
+- Associar as informações e falas atribuídas aos intervalos correspondentes do próprio corte. `evidence` localiza a origem da narração, inclusive opiniões e relatos; não exige que a entrevista comprove essas falas. Um ponto de outra parte da transcrição exige referência correspondente e envelope ajustado.
 - No humor, deixar a preparação e a surpresa acontecerem; comentar depois quando a reação acrescentar algo.
 - No horizontal, aprofundar pontos diferentes e bem encadeados. Cada intervenção precisa acrescentar raciocínio; uma conclusão não precisa recontar o vídeo inteiro.
 - Sem duração mínima numérica ou alvo. Até 180 segundos de trechos originais cabe no vertical, inclusive acima de dois minutos; narração acrescentada fica fora desse limite. Acima de 180 segundos de trechos originais, encaminhar como horizontal/YouTube. Fundos, evidências e envelope não determinam essa conta.
 - Perguntar ao público quando a pergunta for específica e natural. Encerrar numa observação ou graça também é válido.
+
+## Conversa, atribuição e comprovação
+
+Podcast não exige documento ou estatística para cada opinião, experiência pessoal, memória, previsão ou provocação. A ausência de dados não é motivo de descarte nem de ressalva automática. Preservar o que foi dito, distinguindo a fala da fonte daquilo que o canal afirma como fato. Usar atribuição natural quando necessária, inclusive para números citados sem cálculo apresentado; não certificar a conta nem inventar unidades. Não transformar acusações ou relatos em confirmação independente.
+
+Se faltar informação para uma afirmação nova do narrador, omitir essa afirmação ou delimitar a interpretação; a fala original pode continuar sendo um bom corte. Corrigir distorções concretas da montagem ou do comentário, sem acrescentar “faltam provas” por hábito. Se a discussão sobre provas for o próprio assunto da conversa, preservá-la normalmente. Isso vale nos dois prompts, com o mesmo contrato de JSON e sem pesquisa externa adicional.
 
 ## Exemplos de calibração
 

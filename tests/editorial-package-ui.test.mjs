@@ -426,7 +426,7 @@ test('ambos os modos recebem o mesmo filtro editorial antes do schema e da trans
     assert.equal(prompt.indexOf(filter, filterIndex + filter.length), -1, 'o filtro não é duplicado');
     assert.ok(filterIndex < prompt.indexOf('\n[\n'), 'seleção precede o exemplo de escrita e montagem');
     assert.ok(filterIndex < prompt.indexOf('--- TRANSCRIÇÃO ---'));
-    const stages = ['Descoberta completa', 'Prova de valor e filtro de aprovação', 'Recuperação e comparação do lote', 'Auditoria de cobertura e de excesso', 'Produção silenciosa do JSON'];
+    const stages = ['Descoberta completa', 'Motivo para assistir e filtro de aprovação', 'Recuperação e comparação do lote', 'Auditoria de cobertura e de excesso', 'Produção silenciosa do JSON'];
     const positions = stages.map(stage => filter.indexOf(stage));
     assert.ok(positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1])), 'descoberta, filtro e dupla auditoria precedem a produção');
     assert.match(filter, /interesse específico, entrega real, autonomia, densidade, fidelidade e distinção/);
@@ -438,6 +438,36 @@ test('ambos os modos recebem o mesmo filtro editorial antes do schema e da trans
     sharedFilters.push(filter);
   }
   assert.equal(sharedFilters[0], sharedFilters[1]);
+});
+
+test('prompt copiado compartilha seleção de conversa sem exigir comprovação nem inventar atuação', async () => {
+  for (const simpleCuts of [false, true]) {
+    for (const editorialStyle of ['classic', 'paper', 'motion_dark']) {
+      const h = harness();
+      h.context.mostrarTranscricao(session({ simpleCuts, editorialStyle }));
+      await h.get('#btnCopiarPromptIA').fire('click');
+      const prompt = h.copied[0];
+      const policy = vm.runInContext('DIRETRIZ_CONVERSA_E_ATRIBUICAO', h.context);
+      const filter = vm.runInContext('DIRETRIZ_VARREDURA_EXAUSTIVA', h.context);
+      assert.equal(prompt.split(policy).length, 2, 'a política completa chega uma vez ao clipboard em cada modo e estilo');
+      assert.ok(prompt.indexOf(policy) < prompt.indexOf(filter), 'a distinção entre atribuição e prova orienta a seleção');
+      assert.match(policy, /Não descarte um momento porque o participante não apresentou dados/);
+      assert.match(policy, /Esse campo registra a origem da fala; não exige prova externa/);
+      assert.match(policy, /Não transforme relato ou acusação em confirmação independente/);
+      for (const path of ['Polêmica e tensão', 'Emoção e identificação', 'Humor e surpresa', 'Descoberta e utilidade']) assert.ok(filter.includes(path));
+      assert.match(filter, /São caminhos alternativos/);
+      assert.match(filter, /sem acesso confirmado à voz ou à imagem/);
+      assert.match(filter, /Não invente gestos, expressões, reações/);
+      assert.match(filter, /monta um açaí/);
+      assert.match(filter, /não rejeite açaí, alimentação, demonstrações ou números como temas/i);
+      assert.match(filter, /busque o maior conjunto de momentos bons e distintos/i);
+      assert.match(filter, /Algum candidato foi rejeitado apenas por não trazer dados/);
+      if (!simpleCuts) {
+        assert.doesNotMatch(prompt, /O trecho não traz o valor desse aumento|Cada afirmação factual do comentário e dos metadados deve ter apoio/);
+        assert.match(prompt, /ele afirma que o custo dobrou/);
+      }
+    }
+  }
 });
 
 test('o valor exigido corresponde ao áudio contínuo no simples e à contribuição concreta no autoral', async () => {
