@@ -25,6 +25,7 @@ from .editorial_plan import normalize_editorial_plan, voice_plan_fingerprint
 from .progress import completed, emit, failed, start_heartbeat
 from .publisher import save_publisher_manifest
 from .lower_third import LowerThird
+from .framing import FRAMING_POLICY_VERSION
 from .pending_cut import PendingCutStore, pending_cut_key
 try:
     from .tracking import render_cinematic_16x9, render_tracking_9x16
@@ -49,6 +50,7 @@ def _render_simple_video(video, start, end, output, *, aspect, work_dir, cache_d
     """Reuse source-only video; cover and publication edits do not change this key."""
     config = {
         "version": SIMPLE_VIDEO_CACHE_VERSION,
+        "framing": FRAMING_POLICY_VERSION,
         "source_sha256": source_sha256 or _file_sha256(video),
         "span": [start, end], "aspect": aspect,
         "lower_third": {"mode": lower_third.mode, "height_fraction": lower_third.height_fraction},

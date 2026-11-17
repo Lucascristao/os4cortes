@@ -364,9 +364,12 @@ def scene_fingerprint(scene, *, source_hash, canvas, lower_third, words, voice=N
     from .editorial_visuals import VISUAL_STYLE_VERSION
     from .editorial_paper import PAPER_STYLE_VERSION
     from .editorial_motion_dark import MOTION_DARK_STYLE_VERSION
+    from .framing import FRAMING_POLICY_VERSION
     visual_version = ({"visual_style": MOTION_DARK_STYLE_VERSION} if scene.get("_visual_style") == "motion_dark"
                       else {"visual_style": PAPER_STYLE_VERSION} if scene.get("_visual_style") == "paper"
                       else {"visual_style": VISUAL_STYLE_VERSION} if scene.get("kind") == "narration" else {})
+    if scene.get("kind") == "clip":
+        visual_version["framing"] = FRAMING_POLICY_VERSION
     return fingerprint({"version": VERSION, "scene": scene, "source": source_hash,
                         "canvas": canvas, "lower_third": lower_third, "words": words,
                         "voice_timing": voice, "font": font_hash, "burn_captions": burn_captions,
@@ -514,7 +517,8 @@ def _encode_silent_scene(video, scene, scene_dir, output, *, canvas, treatment, 
     if scene["kind"] == "clip":
         from .tracking import render_tracking_9x16, render_cinematic_16x9
         tracked = scene_dir / "tracked.mp4"
-        tracking_key = fingerprint({"source": source_hash, "start": scene["start"], "end": scene["end"], "canvas": [canvas.width, canvas.height], "lower_third": [treatment.mode, treatment.height_fraction]})
+        from .framing import FRAMING_POLICY_VERSION
+        tracking_key = fingerprint({"framing": FRAMING_POLICY_VERSION, "source": source_hash, "start": scene["start"], "end": scene["end"], "canvas": [canvas.width, canvas.height], "lower_third": [treatment.mode, treatment.height_fraction]})
         if not _cache_valid(scene_dir / "tracked-cache.json", tracking_key, tracked):
             renderer = render_tracking_9x16 if canvas.portrait else render_cinematic_16x9
             renderer(video, scene["start"], scene["end"], tracked, work_dir=scene_dir / "tracking",
@@ -575,7 +579,10 @@ def _encode_paper_scene(video, scene, scene_dir, output, *, canvas, treatment, a
     version = MOTION_DARK_STYLE_VERSION if dark else PAPER_STYLE_VERSION
     x, y, width, height = video_box(canvas)
     span = scene if scene["kind"] == "clip" else scene["background"]
+    from .framing import FRAMING_POLICY_VERSION
+    tracking_version = {"framing": FRAMING_POLICY_VERSION} if scene["kind"] == "clip" else {}
     media_key = fingerprint({"paper_source": version, "source": source_hash,
+                             **tracking_version,
                              "span": [span["start"], span["end"]], "kind": scene["kind"],
                              "size": [width, height], "fps": canvas.fps,
                              "treatment": [treatment.mode, treatment.height_fraction]})
