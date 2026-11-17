@@ -14,10 +14,18 @@ except ImportError:
 from .framing import Face, SpeakerContinuity, StableFraming
 from .lower_third import LowerThird, fit_crop_size
 
+MouthSample = tuple[float, float, np.ndarray, float, np.ndarray | None]
+
+
+def _face_patch(frame, x1, y1, x2, y2):
+    return cv2.resize(
+        cv2.cvtColor(frame[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY), (24, 16)
+    )
+
 
 def calcular_movimento_labial(
     frame, face_box, prev_mouths, w: int, h: int
-) -> tuple[float, tuple[float, float, any, float] | None]:
+) -> tuple[float, MouthSample | None]:
     """Estima variação de movimento da boca para pontuar atividade de fala com suavização temporal."""
     fx, fy, fw, fh = face_box[:4]
     my1 = max(0, int(fy + 0.60 * fh))
@@ -27,9 +35,12 @@ def calcular_movimento_labial(
     if my2 <= my1 or mx2 <= mx1:
         return 0.0, None
 
-    mouth_roi = cv2.resize(
-        cv2.cvtColor(frame[my1:my2, mx1:mx2], cv2.COLOR_BGR2GRAY), (24, 16)
-    )
+    mouth_roi = _face_patch(frame, mx1, my1, mx2, my2)
+    # Reference the upper face: head movement, lighting and a shifting face box
+    # affect both patches. They must not automatically count as articulation.
+    ry1 = max(0, int(fy + 0.20 * fh))
+    ry2 = min(h, int(fy + 0.55 * fh))
+    reference = _face_patch(frame, mx1, ry1, mx2, ry2) if ry2 > ry1 else None
     cx, cy = float(fx + fw / 2) / w, float(fy + fh / 2) / h
     best_score = 0.0
 
@@ -43,6 +54,9 @@ def calcular_movimento_labial(
         p_roi = item[2]
         prev_score = item[3] if len(item) > 3 else 0.0
         diff = float(cv2.absdiff(mouth_roi, p_roi).mean())
+        if len(item) > 4 and item[4] is not None and reference is not None:
+            reference_diff = float(cv2.absdiff(reference, item[4]).mean())
+            diff = max(0.0, diff - reference_diff)
         raw_score = min(1.0, max(0.0, (diff - 3.0) / 9.0))
         # Suavização temporal (EMA assimétrico): ataque rápido para fala e decaimento suave para pausas
         if raw_score >= prev_score:
@@ -50,7 +64,22 @@ def calcular_movimento_labial(
         else:
             best_score = 0.20 * raw_score + 0.80 * prev_score
 
-    return best_score, (cx, cy, mouth_roi, best_score)
+    return best_score, (cx, cy, mouth_roi, best_score, reference)
+
+
+def overview_frame(frame, width: int, height: int):
+    """Show the complete safe source over a soft background during lost focus."""
+    h, w = frame.shape[:2]
+    background = cv2.resize(frame, (160, 90))
+    background = cv2.GaussianBlur(background, (21, 21), 0)
+    background = cv2.resize(background, (width, height))
+    background = (background.astype(np.float32) * 0.45).astype(np.uint8)
+    scale = min(width / w, height / h)
+    fw, fh = max(1, round(w * scale)), max(1, round(h * scale))
+    foreground = cv2.resize(frame, (fw, fh), interpolation=cv2.INTER_LANCZOS4)
+    x, y = (width - fw) // 2, (height - fh) // 2
+    background[y:y + fh, x:x + fw] = foreground
+    return background
 
 
 def mudou_plano(previous, current) -> tuple[bool, bool]:
@@ -179,7 +208,7 @@ def render_tracking_9x16(
         crop_w, crop_h = min(int(round(h * 9 / 16)), w), h
     framing = StableFraming(crop_w / w)
     previous_scene = None
-    previous_mouths: list[tuple[float, float, any]] = []
+    previous_mouths: list[MouthSample] = []
 
     cmd = [
         "ffmpeg", "-y",
@@ -233,7 +262,7 @@ def render_tracking_9x16(
                 _, faces = detector.detect(det_frame)
 
                 detections: list[Face] = []
-                current_mouths: list[tuple[float, float, any]] = []
+                current_mouths: list[MouthSample] = []
 
                 if faces is not None:
                     for f in faces:
@@ -275,11 +304,14 @@ def render_tracking_9x16(
 
             crop = frame[y0:y0 + cur_crop_h, x0:x0 + cur_crop_w]
 
-            vertical = cv2.resize(
-                crop,
-                (largura_saida, altura_saida),
-                interpolation=cv2.INTER_LANCZOS4,
-            )
+            if framing.needs_overview(tempo_decorrido):
+                vertical = overview_frame(frame, largura_saida, altura_saida)
+            else:
+                vertical = cv2.resize(
+                    crop,
+                    (largura_saida, altura_saida),
+                    interpolation=cv2.INTER_LANCZOS4,
+                )
 
             # Fade-out visual condicional: escurecimento gradual nos últimos 0.8s
             if fade_duracao > 0 and tempo_decorrido >= (duracao - fade_duracao):
@@ -445,7 +477,7 @@ def render_cinematic_16x9(
 
     frame_idx = 0
     previous_scene = None
-    previous_mouths: list[tuple[float, float, any, float]] = []
+    previous_mouths: list[MouthSample] = []
 
     # Estados da Câmera Multi-Cam
     current_mode = "wide"
@@ -490,7 +522,7 @@ def render_cinematic_16x9(
                 detector.setInputSize((det_w, det_h))
                 _, faces = detector.detect(det_frame)
 
-                current_mouths: list[tuple[float, float, any, float]] = []
+                current_mouths: list[MouthSample] = []
                 detected_speakers = []
 
                 if faces is not None:

@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
+FRAMING_POLICY_VERSION = "os4-framing-v2-visible-target-recovery"
+
 
 @dataclass(frozen=True)
 class Face:
@@ -100,6 +102,7 @@ class StableFraming:
         self.candidate_last_valid = 0.0
         self.last_time: float | None = None
         self.fresh_shot = True
+        self.target_visible = False
 
     def reset_shot(self, snap: bool = True):
         self.target = None
@@ -107,6 +110,19 @@ class StableFraming:
         self.candidate_since = 0.0
         self.candidate_last_valid = 0.0
         self.fresh_shot = snap
+        self.target_visible = False
+        self.last_seen = -math.inf
+
+    def needs_overview(self, timestamp: float) -> bool:
+        """A stale crop must not show an empty seat while detection recovers.
+
+        A short detection miss keeps the current composition. On a fresh shot,
+        or after 300ms without the target, preserve the whole source instead.
+        """
+        return self.target is None or (
+            not self.target_visible
+            and timestamp - self.last_seen >= min(0.30, self.lost_hold)
+        )
 
     def observe(self, faces: list[Face], timestamp: float):
         # A missed detection must not count as sustained evidence on resumption.
@@ -123,6 +139,7 @@ class StableFraming:
             and f.area >= 0.002
             and f.confidence >= 0.70
         ]
+        self.target_visible = False
 
         if self.target is not None:
             matches = [f for f in faces if same_face(self.target, f)]
@@ -131,6 +148,7 @@ class StableFraming:
                     matches, key=lambda f: abs(f.center - self.target.center)
                 )
                 self.last_seen = timestamp
+                self.target_visible = True
 
                 # Se o target atual NÃO está falando ativamente, verificar se outro rosto está
                 others = [f for f in faces if not same_face(self.target, f)]
@@ -162,12 +180,9 @@ class StableFraming:
                         self.candidate = None
                 return
 
-            if timestamp - self.last_seen < self.lost_hold:
-                return
-
         if not faces:
             self.candidate = None
-            return  # Hold the last useful frame during missed detections.
+            return  # Keep coordinates; needs_overview prevents a blind crop.
 
         best = max(faces, key=lambda f: f.priority)
 
@@ -175,6 +190,7 @@ class StableFraming:
         if self.target is None:
             self.target = best
             self.last_seen = timestamp
+            self.target_visible = True
             if self.fresh_shot:
                 self.center = self._clamp(best.center)
                 self.fresh_shot = False
@@ -188,10 +204,18 @@ class StableFraming:
 
         self.candidate = best
         self.candidate_last_valid = timestamp
-        if timestamp - self.candidate_since >= self.switch_hold:
+        # Collect the replacement while waiting for a briefly missing target.
+        # Previously the lost hold and switch hold ran consecutively, leaving
+        # the old crop on an arm/table for roughly two seconds before moving.
+        if (timestamp - self.last_seen >= self.lost_hold
+                and timestamp - self.candidate_since >= min(self.switch_hold, self.lost_hold)):
             self.target = best
             self.last_seen = timestamp
+            self.target_visible = True
             self.candidate = None
+            # An overview -> recovered face is a cut, never a pan through the
+            # space between participants. Ordinary tracking still eases below.
+            self.center = self._clamp(best.center)
 
     def _clamp(self, center: float) -> float:
         half = self.crop_fraction / 2
