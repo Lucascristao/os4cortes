@@ -18,7 +18,8 @@ import subprocess
 import wave
 
 from . import captions, editorial_alignment
-from .editorial_plan import normalize_editorial_plan, validate_source_ranges, voice_plan_fingerprint
+from .editorial_plan import (normalize_editorial_plan, validate_source_ranges, voice_plan_fingerprint,
+                             longest_source_block_seconds, validate_vertical_source_blocks)
 from .editorial_voice import prepare_voice_jobs, synthesize_editorial_voice
 from .lower_third import LowerThird
 from .voice_runtime.gemini_live_fidelity import evaluate_transcription
@@ -108,6 +109,7 @@ def editorial_timing_report(plan, timeline):
     if first_original > 15:
         warnings.append(f"A fala original entra em {first_original:.2f}s, acima da faixa inicial de teste de 15s.")
     return {"first_original_clip_seconds": first_original,
+            "longest_source_block_seconds": longest_source_block_seconds(plan),
             "original_content_seconds": sum(scene["end"]-scene["start"] for scene in plan["scenes"] if scene["kind"] == "clip"),
             "source_clip_seconds": sum(scene["end"]-scene["start"] for scene in plan["scenes"] if scene["kind"] == "clip"),
             "final_duration_seconds": timeline[-1]["end"], "editorial_warnings": warnings}
@@ -748,6 +750,7 @@ def render_editorial_cut(video, transcript, plan, output, *, work_dir, aspect="9
     if isinstance(narrator_speed, bool) or not isinstance(narrator_speed, (int, float)) or not math.isfinite(narrator_speed) or not .5 <= narrator_speed <= 2:
         raise ValueError("Invalid narrator speed setting.")
     normalized = normalize_editorial_plan(_json(plan) if isinstance(plan, (str, Path)) else plan)
+    validate_vertical_source_blocks(normalized, aspect)
     source_words = captions.carregar_palavras(transcript)
     validate_source_ranges(normalized, source_words)
     treatment = lower_third or LowerThird()

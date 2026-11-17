@@ -14,6 +14,24 @@ Não há duração mínima numérica, duração-alvo ou faixas de curtos, médio
 
 A montagem final usa a duração real dos WAVs, sem usá-la para reclassificar o destino. Não repetir uma explicação, prolongar silêncio, desacelerar a voz ou alongar uma cartela para atingir um minuto. Uma fala precisa continuar até completar a ideia, inclusive condições, negativas e ressalvas que mudem o sentido.
 
+## Blocos de áudio original no autoral vertical
+
+Cada bloco contínuo de fonte tem até **55 segundos** no modo autoral 9:16. Somam-se os `end - start` de todos os `clip` consecutivos, mesmo com mudanças de câmera, pessoa, saltos na fonte ou repetições. Uma cena `narration` efetivamente ouvida separa os blocos. Fundo e `evidence` não entram nessa conta. O último bloco também é validado. O cálculo usa seis casas decimais para eliminar ruído de ponto flutuante.
+
+É uma regra editorial interna, sem alegação de limite oficial do TikTok ou garantia de monetização. Não é teto para o vídeo: **não há limite total de 75 segundos**, percentual de narração ou número fixo de intervenções. A regra de roteamento pelos 180 segundos totais de fonte permanece; o formato efetivo é resolvido antes de aplicar o limite de bloco. Horizontais e cortes simples não recebem essa restrição.
+
+O prompt pede intervenções pertinentes em pausas naturais antes dos 55s, preservando frases, contexto, emoção e humor. Não se permite usar fala vazia apenas para reiniciar a contagem. O narrador deve contribuir para a leitura do vídeo durante seu desenvolvimento, sem concentrar toda a autoria em uma pequena paráfrase no final de uma longa reprodução. A validação numérica não consegue certificar a qualidade dessa contribuição.
+
+A interface bloqueia o envio inválido, a função `workflow-start` rejeita antes de criar o job e o runner GitHub valida o lote antes de consultar a chave de voz ou acessar o Drive. O renderizador direto também valida antes da síntese. Não há divisão automática de frases nem reescrita ou nova compra de voz para corrigir um plano. Pacotes antigos fora da regra precisam ser refeitos com o prompt atualizado. A regra não altera os fingerprints de voz aprovada.
+
+## Seleção para atenção e contribuição própria
+
+A busca percorre toda a transcrição e considera opiniões que dividem, discordância, respostas inesperadas, identificação, emoção, humor e viradas, além de explicações úteis. Pergunta, resposta e reação podem formar o momento. A IA deve usar pistas textuais e marcações disponíveis, sem inventar expressão, choro ou intensidade de voz que não consegue observar.
+
+Opiniões, relatos pessoais e interpretações não precisam trazer estatísticas ou documentos para render um corte. Atribuir uma alegação preserva o que a pessoa disse sem confirmá-la independentemente. O campo `evidence` localiza a origem na transcrição; não exige comprovação externa. O narrador não acrescenta fatos ausentes nem converte alegações em certeza.
+
+Uma pessoa famosa, um produto ou um número chamativo não bastam para aprovar um trecho. A seleção identifica o motivo específico para assistir e a entrega real, sem fabricar conflito nem preencher uma quantidade de cortes. A abertura entra na conversa com contexto suficiente, e a narração acrescenta observação específica onde ajuda a história. Cada vídeo tem sua estrutura; um exemplo bem sucedido não vira fórmula obrigatória para os demais. Qualidade editorial, alcance e elegibilidade para recompensas precisam ser avaliados separadamente; este ajuste não garante os dois últimos.
+
 ## Contexto que chega ao espectador
 
 Cada vídeo precisa funcionar para quem não viu a fonte: apenas clips e `text`, na ordem final, devem explicar o necessário. Título, metadados, `evidence` e outros cortes do lote não substituem esse contexto. Resolver antes do uso os antecedentes, metáforas, personagens e papéis de quem fala; preservar a pergunta que determina o alcance da resposta. Quando a fonte lê, cita, encena ou imagina, deixar essa relação compreensível sem transformar hipótese em fato nem afirmação literal em ficção.

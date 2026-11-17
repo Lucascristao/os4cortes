@@ -20,6 +20,32 @@ DEFAULT_EDITORIAL_PROFILE = {
     "intensity": "medium", "angle": "", "audience_question": "",
 }
 
+# Internal editing policy, not a TikTok eligibility threshold.
+VERTICAL_SOURCE_BLOCK_SECONDS = 55
+
+
+def longest_source_block_seconds(plan):
+    """Adjacent excerpts remain one source-audio block, including replays."""
+    longest = current = 0.0
+    for scene in plan["scenes"]:
+        if scene["kind"] == "clip":
+            current += scene["end"] - scene["start"]
+            longest = max(longest, current)
+        elif scene["kind"] == "narration":
+            current = 0.0
+    return round(longest, 6)
+
+
+def validate_vertical_source_blocks(plan, aspect):
+    if aspect == "9:16":
+        longest = longest_source_block_seconds(plan)
+        if longest > VERTICAL_SOURCE_BLOCK_SECONDS:
+            raise ValueError(
+                f"Bloco contínuo da fonte com {longest:g}s: o autoral vertical permite até 55s por bloco, "
+                "somando clips consecutivos. Gere um novo plano com comentário próprio em uma pausa natural; "
+                "55s não é limite da duração total nem garantia de monetização."
+            )
+
 
 def _choice(value, name, choices):
     if not isinstance(value, str) or value not in choices:
