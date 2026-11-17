@@ -365,14 +365,27 @@ export default safeHandler(async (request, context) => {
           return json(400, { ok: false, error: `Corte ${index + 1}: ${error}` });
         }
       }
-      if (cut.cover?.template_id === "04_duas_pessoas") {
-        const originalSeconds = !simpleCuts && cut.editorial
+      const originalSeconds = !simpleCuts && cut.editorial
           ? Number(cut.editorial.scenes.filter(scene => scene.kind === "clip")
             .reduce((total, scene) => total + scene.end - scene.start, 0).toFixed(6))
           : Number((end - start).toFixed(6));
-        const horizontal = String(cut.formato || "").trim().toLowerCase() === "16:9"
+      const horizontal = String(cut.formato || "").trim().toLowerCase() === "16:9"
           || String(cut.destino || cut.plataforma || "").trim().toLowerCase() === "youtube"
           || originalSeconds > 180;
+      if (!simpleCuts && !horizontal) {
+        let current = 0, longest = 0;
+        for (const scene of cut.editorial.scenes) {
+          if (scene.kind === "clip") {
+            current += scene.end - scene.start;
+            longest = Math.max(longest, current);
+          } else if (scene.kind === "narration") current = 0;
+        }
+        longest = Number(longest.toFixed(6));
+        if (longest > 55) {
+          return json(400, { ok: false, error: `Corte ${index + 1}: bloco contínuo da fonte com ${longest}s. O autoral vertical permite até 55s por bloco, somando clips consecutivos. Gere um novo plano com comentário próprio em uma pausa natural. Não é limite da duração total nem garantia de monetização.` });
+        }
+      }
+      if (cut.cover?.template_id === "04_duas_pessoas") {
         normalizedCuts.push({ ...cut, cover: { ...cut.cover, template_id: horizontal ? "02_lateral" : "01_central" } });
       } else {
         normalizedCuts.push(cut);

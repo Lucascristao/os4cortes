@@ -1,5 +1,6 @@
 """Offline batch routing, preflight, publisher compatibility and recovery tests."""
 from contextlib import ExitStack
+from copy import deepcopy
 import json
 from pathlib import Path
 import tempfile
@@ -143,6 +144,18 @@ class Harness:
 
 
 class EditorialBatchModesTests(unittest.TestCase):
+    def test_vertical_source_block_rejected_before_key_drive_or_render(self):
+        value = cut()
+        value["fim"] = 200
+        value["editorial"]["scenes"] += [
+            {"id": "part2", "kind": "clip", "start": 100, "end": 150}]
+        with Harness([cut(), value], mode="editorial", key="") as h:
+            with self.assertRaisesRegex(ValueError, "Corte 2:.*55s"):
+                batch.main()
+            h.factory.assert_not_called()
+            h.renderer.assert_not_called()
+            self.assertFalse(h.uploader.downloads)
+
     def test_editorial_requires_every_plan_before_key_or_drive(self):
         with Harness([cut(), cut(editorial=False)], mode="editorial", key="") as h:
             with self.assertRaisesRegex(ValueError, "Corte 2:.*todos os cortes"):
@@ -467,6 +480,15 @@ class EditorialBatchModesTests(unittest.TestCase):
                 background={"start": 800, "end": 900}, evidence=[{"start": 800, "end": 900}],
             )
             value["editorial"]["scenes"][1].update(start=10, end=10 + duration)
+            narration = value["editorial"]["scenes"][0]
+            value["editorial"]["scenes"] = []
+            for part, offset in enumerate(range(0, int(duration) + 1, 45)):
+                if offset >= duration:
+                    break
+                value["editorial"]["scenes"] += [
+                    {**deepcopy(narration), "id": f"comment-{part}"},
+                    {"id": f"source-{part}", "kind": "clip", "start": 10 + offset,
+                     "end": 10 + min(offset + 45, duration)}]
             cuts.append(value)
 
         with Harness(cuts, mode="editorial") as h:

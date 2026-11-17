@@ -21,7 +21,7 @@ from .captions import (
 from .covers import CoverError, normalize_cover, render_cover
 from .drive import uploader_por_env
 from .cut_transport import decode_cuts_json
-from .editorial_plan import normalize_editorial_plan, voice_plan_fingerprint
+from .editorial_plan import normalize_editorial_plan, voice_plan_fingerprint, validate_vertical_source_blocks
 from .progress import completed, emit, failed, start_heartbeat
 from .publisher import save_publisher_manifest
 from .lower_third import LowerThird
@@ -245,6 +245,10 @@ def main() -> int:
             for index, corte in enumerate(cortes, 1):
                 if "editorial" not in corte:
                     raise ValueError(f"Corte {index}: o modo editorial exige um plano editorial version: 1 em todos os cortes.")
+                try:
+                    validate_vertical_source_blocks(corte["editorial"], corte["formato"])
+                except ValueError as exc:
+                    raise ValueError(f"Corte {index}: {exc}") from exc
             if cache == work or work in cache.parents:
                 # A rejected path must not delete already accepted voice files.
                 cleanup_work = False

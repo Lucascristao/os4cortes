@@ -331,6 +331,52 @@ const validPlan = () => ({
 });
 const starts = h => h.requests.filter(request => request.path.includes('workflow-start'));
 
+test('editor bloqueia mais de 55s contínuos no autoral vertical antes de enviar ao GitHub', async () => {
+  for (const [lengths, separated, formato, simpleCuts, rejected] of [
+    [[55], false, '9:16', false, false],
+    [[55.001], false, '9:16', false, true],
+    [[30, 30], false, '9:16', false, true],
+    [[55, 55], true, '9:16', false, false],
+    [[100], false, '16:9', false, false],
+    [[181], false, '9:16', false, false],
+    [[100], false, '9:16', true, false],
+  ]) {
+    const h = harness();
+    h.context.mostrarTranscricao(session({ simpleCuts }));
+    h.get('#simpleCuts').checked = simpleCuts;
+    const editorial = validPlan(), narration = editorial.scenes[0];
+    editorial.scenes = [];
+    lengths.forEach((seconds, i) => {
+      if (i && separated) editorial.scenes.push({ ...structuredClone(narration), id: `bridge-${i}` });
+      editorial.scenes.push({ id: `source-${i}`, kind: 'clip', start: 0, end: seconds });
+    });
+    editorial.scenes.push(narration);
+    await h.import([cut({ inicio: 0, fim: 200, formato, editorial })]);
+    await h.get('#btnGerarCortes').fire('click');
+    assert.equal(starts(h).length, rejected ? 0 : 1, JSON.stringify({ lengths, separated, formato, simpleCuts }));
+    if (rejected) assert.match(h.alerts.at(-1), /55s por bloco/);
+  }
+});
+
+test('prompt preserva conversa e retenção sem template fixo nem teto total de 75s', async () => {
+  const h = harness();
+  h.context.mostrarTranscricao(session());
+  await h.get('#btnCopiarPromptIA').fire('click');
+  const prompt = h.copied.at(-1);
+  assert.match(prompt, /não precisam vir acompanhados de dados ou comprovação/);
+  assert.match(prompt, /opinião que divide, resposta inesperada/);
+  assert.match(prompt, /não invente choro, risada, grito/);
+  assert.match(prompt, /sem guardar toda a autoria para um comentário pequeno/);
+  assert.match(prompt, /Não imponha percentual de voz, quantidade fixa de intervenções/);
+  assert.match(prompt, /trocar câmera, enquadramento, pessoa.*NÃO reinicia/);
+  assert.match(prompt, /no máximo 55 segundos/);
+  assert.match(prompt, /não imponha teto de 75 segundos/);
+  assert.match(prompt, /não uma regra publicada do TikTok/);
+  const example = promptExample(prompt);
+  const normalized = h.context.normalizarPacote(example);
+  assert.equal(h.context.erroPlanoAutoral(normalized[0]), null);
+});
+
 function promptExample(prompt) {
   const json = prompt.match(/^\[\r?\n[\s\S]*?^\]/m)?.[0];
   assert.ok(json, 'o prompt deve incluir um exemplo de array JSON válido');
@@ -426,7 +472,7 @@ test('ambos os modos recebem o mesmo filtro editorial antes do schema e da trans
     assert.equal(prompt.indexOf(filter, filterIndex + filter.length), -1, 'o filtro não é duplicado');
     assert.ok(filterIndex < prompt.indexOf('\n[\n'), 'seleção precede o exemplo de escrita e montagem');
     assert.ok(filterIndex < prompt.indexOf('--- TRANSCRIÇÃO ---'));
-    const stages = ['Descoberta completa', 'Prova de valor e filtro de aprovação', 'Recuperação e comparação do lote', 'Auditoria de cobertura e de excesso', 'Produção silenciosa do JSON'];
+    const stages = ['Descoberta completa', 'Força do momento e filtro de aprovação', 'Recuperação e comparação do lote', 'Auditoria de cobertura e de excesso', 'Produção silenciosa do JSON'];
     const positions = stages.map(stage => filter.indexOf(stage));
     assert.ok(positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1])), 'descoberta, filtro e dupla auditoria precedem a produção');
     assert.match(filter, /interesse específico, entrega real, autonomia, densidade, fidelidade e distinção/);
@@ -571,6 +617,13 @@ test('roteamento usa apenas clips: até 180 segundos vertical, acima YouTube, co
     editorial.scenes[0].background = { start: 300, end: 400 };
     editorial.scenes[0].evidence = [{ start: 10, end: 590 }];
     editorial.scenes[1] = { id: 'fala', kind: 'clip', start: 10, end: 10 + seconds };
+    // Exercise routing with a valid authorial montage, rather than one long run.
+    const narration = editorial.scenes[0];
+    editorial.scenes = [];
+    for (let offset = 0, i = 0; offset < seconds; offset += 45, i++) {
+      editorial.scenes.push({ ...structuredClone(narration), id: `comment-${i}` },
+        { id: `source-${i}`, kind: 'clip', start: 10 + offset, end: 10 + Math.min(offset + 45, seconds) });
+    }
     await h.import([cut({ inicio: 0, fim: 600, destino: 'reels_tiktok', editorial,
       legenda_post: 'Crédito e comentário.', hashtags: ['#assunto'] })]);
     assert.equal(h.cards()[0].dataset.formato, expected);

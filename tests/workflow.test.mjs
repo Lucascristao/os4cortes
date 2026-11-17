@@ -552,6 +552,34 @@ test('cover crosses simple, editorial and gzip dispatch without changing its cut
  assert.deepEqual(sent,cuts);
 });
 
+test('vertical authorial source runs stop at 55s before dispatch, independent of camera cuts and total duration',async()=>{
+ const narration=structuredClone(narratedCut().editorial.scenes[0]);
+ const clip=(id,start,end)=>({id,kind:'clip',start,end});
+ const cases=[
+  {scenes:[clip('one',0,55),narration],status:202},
+  {scenes:[narration,clip('one',0,55.001)],status:400},
+  {scenes:[clip('one',0,30),clip('two',100,130),narration],status:400},
+  {scenes:[clip('one',0,30),clip('replay',0,30),narration],status:400},
+  {scenes:[clip('one',0,55),narration,clip('two',100,155)],status:202},
+  {scenes:[narration,clip('one',0,100)],formato:'16:9',status:202},
+  {scenes:[narration,clip('one',0,100)],destino:'youtube',status:202},
+  {scenes:[narration,clip('one',0,181)],status:202},
+  {scenes:[narration,clip('one',0,100)],simpleCuts:true,status:202},
+ ];
+ for(const {scenes,status,simpleCuts=false,...extra} of cases) {
+  const cut={...narratedCut(),inicio:0,fim:200,...extra};
+  cut.editorial.scenes=scenes;
+  const count=dispatches.length, jobs=records.size;
+  const response=await start(req('workflow-start','POST',renderBody({cuts:[cut],simpleCuts})),context);
+  assert.equal(response.status,status,JSON.stringify({scenes,...extra}));
+  if(status===400) {
+   assert.match((await response.json()).error,/Corte 1:.*55s/);
+   assert.equal(dispatches.length,count);
+   assert.equal(records.size,jobs,'no job created for invalid plan');
+  }
+ }
+});
+
 test('retired two-person covers migrate by effective aspect in simple, editorial and gzip dispatch',async()=>{
  const legacy={version:1,template_id:'04_duas_pessoas',title:'A DECISÃO É ESSA?'};
  for(const simpleCuts of [true,false]) {
